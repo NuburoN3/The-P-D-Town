@@ -198,11 +198,6 @@ image-rendering: pixelated;
         return;
       }
 
-      if (key === "t" && !e.repeat) {
-        tryTrainingAction();
-        return;
-      }
-
       if (choiceState.active) {
         if (!e.repeat && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
           const direction = e.key === "ArrowUp" ? -1 : 1;
@@ -468,6 +463,16 @@ image-rendering: pixelated;
       if (gameState === "enteringDoor" || gameState === "transition") {
         interactPressed = false;
         return;
+      }
+
+      if (worldName === "interior" && gameFlags.acceptedTraining) {
+        const tilePos = playerTilePosition();
+        const onTrainingTile = tilePos.x === trainingTile.x && tilePos.y === trainingTile.y;
+        if (onTrainingTile) {
+          tryTrainingAction();
+          interactPressed = false;
+          return;
+        }
       }
 
       const inset = 5;
