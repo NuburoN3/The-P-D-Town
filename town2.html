@@ -102,7 +102,7 @@
 
     addEventListener("keydown", (e) => {
       keys[e.key.toLowerCase()] = true;
-      if (e.key === "Enter") interactPressed = true;
+      if (e.key === "Enter" && !e.repeat) interactPressed = true;
     });
 
     addEventListener("keyup", (e) => {
@@ -126,7 +126,6 @@
 
     let dialogueName = "";
     let message = "";
-    let messageTimer = 0;
 
     const doorSequence = {
       active: false,
@@ -147,7 +146,15 @@
     function showDialogue(name, text) {
       dialogueName = (name || "").trim();
       message = text;
-      messageTimer = 180;
+    }
+
+    function closeDialogue() {
+      dialogueName = "";
+      message = "";
+    }
+
+    function isDialogueActive() {
+      return message.length > 0;
     }
 
     function setWorld(name) {
@@ -275,6 +282,13 @@
 
     function handleInteraction() {
       if (!interactPressed) return;
+
+      if (isDialogueActive()) {
+        closeDialogue();
+        interactPressed = false;
+        return;
+      }
+
       if (gameState === "enteringDoor" || gameState === "transition") {
         interactPressed = false;
         return;
@@ -312,11 +326,11 @@
         const dx = Math.abs(playerCenterX - npcCenterX);
         const dy = Math.abs(playerCenterY - npcCenterY);
 
-        if (dx <= interactReach && dy <= interactReach) {
-          showDialogue("Mr. Hanami", "Hello there! My name is Mr. Hanami. Welcome to the dojo.");
-          interactPressed = false;
-          return;
-        }
+        if (dx <= interactReach && dy <= interactReach) {␊
+          showDialogue(npc.name, npc.dialogue);
+          interactPressed = false;␊
+          return;␊
+        }␊
       }
 
       interactPressed = false;
@@ -416,8 +430,10 @@
     }
 
     function update() {
-      if (gameState === "overworld" || gameState === "interior") {
+      if ((gameState === "overworld" || gameState === "interior") && !isDialogueActive()) {
         updatePlayerMovement();
+      } else if (isDialogueActive()) {
+        player.walking = false;
       } else if (gameState === "enteringDoor") {
         updateDoorEntry();
       } else if (gameState === "transition") {
@@ -544,8 +560,8 @@
       }
     }
 
-    function drawTextbox() {
-      if (messageTimer <= 0) return;
+    function drawTextbox() {␊
+      if (!isDialogueActive()) return;
 
       const boxHeight = 90;
       const boxY = canvas.height - boxHeight - 20;
@@ -567,7 +583,6 @@
         ctx.fillText(message, 40, boxY + 48);
       }
 
-      messageTimer--;
     }
 
     function drawDoorTransition(cam) {
@@ -622,4 +637,5 @@
   </script>
 </body>
 </html>
+
 
