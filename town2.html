@@ -49,7 +49,8 @@ image-rendering: pixelated;
       xpNeededSnapshot: 0,
       animDurationMs: 400,
       levelUp: false,
-      levelUpHoldMs: 250
+      levelUpHoldMs: 250,
+      pendingLevelUpDialogueAt: null
     };
 
     // 0 grass, 1 path, 2 tree, 3 dojo/wall, 4 signpost, 5 door, 6 interior floor, 7 training floor
@@ -158,17 +159,16 @@ image-rendering: pixelated;
       trainingPopup.targetXP = playerStats.disciplineXP;
       trainingPopup.xpGained = xpEarned;
       trainingPopup.levelUp = false;
+      trainingPopup.pendingLevelUpDialogueAt = null;
       trainingPopup.active = true;
       trainingPopup.startedAt = performance.now();
 
       if (playerStats.disciplineXP >= playerStats.disciplineXPNeeded) {
         trainingPopup.levelUp = true;
+        trainingPopup.pendingLevelUpDialogueAt = trainingPopup.startedAt + trainingPopup.animDurationMs;
         playerStats.disciplineLevel += 1;
         playerStats.disciplineXP = 0;
         playerStats.disciplineXPNeeded += 5;
-        showDialogue("", "Your discipline has grown! Level increased!");
-      } else {
-        showDialogue("", "You practice your stance. Discipline is improving.");
       }
     }
 
@@ -631,8 +631,19 @@ image-rendering: pixelated;
     }
 
     function update() {
+      const now = performance.now();
+      if (
+        trainingPopup.pendingLevelUpDialogueAt !== null &&
+        now >= trainingPopup.pendingLevelUpDialogueAt &&
+        !isDialogueActive() &&
+        !choiceState.active
+      ) {
+        trainingPopup.pendingLevelUpDialogueAt = null;
+        showDialogue("", "Your discipline has grown! Level increased!");
+      }
+
       if (trainingPopup.active) {
-        const elapsed = performance.now() - trainingPopup.startedAt;
+        const elapsed = now - trainingPopup.startedAt;
         if (elapsed >= trainingPopup.durationMs) {
           trainingPopup.active = false;
           trainingPopup.levelUp = false;
@@ -995,4 +1006,3 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
-
