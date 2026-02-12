@@ -9,7 +9,7 @@
       margin: 0;
       background: #0f1720;
       overflow: hidden;
-    }
+   }
 
     canvas {
       display: block;
@@ -38,6 +38,12 @@
       disciplineLevel: 1,
       disciplineXP: 0,
       disciplineXPNeeded: 10
+    };
+
+    const trainingPopup = {
+      active: false,
+      startedAt: 0,
+      durationMs: 2000
     };
 
     // 0 grass, 1 path, 2 tree, 3 dojo/wall, 4 signpost, 5 door, 6 interior floor, 7 training floor
@@ -125,7 +131,7 @@
       };
     }
 
-    function tryTrainingAction() {
+    function tryTrainingAction() {␊
       const isFreeExploreState = gameState === "overworld" || gameState === "interior";
       if (!isFreeExploreState) return;
       if (isDialogueActive() || choiceState.active || doorSequence.active) return;
@@ -137,6 +143,8 @@
       if (!onTrainingTile) return;
 
       playerStats.disciplineXP += 1;
+      trainingPopup.active = true;
+      trainingPopup.startedAt = performance.now();
 
       if (playerStats.disciplineXP >= playerStats.disciplineXPNeeded) {
         playerStats.disciplineLevel += 1;
@@ -606,6 +614,13 @@
     }
 
     function update() {
+      if (trainingPopup.active) {
+        const elapsed = performance.now() - trainingPopup.startedAt;
+        if (elapsed >= trainingPopup.durationMs) {
+          trainingPopup.active = false;
+        }
+      }
+
       if ((gameState === "overworld" || gameState === "interior") && !isDialogueActive()) {
         updatePlayerMovement();
       } else if (isDialogueActive()) {
@@ -690,7 +705,7 @@
       if (type === 7) {
         ctx.fillStyle = "#8d7964";
         ctx.fillRect(x, y, TILE, TILE);
-        ctx.fillStyle = "#6d5b4c";
+ctx.fillStyle = "#6d5b4c";
         ctx.fillRect(x + 2, y + 2, TILE - 4, TILE - 4);
       }
     }
@@ -715,7 +730,7 @@
       }
     }
 
-    function drawNPCs(cam) {
+    function drawNPCs(cam) {␊
       if (worldName !== "interior") return;
 
       for (const npc of npcs) {
@@ -741,6 +756,55 @@
           ctx.fillRect(nx + 16, ny + 26, 6, 6);
         }
       }
+    }
+
+    function drawTrainingPopup(cam) {
+      if (!trainingPopup.active) return;
+
+      const elapsed = performance.now() - trainingPopup.startedAt;
+      const fadeRatio = Math.max(0, 1 - elapsed / trainingPopup.durationMs);
+      if (fadeRatio <= 0) return;
+
+      const px = player.x - cam.x + TILE / 2;
+      const py = player.y - cam.y;
+
+      const boxW = 120;
+      const boxH = 44;
+      const boxX = Math.round(px - boxW / 2);
+      const boxY = Math.round(py - 58);
+      const progressRatio = Math.min(1, playerStats.disciplineXP / playerStats.disciplineXPNeeded);
+
+      ctx.save();
+      ctx.globalAlpha = fadeRatio;
+
+      ctx.fillStyle = "rgba(12,18,28,0.9)";
+      ctx.fillRect(boxX, boxY, boxW, boxH);
+
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "12px monospace";
+      ctx.fillText(`Lv. ${playerStats.disciplineLevel}`, boxX + 8, boxY + 13);
+      ctx.fillText("+1 XP", boxX + 78, boxY + 13);
+
+      const barX = boxX + 8;
+      const barY = boxY + 21;
+      const barW = boxW - 16;
+      const barH = 14;
+
+      ctx.fillStyle = "#263238";
+      ctx.fillRect(barX, barY, barW, barH);
+
+      ctx.fillStyle = "#66bb6a";
+      ctx.fillRect(barX, barY, barW * progressRatio, barH);
+
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(barX, barY, barW, barH);
+
+      ctx.restore();
     }
 
     function drawTextbox() {
@@ -879,6 +943,7 @@
 
       drawNPCs(cam);
       drawPlayer(cam);
+      drawTrainingPopup(cam);
       drawDoorTransition(cam);
       drawInventoryOverlay();
       drawTextbox();
