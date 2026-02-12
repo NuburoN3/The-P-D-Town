@@ -93,7 +93,8 @@
         width: TILE,
         height: TILE,
         name: "Mr. Hanami",
-        dialogue: ["Hello there!", "Welcome to the dojo.", "I train students here", "where they practice Hana Sakura style Karate","which means “the way of the cherry blossom”."]
+        dialogue: ["Hello there!", "Welcome to the dojo.", "I train students here", "where they practice Hana Sakura style Karate", "which means \"the way of the cherry blossom\".", "Would you like me to teach you?"],
+        hasTrainingChoice: true
       }
     ];
 
@@ -101,7 +102,23 @@
     let interactPressed = false;
 
     addEventListener("keydown", (e) => {
-      keys[e.key.toLowerCase()] = true;
+      const key = e.key.toLowerCase();
+      keys[key] = true;
+
+      if (choiceState.active) {
+        if (!e.repeat && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+          const direction = e.key === "ArrowUp" ? -1 : 1;
+          const total = choiceState.options.length;
+          choiceState.selected = (choiceState.selected + direction + total) % total;
+        }
+
+        if (e.key === "Enter" && !e.repeat) {
+          confirmChoice();
+        }
+
+        return;
+      }
+
       if (e.key === "Enter" && !e.repeat) interactPressed = true;
     });
 
@@ -127,6 +144,14 @@
     let dialogueName = "";
     let dialogueLines = [];
     let dialogueIndex = 0;
+    let dialogueEndAction = null;
+
+    const choiceState = {
+      active: false,
+      options: ["Yes", "No"],
+      selected: 0,
+      onConfirm: null
+    };
 
     const doorSequence = {
       active: false,
@@ -144,17 +169,45 @@
       maxFadeRadius: 0
     };
 
-    function showDialogue(name, textOrLines) {
+    function showDialogue(name, textOrLines, endAction = null) {
       dialogueName = (name || "").trim();
       dialogueLines = Array.isArray(textOrLines) ? textOrLines : [textOrLines];
       dialogueIndex = 0;
+      dialogueEndAction = endAction;
+      closeChoice();
+    }
+
+    function openYesNoChoice(onConfirm) {
+      choiceState.active = true;
+      choiceState.selected = 0;
+      choiceState.onConfirm = onConfirm;
+    }
+
+    function closeChoice() {
+      choiceState.active = false;
+      choiceState.selected = 0;
+      choiceState.onConfirm = null;
+    }
+
+    function confirmChoice() {
+      if (!choiceState.active) return;
+
+      const selectedOption = choiceState.options[choiceState.selected];
+      const onConfirm = choiceState.onConfirm;
+      closeChoice();
+
+      if (onConfirm) onConfirm(selectedOption);
     }
 
     function advanceDialogue() {
-      if (!isDialogueActive()) return;
+      if (!isDialogueActive() || choiceState.active) return;
 
       if (dialogueIndex < dialogueLines.length - 1) {
         dialogueIndex++;
+      } else if (dialogueEndAction) {
+        const endAction = dialogueEndAction;
+        dialogueEndAction = null;
+        endAction();
       } else {
         closeDialogue();
       }
@@ -164,6 +217,8 @@
       dialogueName = "";
       dialogueLines = [];
       dialogueIndex = 0;
+      dialogueEndAction = null;
+      closeChoice();
     }
 
     function isDialogueActive() {
@@ -345,7 +400,20 @@
         const dy = Math.abs(playerCenterY - npcCenterY);
 
         if (dx <= interactReach && dy <= interactReach) {
-          showDialogue(npc.name, npc.dialogue);
+          if (npc.hasTrainingChoice) {
+            showDialogue(npc.name, npc.dialogue, () => {
+              openYesNoChoice((selectedOption) => {
+                if (selectedOption === "Yes") {
+                  showDialogue(npc.name, "Very good. Training begins with discipline.");
+                } else {
+                  showDialogue(npc.name, "Come speak to me when you are ready.");
+                }
+              });
+            });
+          } else {
+            showDialogue(npc.name, npc.dialogue);
+          }
+
           interactPressed = false;
           return;
         }
@@ -581,7 +649,7 @@
     function drawTextbox() {
       if (!isDialogueActive()) return;
 
-      const boxHeight = 90;
+      const boxHeight = choiceState.active ? 130 : 90;
       const boxY = canvas.height - boxHeight - 20;
 
       ctx.fillStyle = "rgba(0,0,0,0.75)";
@@ -592,15 +660,21 @@
       ctx.strokeRect(20, boxY, canvas.width - 40, boxHeight);
 
       ctx.fillStyle = "#ffffff";
+      ctx.font = "20px monospace";
       if (dialogueName) {
-        ctx.font = "20px monospace";
         ctx.fillText(dialogueName, 40, boxY + 28);
         ctx.fillText(currentDialogueLine(), 40, boxY + 62);
       } else {
-        ctx.font = "20px monospace";
         ctx.fillText(currentDialogueLine(), 40, boxY + 48);
       }
 
+      if (choiceState.active) {
+        const optionsStartY = boxY + 90;
+        for (let i = 0; i < choiceState.options.length; i++) {
+          const prefix = i === choiceState.selected ? "► " : "  ";
+          ctx.fillText(prefix + choiceState.options[i], 40, optionsStartY + i * 24);
+        }
+      }
     }
 
     function drawDoorTransition(cam) {
@@ -655,6 +729,3 @@
   </script>
 </body>
 </html>
-
-
-
