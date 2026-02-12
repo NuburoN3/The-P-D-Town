@@ -804,6 +804,9 @@ ctx.fillStyle = "#7b1fa2";
       ctx.fillStyle = "#263238";
       ctx.fillRect(barX, barY, barW, barH);
 
+      ctx.fillStyle = "#4caf50";
+      ctx.fillRect(barX, barY, Math.round(barW * progressRatio), barH);
+
       ctx.restore();
     }
 
@@ -959,5 +962,3 @@ ctx.fillStyle = "#7b1fa2";
   </script>
 </body>
 </html>
-
-
