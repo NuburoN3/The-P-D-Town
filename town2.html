@@ -149,8 +149,13 @@ image-rendering: pixelated;
       const onTrainingTile = tilePos.x === trainingTile.x && tilePos.y === trainingTile.y;
       if (!onTrainingTile) return;
 
+      if (playerStats.disciplineLevel >= 2) {
+        showDialogue("", "You have learned all you can here. Speak to Mr. Hanami.");
+        return;
+      }
+
       const startXP = playerStats.disciplineXP;
-      const xpEarned = 1;
+      const xpEarned = 5;
       trainingPopup.xpNeededSnapshot = playerStats.disciplineXPNeeded;
 
       playerStats.disciplineXP += xpEarned;
@@ -1011,4 +1016,3 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
-
