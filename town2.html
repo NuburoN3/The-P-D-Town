@@ -489,7 +489,7 @@ image-rendering: pixelated;
         if (dx <= interactReach && dy <= interactReach) {
           if (npc.hasTrainingChoice) {
             if (gameFlags.completedTraining) {
-              showDialogue(npc.name, ["Excellent.", "You have mastered the basics.", "You are ready for your next lesson."]);␊
+              showDialogue(npc.name, ["Excellent.", "You have mastered the basics.", "You are ready for your next lesson."]);
               interactPressed = false;
               return;
             }
@@ -1026,3 +1026,4 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
+
