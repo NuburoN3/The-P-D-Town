@@ -116,7 +116,9 @@
         return;
       }
 
-      if (gameState !== "overworld" && gameState !== "interior") return;
+      const isFreeExploreState = gameState === "overworld" || gameState === "interior";
+      if (!isFreeExploreState) return;
+      if (isDialogueActive() || choiceState.active || doorSequence.active) return;
 
       previousWorldState = gameState;
       gameState = "inventory";
