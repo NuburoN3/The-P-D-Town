@@ -131,7 +131,7 @@
       };
     }
 
-    function tryTrainingAction() {␊
+    function tryTrainingAction() {
       const isFreeExploreState = gameState === "overworld" || gameState === "interior";
       if (!isFreeExploreState) return;
       if (isDialogueActive() || choiceState.active || doorSequence.active) return;
@@ -730,7 +730,7 @@ ctx.fillStyle = "#6d5b4c";
       }
     }
 
-    function drawNPCs(cam) {␊
+    function drawNPCs(cam) {
       if (worldName !== "interior") return;
 
       for (const npc of npcs) {
@@ -959,3 +959,4 @@ ctx.fillStyle = "#6d5b4c";
   </script>
 </body>
 </html>
+
