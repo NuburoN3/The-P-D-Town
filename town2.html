@@ -35,7 +35,9 @@
     const playerInventory = {};
 
     const playerStats = {
-      discipline: 0
+      disciplineLevel: 1,
+      disciplineXP: 0,
+      disciplineXPNeeded: 10
     };
 
     // 0 grass, 1 path, 2 tree, 3 dojo/wall, 4 signpost, 5 door, 6 interior floor, 7 training floor
@@ -134,8 +136,16 @@
       const onTrainingTile = tilePos.x === trainingTile.x && tilePos.y === trainingTile.y;
       if (!onTrainingTile) return;
 
-      playerStats.discipline += 1;
-      showDialogue("", "You practice your stance. Discipline increased!");
+      playerStats.disciplineXP += 1;
+
+      if (playerStats.disciplineXP >= playerStats.disciplineXPNeeded) {
+        playerStats.disciplineLevel += 1;
+        playerStats.disciplineXP = 0;
+        playerStats.disciplineXPNeeded += 5;
+        showDialogue("", "Your discipline has grown! Level increased!");
+      } else {
+        showDialogue("", "You practice your stance. Discipline is improving.");
+      }
     }
 
     function toggleInventory() {
@@ -805,16 +815,46 @@
       const entries = Object.entries(playerInventory);
       ctx.font = "20px monospace";
 
+      let row = 0;
       if (entries.length === 0) {
         ctx.fillText("(No items)", boxX + 24, boxY + 90);
-        return;
+        row = 1;
+      } else {
+        for (const [itemName, quantity] of entries) {
+          ctx.fillText(`${itemName} x${quantity}`, boxX + 24, boxY + 90 + row * 28);
+          row++;
+        }
       }
 
-      let row = 0;
-      for (const [itemName, quantity] of entries) {
-        ctx.fillText(`${itemName} x${quantity}`, boxX + 24, boxY + 90 + row * 28);
-        row++;
-      }
+      const statsY = boxY + 90 + row * 28 + 18;
+      ctx.font = "22px monospace";
+      ctx.fillText("Stats", boxX + 24, statsY);
+
+      ctx.font = "20px monospace";
+      const levelY = statsY + 30;
+      ctx.fillText(`Discipline Lv. ${playerStats.disciplineLevel}`, boxX + 24, levelY);
+
+      const barX = boxX + 24;
+      const barY = levelY + 18;
+      const barW = boxW - 48;
+      const barH = 20;
+      const progressRatio = Math.min(1, playerStats.disciplineXP / playerStats.disciplineXPNeeded);
+
+      ctx.fillStyle = "#263238";
+      ctx.fillRect(barX, barY, barW, barH);
+
+      ctx.fillStyle = "#66bb6a";
+      ctx.fillRect(barX, barY, barW * progressRatio, barH);
+
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(barX, barY, barW, barH);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "16px monospace";
+      const progressText = `${playerStats.disciplineXP} / ${playerStats.disciplineXPNeeded}`;
+      const textWidth = ctx.measureText(progressText).width;
+      ctx.fillText(progressText, barX + (barW - textWidth) / 2, barY + 15);
     }
 
     function render() {
