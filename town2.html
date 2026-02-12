@@ -506,6 +506,12 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       for (let y = 0; y < currentMapH; y++) {
+        for (let x = 0; x < currentMapW; x++) {
+          const drawX = x * TILE - cam.x;
+          const drawY = y * TILE - cam.y;
+
+          if (
+            drawX > -TILE &&
             drawY > -TILE &&
             drawX < canvas.width &&
             drawY < canvas.height
@@ -530,4 +536,3 @@
   </script>
 </body>
 </html>
-
