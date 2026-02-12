@@ -52,78 +52,8 @@ const player = {
   dir: "down",
   walking:false,
   frame:0,
-  frameTime:0
-};
 
-/* ========= MAP (0 grass, 1 path, 2 tree, 3 dojo, 4 sign) ========= */
-
-const map = [];
-
-for(let y=0;y<MAP_H;y++){
-  map[y]=[];
-  for(let x=0;x<MAP_W;x++){
-    map[y][x]=0;
-  }
-}
-
-/* paths */
-for(let x=8;x<22;x++) map[18][x]=1;
-for(let y=14;y<23;y++) map[y][15]=1;
-
-/* dojo */
-for(let y=11;y<14;y++){
-  for(let x=13;x<18;x++){
-    map[y][x]=3;
-  }
-}
-map[14][15]=1;
-/* signpost in front of dojo */
-map[15][15] = 4;
-
-
-/* trees border */
-for(let i=0;i<MAP_W;i++){
-  map[0][i]=2;
-  map[MAP_H-1][i]=2;
-}
-for(let i=0;i<MAP_H;i++){
-  map[i][0]=2;
-  map[i][MAP_W-1]=2;
-}
-
-/* ========= COLLISION ========= */
-
-function blocked(x,y){
-  const tx=Math.floor(x/TILE);
-  const ty=Math.floor(y/TILE);
-  if(tx<0||ty<0||tx>=MAP_W||ty>=MAP_H) return true;
-  return map[ty][tx]===2 || map[ty][tx]===3;
-}
-
-/* ========= MOVEMENT ========= */
-
-function update(){
-  let moving=false;
-  let nx=player.x;
-  let ny=player.y;
-
-  if(keys["w"]||keys["arrowup"]){ ny-=player.speed; player.dir="up"; moving=true;}
-  if(keys["s"]||keys["arrowdown"]){ ny+=player.speed; player.dir="down"; moving=true;}
-  if(keys["a"]||keys["arrowleft"]){ nx-=player.speed; player.dir="left"; moving=true;}
-  if(keys["d"]||keys["arrowright"]){ nx+=player.speed; player.dir="right"; moving=true;}
-
-  if(!blocked(nx,player.y)) player.x=nx;
-  if(!blocked(player.x,ny)) player.y=ny;
-
-  player.walking=moving;
-
-  if(moving){
-    player.frameTime++;
-    if(player.frameTime>10){
-      player.frame=(player.frame+1)%2;
-      player.frameTime=0;
-    }
-  }
+)
 /* ========= INTERACTION ========= */
 
 if(interactPressed){
@@ -283,3 +213,4 @@ loop();
 
 </body>
 </html>
+
