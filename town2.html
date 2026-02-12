@@ -32,6 +32,8 @@
       acceptedTraining: false
     };
 
+    const playerInventory = {};
+
     // 0 grass, 1 path, 2 tree, 3 dojo/wall, 4 signpost, 5 door, 6 interior floor
     const OVERWORLD_W = 30;
     const OVERWORLD_H = 30;
@@ -416,7 +418,12 @@
               openYesNoChoice((selectedOption) => {
                 if (selectedOption === "Yes") {
                   gameFlags.acceptedTraining = true;
-                  showDialogue(npc.name, "Very good. Training begins with discipline.");
+
+                  if (!playerInventory["Training Headband"]) {
+                    playerInventory["Training Headband"] = 1;
+                  }
+
+                  showDialogue(npc.name, "You received a Training Headband!");
                 } else {
                   showDialogue(npc.name, "Come speak to me when you are ready.");
                 }
@@ -741,4 +748,3 @@
   </script>
 </body>
 </html>
-
