@@ -1,216 +1,302 @@
 <!DOCTYPE html>
-
-<html>
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Dojo Town</title>
-<style>
-body {
-  margin:0;
-  background:#0f1720;
-  overflow:hidden;
-}
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dojo Town</title>
+  <style>
+    body {
+      margin: 0;
+      background: #0f1720;
+      overflow: hidden;
+    }
 
-canvas{
-display:block;
-margin:auto;
-image-rendering: pixelated;
-background:#a7d9a8;
-} </style>
-
+    canvas {
+      display: block;
+      margin: auto;
+      image-rendering: pixelated;
+      background: #a7d9a8;
+    }
+  </style>
 </head>
 <body>
+  <canvas id="game" width="640" height="480"></canvas>
 
-<canvas id="game" width="640" height="480"></canvas>
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
 
-<script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+    const TILE = 32;
+    const MAP_W = 30;
+    const MAP_H = 30;
 
-const TILE = 32;
-const MAP_W = 30;
-const MAP_H = 30;
+    // 0 grass, 1 path, 2 tree, 3 dojo, 4 signpost
+    const map = Array.from({ length: MAP_H }, (_, y) =>
+      Array.from({ length: MAP_W }, (_, x) => {
+        if (x === 0 || y === 0 || x === MAP_W - 1 || y === MAP_H - 1) return 2;
+        return 0;
+      })
+    );
 
-/* ========= INPUT ========= */
+    const pathX = 15;
+    for (let y = 2; y < MAP_H - 2; y++) {
+      map[y][pathX] = 1;
+    }
 
-const keys = {};
-addEventListener("keydown", e=>keys[e.key.toLowerCase()]=true);
-addEventListener("keyup", e=>keys[e.key.toLowerCase()]=false);
-let interactPressed = false;
+    for (let x = 8; x <= 22; x++) {
+      map[15][x] = 1;
+    }
 
-addEventListener("keydown", e=>{
-  if(e.key === "Enter") interactPressed = true;
-});
+    const dojoTop = 10;
+    const dojoLeft = 13;
+    const dojoW = 5;
+    const dojoH = 4;
 
-
-/* ========= PLAYER ========= */
-
-const player = {
-  x: 15*TILE,
-  y: 18*TILE,
-  speed: 2.2,
-  dir: "down",
-  walking:false,
-  frame:0,
-
-)
-/* ========= INTERACTION ========= */
-
-if(interactPressed){
-
-  let tx = Math.floor(player.x / TILE);
-  let ty = Math.floor(player.y / TILE);
-
-  if(player.dir==="up") ty--;
-  if(player.dir==="down") ty++;
-  if(player.dir==="left") tx--;
-  if(player.dir==="right") tx++;
-
-  if(map[ty] && map[ty][tx]===4){
-    showMessage("The Dojo");
-  }
-
-  interactPressed=false;
-}
-
-/* walking away closes message */
-if(messageTimer>0){
-  const px = Math.floor(player.x/TILE);
-  const py = Math.floor(player.y/TILE);
-  if(Math.abs(px-15)>2 || Math.abs(py-15)>2){
-    messageTimer=0;
-  }
-}
-}
-
-
-
-/* ========= CAMERA ========= */
-
-function camera(){
-  return {
-    x: player.x-canvas.width/2,
-    y: player.y-canvas.height/2
-  };
-}
-
-/* ========= DRAW TILES ========= */
-
-function drawTile(type,x,y){
-  if(type===0){
-    ctx.fillStyle="#7ecf7e";
-    ctx.fillRect(x,y,TILE,TILE);
-  }
-
-  if(type===1){
-    ctx.fillStyle="#d8c89a";
-    ctx.fillRect(x,y,TILE,TILE);
-  }
-
-  if(type===2){
-    ctx.fillStyle="#2e7d32";
-    ctx.fillRect(x,y,TILE,TILE);
-    ctx.fillStyle="#1b5e20";
-    ctx.fillRect(x+8,y+8,16,16);
-  }
-
-  if(type===3){
-    ctx.fillStyle="#8d6e63";
-    ctx.fillRect(x,y,TILE,TILE);
-  }
-if(type===4){
-  // post
-  ctx.fillStyle="#6d4c41";
-  ctx.fillRect(x+12,y+8,8,18);
-
-  // sign board
-  ctx.fillStyle="#d7ccc8";
-  ctx.fillRect(x+6,y+6,20,10);
-}
-
-}
-
-/* ========= DRAW PLAYER ========= */
-
-function drawPlayer(cam){
-  const px=player.x-cam.x;
-  const py=player.y-cam.y;
-
-  ctx.fillStyle="#2b2b2b";
-  ctx.fillRect(px+6,py+8,20,20);
-
-  ctx.fillStyle="#ffffff";
-  ctx.fillRect(px+10,py+4,12,8);
-
-  if(player.walking && player.frame===0){
-    ctx.fillRect(px+8,py+26,6,6);
-  }else{
-    ctx.fillRect(px+18,py+26,6,6);
-  }
-}
-
-/* ========= DIALOG SYSTEM ========= */
-
-let message = "";
-let messageTimer = 0;
-
-function showMessage(text){
-  message = text;
-  messageTimer = 180; // 3 seconds (60fps)
-}
-
-function drawTextbox(){
-  if(messageTimer <= 0) return;
-
-  const boxHeight = 90;
-
-  ctx.fillStyle="rgba(0,0,0,0.75)";
-  ctx.fillRect(20, canvas.height - boxHeight - 20, canvas.width-40, boxHeight);
-
-  ctx.strokeStyle="#ffffff";
-  ctx.lineWidth=3;
-  ctx.strokeRect(20, canvas.height - boxHeight - 20, canvas.width-40, boxHeight);
-
-  ctx.fillStyle="#ffffff";
-  ctx.font="20px monospace";
-  ctx.fillText(message, 40, canvas.height - 60);
-
-  messageTimer--;
-}
-
-/* ========= RENDER ========= */
-
-function render(){
-  const cam=camera();
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-
-  for(let y=0;y<MAP_H;y++){
-    for(let x=0;x<MAP_W;x++){
-      const drawX=x*TILE-cam.x;
-      const drawY=y*TILE-cam.y;
-
-      if(drawX>-TILE&&drawY>-TILE&&drawX<canvas.width&&drawY<canvas.height){
-        drawTile(map[y][x],drawX,drawY);
+    for (let y = dojoTop; y < dojoTop + dojoH; y++) {
+      for (let x = dojoLeft; x < dojoLeft + dojoW; x++) {
+        map[y][x] = 3;
       }
     }
-  }
 
-  drawPlayer(cam);
-drawTextbox();
+    map[14][15] = 4;
 
-}
+    const treeClusters = [
+      [4, 4], [5, 4], [4, 5], [24, 4], [25, 4], [24, 5],
+      [5, 23], [4, 24], [24, 23], [25, 24], [22, 20], [8, 20]
+    ];
+    for (const [x, y] of treeClusters) {
+      map[y][x] = 2;
+    }
 
-/* ========= LOOP ========= */
+    const keys = {};
+    let interactPressed = false;
 
-function loop(){
-  update();
-  render();
-  requestAnimationFrame(loop);
-}
+    addEventListener("keydown", (e) => {
+      keys[e.key.toLowerCase()] = true;
+      if (e.key === "Enter") interactPressed = true;
+    });
 
-loop();
-</script>
+    addEventListener("keyup", (e) => {
+      keys[e.key.toLowerCase()] = false;
+    });
 
+    const player = {
+      x: 15 * TILE,
+      y: 18 * TILE,
+      speed: 2.2,
+      dir: "down",
+      walking: false,
+      frame: 0
+    };
+
+    let message = "";
+    let messageTimer = 0;
+
+    function showMessage(text) {
+      message = text;
+      messageTimer = 180;
+    }
+
+    function isBlockedAtPixel(px, py) {
+      const tx = Math.floor(px / TILE);
+      const ty = Math.floor(py / TILE);
+
+      if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return true;
+
+      const tile = map[ty][tx];
+      return tile === 2 || tile === 3 || tile === 4;
+    }
+
+    function collides(nx, ny) {
+      const inset = 5;
+      const left = nx + inset;
+      const right = nx + TILE - inset;
+      const top = ny + inset;
+      const bottom = ny + TILE - inset;
+
+      return (
+        isBlockedAtPixel(left, top) ||
+        isBlockedAtPixel(right, top) ||
+        isBlockedAtPixel(left, bottom) ||
+        isBlockedAtPixel(right, bottom)
+      );
+    }
+
+    function handleInteraction() {
+      if (!interactPressed) return;
+
+      let tx = Math.floor(player.x / TILE);
+      let ty = Math.floor(player.y / TILE);
+
+      if (player.dir === "up") ty--;
+      if (player.dir === "down") ty++;
+      if (player.dir === "left") tx--;
+      if (player.dir === "right") tx++;
+
+      if (map[ty] && map[ty][tx] === 4) {
+        showMessage("The Dojo");
+      }
+
+      interactPressed = false;
+    }
+
+    function update() {
+      let dx = 0;
+      let dy = 0;
+
+      if (keys["w"] || keys["arrowup"]) {
+        dy -= player.speed;
+        player.dir = "up";
+      }
+      if (keys["s"] || keys["arrowdown"]) {
+        dy += player.speed;
+        player.dir = "down";
+      }
+      if (keys["a"] || keys["arrowleft"]) {
+        dx -= player.speed;
+        player.dir = "left";
+      }
+      if (keys["d"] || keys["arrowright"]) {
+        dx += player.speed;
+        player.dir = "right";
+      }
+
+      player.walking = dx !== 0 || dy !== 0;
+
+      if (dx !== 0 && dy !== 0) {
+        const s = Math.SQRT1_2;
+        dx *= s;
+        dy *= s;
+      }
+
+      const nx = player.x + dx;
+      const ny = player.y + dy;
+
+      if (!collides(nx, player.y)) player.x = nx;
+      if (!collides(player.x, ny)) player.y = ny;
+
+      if (player.walking) {
+        player.frame = (player.frame + 1) % 24;
+      }
+
+      handleInteraction();
+    }
+
+    function camera() {
+      const worldW = MAP_W * TILE;
+      const worldH = MAP_H * TILE;
+
+      let cx = player.x - canvas.width / 2 + TILE / 2;
+      let cy = player.y - canvas.height / 2 + TILE / 2;
+
+      cx = Math.max(0, Math.min(cx, worldW - canvas.width));
+      cy = Math.max(0, Math.min(cy, worldH - canvas.height));
+
+      return { x: cx, y: cy };
+    }
+
+    function drawTile(type, x, y) {
+      if (type === 0) {
+        ctx.fillStyle = "#7ecf7e";
+        ctx.fillRect(x, y, TILE, TILE);
+      }
+
+      if (type === 1) {
+        ctx.fillStyle = "#d8c89a";
+        ctx.fillRect(x, y, TILE, TILE);
+      }
+
+      if (type === 2) {
+        ctx.fillStyle = "#2e7d32";
+        ctx.fillRect(x, y, TILE, TILE);
+        ctx.fillStyle = "#1b5e20";
+        ctx.fillRect(x + 8, y + 8, 16, 16);
+      }
+
+      if (type === 3) {
+        ctx.fillStyle = "#8d6e63";
+        ctx.fillRect(x, y, TILE, TILE);
+      }
+
+      if (type === 4) {
+        ctx.fillStyle = "#6d4c41";
+        ctx.fillRect(x + 12, y + 8, 8, 18);
+        ctx.fillStyle = "#d7ccc8";
+        ctx.fillRect(x + 6, y + 6, 20, 10);
+      }
+    }
+
+    function drawPlayer(cam) {
+      const px = player.x - cam.x;
+      const py = player.y - cam.y;
+
+      ctx.fillStyle = "#2b2b2b";
+      ctx.fillRect(px + 6, py + 8, 20, 20);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(px + 10, py + 4, 12, 8);
+
+      const legFrame = Math.floor(player.frame / 12) % 2;
+      if (player.walking && legFrame === 0) {
+        ctx.fillRect(px + 8, py + 26, 6, 6);
+        ctx.fillRect(px + 18, py + 26, 6, 6);
+      } else {
+        ctx.fillRect(px + 10, py + 26, 6, 6);
+        ctx.fillRect(px + 16, py + 26, 6, 6);
+      }
+    }
+
+    function drawTextbox() {
+      if (messageTimer <= 0) return;
+
+      const boxHeight = 90;
+      const boxY = canvas.height - boxHeight - 20;
+
+      ctx.fillStyle = "rgba(0,0,0,0.75)";
+      ctx.fillRect(20, boxY, canvas.width - 40, boxHeight);
+
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(20, boxY, canvas.width - 40, boxHeight);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "20px monospace";
+      ctx.fillText(message, 40, canvas.height - 60);
+
+      messageTimer--;
+    }
+
+    function render() {
+      const cam = camera();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (let y = 0; y < MAP_H; y++) {
+        for (let x = 0; x < MAP_W; x++) {
+          const drawX = x * TILE - cam.x;
+          const drawY = y * TILE - cam.y;
+
+          if (
+            drawX > -TILE &&
+            drawY > -TILE &&
+            drawX < canvas.width &&
+            drawY < canvas.height
+          ) {
+            drawTile(map[y][x], drawX, drawY);
+          }
+        }
+      }
+
+      drawPlayer(cam);
+      drawTextbox();
+    }
+
+    function loop() {
+      update();
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+  </script>
 </body>
 </html>
-
