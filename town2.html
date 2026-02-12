@@ -34,7 +34,11 @@
 
     const playerInventory = {};
 
-    // 0 grass, 1 path, 2 tree, 3 dojo/wall, 4 signpost, 5 door, 6 interior floor
+    const playerStats = {
+      discipline: 0
+    };
+
+    // 0 grass, 1 path, 2 tree, 3 dojo/wall, 4 signpost, 5 door, 6 interior floor, 7 training floor
     const OVERWORLD_W = 30;
     const OVERWORLD_H = 30;
 
@@ -72,7 +76,7 @@
 
     const treeClusters = [
       [4, 4], [5, 4], [4, 5], [24, 4], [25, 4], [24, 5],
-       [5, 23], [4, 24], [24, 23], [25, 24], [22, 20], [8, 20]
+      [5, 23], [4, 24], [24, 23], [25, 24], [22, 20], [8, 20]
     ];
     for (const [x, y] of treeClusters) {
       overworldMap[y][x] = 2;
@@ -80,7 +84,7 @@
 
     const INTERIOR_W = 12;
     const INTERIOR_H = 10;
-   const interiorMap = Array.from({ length: INTERIOR_H }, (_, y) =>
+    const interiorMap = Array.from({ length: INTERIOR_H }, (_, y) =>
       Array.from({ length: INTERIOR_W }, (_, x) => {
         if (x === 0 || y === 0 || x === INTERIOR_W - 1 || y === INTERIOR_H - 1) return 3;
         return 6;
@@ -89,6 +93,9 @@
 
     const interiorDoor = { x: Math.floor(INTERIOR_W / 2), y: INTERIOR_H - 1 };
     interiorMap[interiorDoor.y][interiorDoor.x] = 5;
+
+    const trainingTile = { x: 4, y: 5 };
+    interiorMap[trainingTile.y][trainingTile.x] = 7;
 
     // NPC entities are separate from map tiles.
     const npcs = [
@@ -108,6 +115,28 @@
     const keys = {};
     let interactPressed = false;
     let previousWorldState = "overworld";
+
+    function playerTilePosition() {
+      return {
+        x: Math.floor((player.x + TILE / 2) / TILE),
+        y: Math.floor((player.y + TILE / 2) / TILE)
+      };
+    }
+
+    function tryTrainingAction() {
+      const isFreeExploreState = gameState === "overworld" || gameState === "interior";
+      if (!isFreeExploreState) return;
+      if (isDialogueActive() || choiceState.active || doorSequence.active) return;
+      if (worldName !== "interior") return;
+      if (!gameFlags.acceptedTraining) return;
+
+      const tilePos = playerTilePosition();
+      const onTrainingTile = tilePos.x === trainingTile.x && tilePos.y === trainingTile.y;
+      if (!onTrainingTile) return;
+
+      playerStats.discipline += 1;
+      showDialogue("", "You practice your stance. Discipline increased!");
+    }
 
     function toggleInventory() {
       if (gameState === "inventory") {
@@ -131,6 +160,11 @@
 
       if (key === "i" && !e.repeat) {
         toggleInventory();
+        return;
+      }
+
+      if (key === "t" && !e.repeat) {
+        tryTrainingAction();
         return;
       }
 
@@ -408,7 +442,7 @@
       const bottom = Math.floor((player.y + TILE - inset) / TILE) + 1;
 
       for (let ty = top; ty <= bottom; ty++) {
-   if (ty < 0 || ty >= currentMapH) continue;
+        if (ty < 0 || ty >= currentMapH) continue;
 
         for (let tx = left; tx <= right; tx++) {
           if (tx < 0 || tx >= currentMapW) continue;
@@ -640,6 +674,13 @@
         ctx.fillStyle = "#bca58a";
         ctx.fillRect(x, y, TILE, TILE);
         ctx.fillStyle = "#a1887f";
+        ctx.fillRect(x + 2, y + 2, TILE - 4, TILE - 4);
+      }
+
+      if (type === 7) {
+        ctx.fillStyle = "#8d7964";
+        ctx.fillRect(x, y, TILE, TILE);
+        ctx.fillStyle = "#6d5b4c";
         ctx.fillRect(x + 2, y + 2, TILE - 4, TILE - 4);
       }
     }
