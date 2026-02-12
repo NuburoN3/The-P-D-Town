@@ -808,11 +808,11 @@ const px = player.x - cam.x + TILE / 2;
         } else {
           progressRatio = 0;
         }
-      } else {␊
-        const animationProgress = Math.min(1, elapsed / trainingPopup.animDurationMs);␊
-        const displayXP = trainingPopup.startXP + (trainingPopup.targetXP - trainingPopup.startXP) * animationProgress;␊
+      } else {
+        const animationProgress = Math.min(1, elapsed / trainingPopup.animDurationMs);
+        const displayXP = trainingPopup.startXP + (trainingPopup.targetXP - trainingPopup.startXP) * animationProgress;
         progressRatio = Math.min(1, displayXP / trainingPopup.xpNeededSnapshot);
-      }␊
+      }
 
       ctx.save();
       ctx.globalAlpha = fadeRatio;
@@ -824,9 +824,9 @@ const px = player.x - cam.x + TILE / 2;
       ctx.lineWidth = 1;
       ctx.strokeRect(boxX, boxY, boxW, boxH);
 
-      ctx.fillStyle = "#ffffff";␊
-      ctx.font = "12px monospace";␊
-      ctx.fillText(`Lv. ${playerStats.disciplineLevel}`, boxX + 8, boxY + 13);␊
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "12px monospace";
+      ctx.fillText(`Lv. ${playerStats.disciplineLevel}`, boxX + 8, boxY + 13);
       ctx.fillText(`+${trainingPopup.xpGained} XP`, boxX + 78, boxY + 13);
 
       const barX = boxX + 8;
@@ -995,5 +995,4 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
-
 
