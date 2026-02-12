@@ -745,7 +745,7 @@ ctx.fillStyle = "#6d5b4c";
           nx < canvas.width &&
           ny < canvas.height
         ) {
-          ctx.fillStyle = "#7b1fa2";
+ctx.fillStyle = "#7b1fa2";
           ctx.fillRect(nx + 6, ny + 8, 20, 20);
 
           ctx.fillStyle = "#ffe0b2";
@@ -770,8 +770,15 @@ ctx.fillStyle = "#6d5b4c";
 
       const boxW = 120;
       const boxH = 44;
-      const boxX = Math.round(px - boxW / 2);
-      const boxY = Math.round(py - 58);
+      let boxX = Math.round(px - boxW / 2);
+      let boxY = Math.round(py - 58);
+
+      if (boxY < 0) {
+        boxY = Math.round(py + TILE + 10);
+      }
+
+      boxX = Math.max(0, Math.min(boxX, canvas.width - boxW));
+      boxY = Math.max(0, boxY);
       const progressRatio = Math.min(1, playerStats.disciplineXP / playerStats.disciplineXPNeeded);
 
       ctx.save();
@@ -796,13 +803,6 @@ ctx.fillStyle = "#6d5b4c";
 
       ctx.fillStyle = "#263238";
       ctx.fillRect(barX, barY, barW, barH);
-
-      ctx.fillStyle = "#66bb6a";
-      ctx.fillRect(barX, barY, barW * progressRatio, barH);
-
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(barX, barY, barW, barH);
 
       ctx.restore();
     }
@@ -959,4 +959,5 @@ ctx.fillStyle = "#6d5b4c";
   </script>
 </body>
 </html>
+
 
