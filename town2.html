@@ -93,7 +93,7 @@
         width: TILE,
         height: TILE,
         name: "Mr. Hanami",
-        dialogue: "Hello there! My name is Mr. Hanami. Welcome to the dojo."
+        dialogue: ["Hello there!", "Welcome to the dojo.", "I train students here."]
       }
     ];
 
@@ -125,7 +125,8 @@
     };
 
     let dialogueName = "";
-    let message = "";
+    let dialogueLines = [];
+    let dialogueIndex = 0;
 
     const doorSequence = {
       active: false,
@@ -143,18 +144,35 @@
       maxFadeRadius: 0
     };
 
-    function showDialogue(name, text) {
+    function showDialogue(name, textOrLines) {
       dialogueName = (name || "").trim();
-      message = text;
+      dialogueLines = Array.isArray(textOrLines) ? textOrLines : [textOrLines];
+      dialogueIndex = 0;
+    }
+
+    function advanceDialogue() {
+      if (!isDialogueActive()) return;
+
+      if (dialogueIndex < dialogueLines.length - 1) {
+        dialogueIndex++;
+      } else {
+        closeDialogue();
+      }
     }
 
     function closeDialogue() {
       dialogueName = "";
-      message = "";
+      dialogueLines = [];
+      dialogueIndex = 0;
     }
 
     function isDialogueActive() {
-      return message.length > 0;
+      return dialogueLines.length > 0;
+    }
+
+    function currentDialogueLine() {
+      if (!isDialogueActive()) return "";
+      return dialogueLines[dialogueIndex] || "";
     }
 
     function setWorld(name) {
@@ -284,7 +302,7 @@
       if (!interactPressed) return;
 
       if (isDialogueActive()) {
-        closeDialogue();
+        advanceDialogue();
         interactPressed = false;
         return;
       }
@@ -577,10 +595,10 @@
       if (dialogueName) {
         ctx.font = "20px monospace";
         ctx.fillText(dialogueName, 40, boxY + 28);
-        ctx.fillText(message, 40, boxY + 62);
+        ctx.fillText(currentDialogueLine(), 40, boxY + 62);
       } else {
         ctx.font = "20px monospace";
-        ctx.fillText(message, 40, boxY + 48);
+        ctx.fillText(currentDialogueLine(), 40, boxY + 48);
       }
 
     }
