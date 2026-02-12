@@ -440,7 +440,7 @@ image-rendering: pixelated;
       }
 
       doorSequence.maxFadeRadius = Math.hypot(canvas.width, canvas.height);
-      doorSequence.fadeRadius = doorSequence.maxFadeRadius;
+     doorSequence.fadeRadius = doorSequence.maxFadeRadius;
       doorSequence.transitionPhase = "out";
       gameState = "enteringDoor";
       interactPressed = false;
@@ -463,36 +463,6 @@ image-rendering: pixelated;
       if (gameState === "enteringDoor" || gameState === "transition") {
         interactPressed = false;
         return;
-      }
-
-      if (worldName === "interior" && gameFlags.acceptedTraining) {
-        const tilePos = playerTilePosition();
-        const onTrainingTile = tilePos.x === trainingTile.x && tilePos.y === trainingTile.y;
-        if (onTrainingTile) {
-          tryTrainingAction();
-          interactPressed = false;
-          return;
-        }
-      }
-
-      const inset = 5;
-      const left = Math.floor((player.x + inset) / TILE) - 1;
-      const right = Math.floor((player.x + TILE - inset) / TILE) + 1;
-      const top = Math.floor((player.y + inset) / TILE) - 1;
-      const bottom = Math.floor((player.y + TILE - inset) / TILE) + 1;
-
-      for (let ty = top; ty <= bottom; ty++) {
-        if (ty < 0 || ty >= currentMapH) continue;
-
-        for (let tx = left; tx <= right; tx++) {
-          if (tx < 0 || tx >= currentMapW) continue;
-
-          if (currentMap[ty][tx] === 4) {
-            showDialogue("", "The Dojo");
-            interactPressed = false;
-            return;
-          }
-        }
       }
 
       const interactReach = TILE;
@@ -534,6 +504,36 @@ image-rendering: pixelated;
             showDialogue(npc.name, npc.dialogue);
           }
 
+          interactPressed = false;
+          return;
+        }
+      }
+
+      const inset = 5;
+      const left = Math.floor((player.x + inset) / TILE) - 1;
+      const right = Math.floor((player.x + TILE - inset) / TILE) + 1;
+      const top = Math.floor((player.y + inset) / TILE) - 1;
+      const bottom = Math.floor((player.y + TILE - inset) / TILE) + 1;
+
+      for (let ty = top; ty <= bottom; ty++) {
+        if (ty < 0 || ty >= currentMapH) continue;
+
+        for (let tx = left; tx <= right; tx++) {
+          if (tx < 0 || tx >= currentMapW) continue;
+
+          if (currentMap[ty][tx] === 4) {
+            showDialogue("", "The Dojo");
+            interactPressed = false;
+            return;
+          }
+        }
+      }
+
+      if (worldName === "interior" && gameFlags.acceptedTraining) {
+        const tilePos = playerTilePosition();
+        const onTrainingTile = tilePos.x === trainingTile.x && tilePos.y === trainingTile.y;
+        if (onTrainingTile) {
+          tryTrainingAction();
           interactPressed = false;
           return;
         }
@@ -1011,3 +1011,4 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
+
