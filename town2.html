@@ -43,7 +43,10 @@
     const trainingPopup = {
       active: false,
       startedAt: 0,
-      durationMs: 2000
+      durationMs: 2000,
+      startXP: 0,
+      targetXP: 0,
+      animDurationMs: 400
     };
 
     // 0 grass, 1 path, 2 tree, 3 dojo/wall, 4 signpost, 5 door, 6 interior floor, 7 training floor
@@ -142,7 +145,11 @@
       const onTrainingTile = tilePos.x === trainingTile.x && tilePos.y === trainingTile.y;
       if (!onTrainingTile) return;
 
+      const previousXP = playerStats.disciplineXP;
       playerStats.disciplineXP += 1;
+
+      trainingPopup.startXP = previousXP;
+      trainingPopup.targetXP = playerStats.disciplineXP;
       trainingPopup.active = true;
       trainingPopup.startedAt = performance.now();
 
@@ -779,7 +786,9 @@ ctx.fillStyle = "#7b1fa2";
 
       boxX = Math.max(0, Math.min(boxX, canvas.width - boxW));
       boxY = Math.max(0, boxY);
-      const progressRatio = Math.min(1, playerStats.disciplineXP / playerStats.disciplineXPNeeded);
+      const animationProgress = Math.min(1, elapsed / trainingPopup.animDurationMs);
+      const displayXP = trainingPopup.startXP + (trainingPopup.targetXP - trainingPopup.startXP) * animationProgress;
+      const progressRatio = Math.min(1, displayXP / playerStats.disciplineXPNeeded);
 
       ctx.save();
       ctx.globalAlpha = fadeRatio;
