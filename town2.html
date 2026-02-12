@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dojo Town</title>
   <style>
     body {
@@ -28,7 +28,8 @@ image-rendering: pixelated;
     const TILE = 32;
 
     const gameFlags = {
-      acceptedTraining: false
+      acceptedTraining: false,
+      completedTraining: false
     };
 
     const playerInventory = {};
@@ -172,6 +173,9 @@ image-rendering: pixelated;
         trainingPopup.levelUp = true;
         trainingPopup.pendingLevelUpDialogueAt = trainingPopup.startedAt + trainingPopup.animDurationMs;
         playerStats.disciplineLevel += 1;
+        if (!gameFlags.completedTraining && playerStats.disciplineLevel >= 2) {
+          gameFlags.completedTraining = true;
+        }
         playerStats.disciplineXP = 0;
         playerStats.disciplineXPNeeded += 5;
       }
@@ -484,6 +488,12 @@ image-rendering: pixelated;
 
         if (dx <= interactReach && dy <= interactReach) {
           if (npc.hasTrainingChoice) {
+            if (gameFlags.completedTraining) {
+              showDialogue(npc.name, "Excellent. You have mastered the basics. You are ready for the next lesson.");
+              interactPressed = false;
+              return;
+            }
+
             if (gameFlags.acceptedTraining) {
               showDialogue(npc.name, npc.alreadyTrainingDialogue);
               interactPressed = false;
@@ -1016,4 +1026,5 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
+
 
