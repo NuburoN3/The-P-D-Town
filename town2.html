@@ -27,24 +27,25 @@
     const ctx = canvas.getContext("2d");
 
     const TILE = 32;
-    const MAP_W = 30;
-    const MAP_H = 30;
 
-    // 0 grass, 1 path, 2 tree, 3 dojo, 4 signpost
-    const map = Array.from({ length: MAP_H }, (_, y) =>
-      Array.from({ length: MAP_W }, (_, x) => {
-        if (x === 0 || y === 0 || x === MAP_W - 1 || y === MAP_H - 1) return 2;
+    // 0 grass, 1 path, 2 tree, 3 dojo/wall, 4 signpost, 5 door, 6 interior floor
+    const OVERWORLD_W = 30;
+    const OVERWORLD_H = 30;
+
+    const overworldMap = Array.from({ length: OVERWORLD_H }, (_, y) =>
+      Array.from({ length: OVERWORLD_W }, (_, x) => {
+        if (x === 0 || y === 0 || x === OVERWORLD_W - 1 || y === OVERWORLD_H - 1) return 2;
         return 0;
       })
     );
 
     const pathX = 15;
-    for (let y = 2; y < MAP_H - 2; y++) {
-      map[y][pathX] = 1;
+    for (let y = 2; y < OVERWORLD_H - 2; y++) {
+      overworldMap[y][pathX] = 1;
     }
 
     for (let x = 8; x <= 22; x++) {
-      map[15][x] = 1;
+      overworldMap[15][x] = 1;
     }
 
     const dojoTop = 10;
@@ -54,19 +55,34 @@
 
     for (let y = dojoTop; y < dojoTop + dojoH; y++) {
       for (let x = dojoLeft; x < dojoLeft + dojoW; x++) {
-        map[y][x] = 3;
+        overworldMap[y][x] = 3;
       }
     }
 
-    map[14][14] = 4;
+    const overworldDoor = { x: dojoLeft + Math.floor(dojoW / 2), y: dojoTop + dojoH - 1 };
+    overworldMap[overworldDoor.y][overworldDoor.x] = 5;
+
+    overworldMap[14][14] = 4;
 
     const treeClusters = [
       [4, 4], [5, 4], [4, 5], [24, 4], [25, 4], [24, 5],
       [5, 23], [4, 24], [24, 23], [25, 24], [22, 20], [8, 20]
     ];
     for (const [x, y] of treeClusters) {
-      map[y][x] = 2;
+      overworldMap[y][x] = 2;
     }
+
+    const INTERIOR_W = 12;
+    const INTERIOR_H = 10;
+    const interiorMap = Array.from({ length: INTERIOR_H }, (_, y) =>
+      Array.from({ length: INTERIOR_W }, (_, x) => {
+        if (x === 0 || y === 0 || x === INTERIOR_W - 1 || y === INTERIOR_H - 1) return 3;
+        return 6;
+      })
+    );
+
+    const interiorDoor = { x: Math.floor(INTERIOR_W / 2), y: INTERIOR_H - 1 };
+    interiorMap[interiorDoor.y][interiorDoor.x] = 5;
 
     const keys = {};
     let interactPressed = false;
@@ -80,6 +96,12 @@
       keys[e.key.toLowerCase()] = false;
     });
 
+    let currentMap = overworldMap;
+    let currentMapW = OVERWORLD_W;
+    let currentMapH = OVERWORLD_H;
+    let worldName = "overworld";
+    let gameState = "overworld";
+
     const player = {
       x: 15 * TILE,
       y: 18 * TILE,
@@ -92,19 +114,50 @@
     let message = "";
     let messageTimer = 0;
 
+    const doorSequence = {
+      active: false,
+      tx: 0,
+      ty: 0,
+      stepDx: 0,
+      stepDy: 0,
+      stepFrames: 0,
+      frame: 0,
+      targetWorld: "overworld",
+      targetX: 0,
+      targetY: 0,
+      transitionPhase: "out",
+      fadeRadius: 0,
+      maxFadeRadius: 0
+    };
+
     function showMessage(text) {
       message = text;
       messageTimer = 180;
     }
 
-    function isBlockedAtPixel(px, py) {
+    function setWorld(name) {
+      if (name === "overworld") {
+        currentMap = overworldMap;
+        currentMapW = OVERWORLD_W;
+        currentMapH = OVERWORLD_H;
+      } else {
+        currentMap = interiorMap;
+        currentMapW = INTERIOR_W;
+        currentMapH = INTERIOR_H;
+      }
+      worldName = name;
+    }
+
+    function tileAtPixel(px, py) {
       const tx = Math.floor(px / TILE);
       const ty = Math.floor(py / TILE);
+      if (tx < 0 || ty < 0 || tx >= currentMapW || ty >= currentMapH) return 2;
+      return currentMap[ty][tx];
+    }
 
-      if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return true;
-
-      const tile = map[ty][tx];
-      return tile === 2 || tile === 3 || tile === 4;
+    function isBlockedAtPixel(px, py) {
+      const tile = tileAtPixel(px, py);
+      return tile === 2 || tile === 3 || tile === 4 || tile === 5;
     }
 
     function collides(nx, ny) {
@@ -122,8 +175,70 @@
       );
     }
 
+    function doorFromCollision(nx, ny) {
+      const inset = 5;
+      const corners = [
+        [nx + inset, ny + inset],
+        [nx + TILE - inset, ny + inset],
+        [nx + inset, ny + TILE - inset],
+        [nx + TILE - inset, ny + TILE - inset]
+      ];
+
+      for (const [px, py] of corners) {
+        const tx = Math.floor(px / TILE);
+        const ty = Math.floor(py / TILE);
+        if (tx < 0 || ty < 0 || tx >= currentMapW || ty >= currentMapH) continue;
+        if (currentMap[ty][tx] === 5) {
+          return { tx, ty };
+        }
+      }
+      return null;
+    }
+
+    function beginDoorSequence(doorTile) {
+      if (gameState === "enteringDoor" || gameState === "transition") return;
+
+      const playerCenterX = player.x + TILE / 2;
+      const playerCenterY = player.y + TILE / 2;
+      const doorCenterX = doorTile.tx * TILE + TILE / 2;
+      const doorCenterY = doorTile.ty * TILE + TILE / 2;
+      let vx = doorCenterX - playerCenterX;
+      let vy = doorCenterY - playerCenterY;
+      const len = Math.hypot(vx, vy) || 1;
+      vx /= len;
+      vy /= len;
+
+      doorSequence.active = true;
+      doorSequence.tx = doorTile.tx;
+      doorSequence.ty = doorTile.ty;
+      doorSequence.stepDx = vx * 1.5;
+      doorSequence.stepDy = vy * 1.5;
+      doorSequence.stepFrames = 20;
+      doorSequence.frame = 0;
+
+      if (worldName === "overworld") {
+        doorSequence.targetWorld = "interior";
+        doorSequence.targetX = interiorDoor.x * TILE;
+        doorSequence.targetY = (interiorDoor.y - 1) * TILE;
+      } else {
+        doorSequence.targetWorld = "overworld";
+        doorSequence.targetX = overworldDoor.x * TILE;
+        doorSequence.targetY = (overworldDoor.y + 1) * TILE;
+      }
+
+      doorSequence.maxFadeRadius = Math.hypot(canvas.width, canvas.height);
+      doorSequence.fadeRadius = doorSequence.maxFadeRadius;
+      doorSequence.transitionPhase = "out";
+      gameState = "enteringDoor";
+      interactPressed = false;
+    }
+
     function handleInteraction() {
       if (!interactPressed) return;
+      if (gameState === "enteringDoor" || gameState === "transition") {
+        interactPressed = false;
+        return;
+      }
 
       const inset = 5;
       const left = Math.floor((player.x + inset) / TILE) - 1;
@@ -132,12 +247,12 @@
       const bottom = Math.floor((player.y + TILE - inset) / TILE) + 1;
 
       for (let ty = top; ty <= bottom; ty++) {
-        if (ty < 0 || ty >= MAP_H) continue;
+        if (ty < 0 || ty >= currentMapH) continue;
 
         for (let tx = left; tx <= right; tx++) {
-          if (tx < 0 || tx >= MAP_W) continue;
+          if (tx < 0 || tx >= currentMapW) continue;
 
-          if (map[ty][tx] === 4) {
+          if (currentMap[ty][tx] === 4) {
             showMessage("The Dojo");
             interactPressed = false;
             return;
@@ -148,7 +263,7 @@
       interactPressed = false;
     }
 
-    function update() {
+    function updatePlayerMovement() {
       let dx = 0;
       let dy = 0;
 
@@ -180,30 +295,95 @@
       const nx = player.x + dx;
       const ny = player.y + dy;
 
-      if (!collides(nx, player.y)) player.x = nx;
-      if (!collides(player.x, ny)) player.y = ny;
+      if (!collides(nx, player.y)) {
+        player.x = nx;
+      } else if (dx !== 0) {
+        const doorTile = doorFromCollision(nx, player.y);
+        if (doorTile) {
+          beginDoorSequence(doorTile);
+          return;
+        }
+      }
+
+      if (!collides(player.x, ny)) {
+        player.y = ny;
+      } else if (dy !== 0) {
+        const doorTile = doorFromCollision(player.x, ny);
+        if (doorTile) {
+          beginDoorSequence(doorTile);
+          return;
+        }
+      }
 
       if (player.walking) {
         player.frame = (player.frame + 1) % 24;
       }
+    }
 
-      handleInteraction();
+    function updateDoorEntry() {
+      player.walking = true;
+      player.frame = (player.frame + 1) % 24;
+
+      if (doorSequence.frame < doorSequence.stepFrames) {
+        player.x += doorSequence.stepDx;
+        player.y += doorSequence.stepDy;
+        doorSequence.frame++;
+      } else {
+        gameState = "transition";
+      }
+    }
+
+    function updateTransition() {
+      player.walking = false;
+
+      if (doorSequence.transitionPhase === "out") {
+        doorSequence.fadeRadius -= 20;
+        if (doorSequence.fadeRadius <= 0) {
+          doorSequence.fadeRadius = 0;
+          setWorld(doorSequence.targetWorld);
+          player.x = doorSequence.targetX;
+          player.y = doorSequence.targetY;
+          player.dir = doorSequence.targetWorld === "interior" ? "up" : "down";
+          doorSequence.transitionPhase = "in";
+        }
+      } else {
+        doorSequence.fadeRadius += 20;
+        if (doorSequence.fadeRadius >= doorSequence.maxFadeRadius) {
+          doorSequence.fadeRadius = doorSequence.maxFadeRadius;
+          doorSequence.active = false;
+          gameState = worldName;
+        }
+      }
+    }
+
+    function update() {
+      if (gameState === "overworld" || gameState === "interior") {
+        updatePlayerMovement();
+      } else if (gameState === "enteringDoor") {
+        updateDoorEntry();
+      } else if (gameState === "transition") {
+        updateTransition();
+      }
+
+      if (gameState !== "transition") {
+        handleInteraction();
+      }
     }
 
     function camera() {
-      const worldW = MAP_W * TILE;
-      const worldH = MAP_H * TILE;
+      const worldW = currentMapW * TILE;
+      const worldH = currentMapH * TILE;
 
       let cx = player.x - canvas.width / 2 + TILE / 2;
       let cy = player.y - canvas.height / 2 + TILE / 2;
 
-      cx = Math.max(0, Math.min(cx, worldW - canvas.width));
-      cy = Math.max(0, Math.min(cy, worldH - canvas.height));
+      cx = Math.max(0, Math.min(cx, Math.max(0, worldW - canvas.width)));
+      cy = Math.max(0, Math.min(cy, Math.max(0, worldH - canvas.height)));
 
       return { x: cx, y: cy };
     }
 
-    function drawTile(type, x, y) {
+    function drawTile(type, x, y, tileX, tileY) {
       if (type === 0) {
         ctx.fillStyle = "#7ecf7e";
         ctx.fillRect(x, y, TILE, TILE);
@@ -231,6 +411,29 @@
         ctx.fillRect(x + 12, y + 8, 8, 18);
         ctx.fillStyle = "#d7ccc8";
         ctx.fillRect(x + 6, y + 6, 20, 10);
+      }
+
+      if (type === 5) {
+        const isActiveDoor =
+          gameState === "enteringDoor" &&
+          tileX === doorSequence.tx &&
+          tileY === doorSequence.ty;
+
+        ctx.fillStyle = isActiveDoor ? "#ffcc80" : "#5d4037";
+        ctx.fillRect(x, y, TILE, TILE);
+
+        ctx.fillStyle = isActiveDoor ? "#ffe0b2" : "#8d6e63";
+        ctx.fillRect(x + 6, y + 4, 20, 24);
+
+        ctx.fillStyle = "#3e2723";
+        ctx.fillRect(x + 18, y + 14, 3, 3);
+      }
+
+      if (type === 6) {
+        ctx.fillStyle = "#bca58a";
+        ctx.fillRect(x, y, TILE, TILE);
+        ctx.fillStyle = "#a1887f";
+        ctx.fillRect(x + 2, y + 2, TILE - 4, TILE - 4);
       }
     }
 
@@ -274,12 +477,28 @@
       messageTimer--;
     }
 
+    function drawDoorTransition(cam) {
+      if (gameState !== "transition") return;
+
+      const px = player.x - cam.x + TILE / 2;
+      const py = player.y - cam.y + TILE / 2;
+
+      ctx.save();
+      ctx.fillStyle = "black";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.beginPath();
+      ctx.arc(px, py, doorSequence.fadeRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     function render() {
       const cam = camera();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      for (let y = 0; y < MAP_H; y++) {
-        for (let x = 0; x < MAP_W; x++) {
+      for (let y = 0; y < currentMapH; y++) {
+        for (let x = 0; x < currentMapW; x++) {
           const drawX = x * TILE - cam.x;
           const drawY = y * TILE - cam.y;
 
@@ -289,12 +508,13 @@
             drawX < canvas.width &&
             drawY < canvas.height
           ) {
-            drawTile(map[y][x], drawX, drawY);
+            drawTile(currentMap[y][x], drawX, drawY, x, y);
           }
         }
       }
 
       drawPlayer(cam);
+      drawDoorTransition(cam);
       drawTextbox();
     }
 
