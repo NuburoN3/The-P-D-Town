@@ -84,6 +84,19 @@
     const interiorDoor = { x: Math.floor(INTERIOR_W / 2), y: INTERIOR_H - 1 };
     interiorMap[interiorDoor.y][interiorDoor.x] = 5;
 
+    // NPC entities are separate from map tiles.
+    const npcs = [
+      {
+        world: "interior",
+        x: 7 * TILE,
+        y: 4 * TILE,
+        width: TILE,
+        height: TILE,
+        name: "Mr. Hanami",
+        dialogue: "Hello there! My name is Mr. Hanami. Welcome to the dojo."
+      }
+    ];
+
     const keys = {};
     let interactPressed = false;
 
@@ -177,6 +190,31 @@
       );
     }
 
+    function rectsOverlap(a, b) {
+      return (
+        a.x < b.x + b.width &&
+        a.x + a.width > b.x &&
+        a.y < b.y + b.height &&
+        a.y + a.height > b.y
+      );
+    }
+
+    function collidesWithNPC(nx, ny) {
+      const playerRect = {
+        x: nx + 5,
+        y: ny + 5,
+        width: TILE - 10,
+        height: TILE - 10
+      };
+
+      for (const npc of npcs) {
+        if (npc.world !== worldName) continue;
+        if (rectsOverlap(playerRect, npc)) return true;
+      }
+
+      return false;
+    }
+
     function doorFromCollision(nx, ny) {
       const inset = 5;
       const corners = [
@@ -262,6 +300,25 @@
         }
       }
 
+      const interactReach = TILE;
+      const playerCenterX = player.x + TILE / 2;
+      const playerCenterY = player.y + TILE / 2;
+
+      for (const npc of npcs) {
+        if (npc.world !== worldName) continue;
+
+        const npcCenterX = npc.x + npc.width / 2;
+        const npcCenterY = npc.y + npc.height / 2;
+        const dx = Math.abs(playerCenterX - npcCenterX);
+        const dy = Math.abs(playerCenterY - npcCenterY);
+
+        if (dx <= interactReach && dy <= interactReach) {
+          showDialogue("Hanami", "Welcome to the Dojo.");
+          interactPressed = false;
+          return;
+        }
+      }
+
       interactPressed = false;
     }
 
@@ -297,7 +354,7 @@
       const nx = player.x + dx;
       const ny = player.y + dy;
 
-      if (!collides(nx, player.y)) {
+      if (!collides(nx, player.y) && !collidesWithNPC(nx, player.y)) {
         player.x = nx;
       } else if (dx !== 0) {
         const doorTile = doorFromCollision(nx, player.y);
@@ -307,7 +364,7 @@
         }
       }
 
-      if (!collides(player.x, ny)) {
+      if (!collides(player.x, ny) && !collidesWithNPC(player.x, ny)) {
         player.y = ny;
       } else if (dy !== 0) {
         const doorTile = doorFromCollision(player.x, ny);
@@ -459,6 +516,34 @@
       }
     }
 
+    function drawNPCs(cam) {
+      if (worldName !== "interior") return;
+
+      for (const npc of npcs) {
+        if (npc.world !== worldName) continue;
+
+        const nx = npc.x - cam.x;
+        const ny = npc.y - cam.y;
+
+        if (
+          nx > -npc.width &&
+          ny > -npc.height &&
+          nx < canvas.width &&
+          ny < canvas.height
+        ) {
+          ctx.fillStyle = "#7b1fa2";
+          ctx.fillRect(nx + 6, ny + 8, 20, 20);
+
+          ctx.fillStyle = "#ffe0b2";
+          ctx.fillRect(nx + 10, ny + 4, 12, 8);
+
+          ctx.fillStyle = "#4a148c";
+          ctx.fillRect(nx + 10, ny + 26, 6, 6);
+          ctx.fillRect(nx + 16, ny + 26, 6, 6);
+        }
+      }
+    }
+
     function drawTextbox() {
       if (messageTimer <= 0) return;
 
@@ -521,6 +606,7 @@
         }
       }
 
+      drawNPCs(cam);
       drawPlayer(cam);
       drawDoorTransition(cam);
       drawTextbox();
