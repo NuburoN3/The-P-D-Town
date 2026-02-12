@@ -690,7 +690,7 @@
       }
     }
 
-    function drawTextbox() {␊
+    function drawTextbox() {
       if (!isDialogueActive() || gameState === "inventory") return;
 
       const boxHeight = choiceState.active ? 130 : 90;
@@ -721,8 +721,8 @@
       }
     }
 
-    function drawDoorTransition(cam) {␊
-      if (gameState !== "transition") return;␊
+    function drawDoorTransition(cam) {
+      if (gameState !== "transition") return;
 
       const px = player.x - cam.x + TILE / 2;
       const py = player.y - cam.y + TILE / 2;
@@ -811,3 +811,4 @@
   </script>
 </body>
 </html>
+
