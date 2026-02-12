@@ -111,6 +111,7 @@
       frame: 0
     };
 
+    let dialogueName = "";
     let message = "";
     let messageTimer = 0;
 
@@ -130,7 +131,8 @@
       maxFadeRadius: 0
     };
 
-    function showMessage(text) {
+    function showDialogue(name, text) {
+      dialogueName = (name || "").trim();
       message = text;
       messageTimer = 180;
     }
@@ -253,10 +255,10 @@
           if (tx < 0 || tx >= currentMapW) continue;
 
           if (currentMap[ty][tx] === 4) {
-            showMessage("The Dojo");
-            interactPressed = false;
-            return;
-          }
+            showDialogue("", "The Dojo");
+            interactPressed = false;␊
+            return;␊
+          }␊
         }
       }
 
@@ -471,8 +473,14 @@
       ctx.strokeRect(20, boxY, canvas.width - 40, boxHeight);
 
       ctx.fillStyle = "#ffffff";
-      ctx.font = "20px monospace";
-      ctx.fillText(message, 40, canvas.height - 60);
+      if (dialogueName) {
+        ctx.font = "20px monospace";
+        ctx.fillText(dialogueName, 40, boxY + 28);
+        ctx.fillText(message, 40, boxY + 62);
+      } else {
+        ctx.font = "20px monospace";
+        ctx.fillText(message, 40, boxY + 48);
+      }
 
       messageTimer--;
     }
@@ -498,12 +506,6 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       for (let y = 0; y < currentMapH; y++) {
-        for (let x = 0; x < currentMapW; x++) {
-          const drawX = x * TILE - cam.x;
-          const drawY = y * TILE - cam.y;
-
-          if (
-            drawX > -TILE &&
             drawY > -TILE &&
             drawX < canvas.width &&
             drawY < canvas.height
@@ -528,3 +530,4 @@
   </script>
 </body>
 </html>
+
