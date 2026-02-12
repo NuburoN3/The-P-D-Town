@@ -326,11 +326,11 @@
         const dx = Math.abs(playerCenterX - npcCenterX);
         const dy = Math.abs(playerCenterY - npcCenterY);
 
-        if (dx <= interactReach && dy <= interactReach) {␊
+        if (dx <= interactReach && dy <= interactReach) {
           showDialogue(npc.name, npc.dialogue);
-          interactPressed = false;␊
-          return;␊
-        }␊
+          interactPressed = false;
+          return;
+        }
       }
 
       interactPressed = false;
@@ -560,7 +560,7 @@
       }
     }
 
-    function drawTextbox() {␊
+    function drawTextbox() {
       if (!isDialogueActive()) return;
 
       const boxHeight = 90;
@@ -637,5 +637,4 @@
   </script>
 </body>
 </html>
-
 
