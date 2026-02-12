@@ -80,7 +80,7 @@
 
     const INTERIOR_W = 12;
     const INTERIOR_H = 10;
-    const interiorMap = Array.from({ length: INTERIOR_H }, (_, y) =>
+   const interiorMap = Array.from({ length: INTERIOR_H }, (_, y) =>
       Array.from({ length: INTERIOR_W }, (_, x) => {
         if (x === 0 || y === 0 || x === INTERIOR_W - 1 || y === INTERIOR_H - 1) return 3;
         return 6;
@@ -107,10 +107,30 @@
 
     const keys = {};
     let interactPressed = false;
+    let previousWorldState = "overworld";
+
+    function toggleInventory() {
+      if (gameState === "inventory") {
+        gameState = previousWorldState;
+        interactPressed = false;
+        return;
+      }
+
+      if (gameState !== "overworld" && gameState !== "interior") return;
+
+      previousWorldState = gameState;
+      gameState = "inventory";
+      interactPressed = false;
+    }
 
     addEventListener("keydown", (e) => {
       const key = e.key.toLowerCase();
       keys[key] = true;
+
+      if (key === "i" && !e.repeat) {
+        toggleInventory();
+        return;
+      }
 
       if (choiceState.active) {
         if (!e.repeat && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
@@ -361,6 +381,11 @@
     }
 
     function handleInteraction() {
+      if (gameState === "inventory") {
+        interactPressed = false;
+        return;
+      }
+
       if (!interactPressed) return;
 
       if (isDialogueActive()) {
@@ -665,8 +690,8 @@
       }
     }
 
-    function drawTextbox() {
-      if (!isDialogueActive()) return;
+    function drawTextbox() {␊
+      if (!isDialogueActive() || gameState === "inventory") return;
 
       const boxHeight = choiceState.active ? 130 : 90;
       const boxY = canvas.height - boxHeight - 20;
@@ -696,8 +721,8 @@
       }
     }
 
-    function drawDoorTransition(cam) {
-      if (gameState !== "transition") return;
+    function drawDoorTransition(cam) {␊
+      if (gameState !== "transition") return;␊
 
       const px = player.x - cam.x + TILE / 2;
       const py = player.y - cam.y + TILE / 2;
@@ -710,6 +735,43 @@
       ctx.arc(px, py, doorSequence.fadeRadius, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
+    }
+
+    function drawInventoryOverlay() {
+      if (gameState !== "inventory") return;
+
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const boxW = 420;
+      const boxH = 280;
+      const boxX = (canvas.width - boxW) / 2;
+      const boxY = (canvas.height - boxH) / 2;
+
+      ctx.fillStyle = "rgba(22,28,38,0.96)";
+      ctx.fillRect(boxX, boxY, boxW, boxH);
+
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "28px monospace";
+      ctx.fillText("Inventory", boxX + 24, boxY + 42);
+
+      const entries = Object.entries(playerInventory);
+      ctx.font = "20px monospace";
+
+      if (entries.length === 0) {
+        ctx.fillText("(No items)", boxX + 24, boxY + 90);
+        return;
+      }
+
+      let row = 0;
+      for (const [itemName, quantity] of entries) {
+        ctx.fillText(`${itemName} x${quantity}`, boxX + 24, boxY + 90 + row * 28);
+        row++;
+      }
     }
 
     function render() {
@@ -735,6 +797,7 @@
       drawNPCs(cam);
       drawPlayer(cam);
       drawDoorTransition(cam);
+      drawInventoryOverlay();
       drawTextbox();
     }
 
