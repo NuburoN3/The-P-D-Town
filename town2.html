@@ -58,7 +58,7 @@
       }
     }
 
-    map[14][15] = 4;
+    map[14][14] = 4;
 
     const treeClusters = [
       [4, 4], [5, 4], [4, 5], [24, 4], [25, 4], [24, 5],
@@ -125,16 +125,24 @@
     function handleInteraction() {
       if (!interactPressed) return;
 
-      let tx = Math.floor(player.x / TILE);
-      let ty = Math.floor(player.y / TILE);
+      const inset = 5;
+      const left = Math.floor((player.x + inset) / TILE) - 1;
+      const right = Math.floor((player.x + TILE - inset) / TILE) + 1;
+      const top = Math.floor((player.y + inset) / TILE) - 1;
+      const bottom = Math.floor((player.y + TILE - inset) / TILE) + 1;
 
-      if (player.dir === "up") ty--;
-      if (player.dir === "down") ty++;
-      if (player.dir === "left") tx--;
-      if (player.dir === "right") tx++;
+      for (let ty = top; ty <= bottom; ty++) {
+        if (ty < 0 || ty >= MAP_H) continue;
 
-      if (map[ty] && map[ty][tx] === 4) {
-        showMessage("The Dojo");
+        for (let tx = left; tx <= right; tx++) {
+          if (tx < 0 || tx >= MAP_W) continue;
+
+          if (map[ty][tx] === 4) {
+            showMessage("The Dojo");
+            interactPressed = false;
+            return;
+          }
+        }
       }
 
       interactPressed = false;
