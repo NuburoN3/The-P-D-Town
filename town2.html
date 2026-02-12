@@ -21,8 +21,7 @@
 </head>
 <body>
   <canvas id="game" width="640" height="480"></canvas>
-
-  <script>
+ <script>
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d");
 
@@ -46,7 +45,9 @@
       durationMs: 2000,
       startXP: 0,
       targetXP: 0,
-      animDurationMs: 400
+      animDurationMs: 400,
+      levelUp: false,
+      levelUpHoldMs: 250
     };
 
     // 0 grass, 1 path, 2 tree, 3 dojo/wall, 4 signpost, 5 door, 6 interior floor, 7 training floor
@@ -125,7 +126,7 @@
 
     const keys = {};
     let interactPressed = false;
-    let previousWorldState = "overworld";
+   let previousWorldState = "overworld";
 
     function playerTilePosition() {
       return {
@@ -150,10 +151,12 @@
 
       trainingPopup.startXP = previousXP;
       trainingPopup.targetXP = playerStats.disciplineXP;
+      trainingPopup.levelUp = false;
       trainingPopup.active = true;
       trainingPopup.startedAt = performance.now();
 
       if (playerStats.disciplineXP >= playerStats.disciplineXPNeeded) {
+        trainingPopup.levelUp = true;
         playerStats.disciplineLevel += 1;
         playerStats.disciplineXP = 0;
         playerStats.disciplineXPNeeded += 5;
@@ -178,6 +181,7 @@
       gameState = "inventory";
       interactPressed = false;
     }
+
 
     addEventListener("keydown", (e) => {
       const key = e.key.toLowerCase();
@@ -600,7 +604,7 @@
     function updateTransition() {
       player.walking = false;
 
-      if (doorSequence.transitionPhase === "out") {
+     if (doorSequence.transitionPhase === "out") {
         doorSequence.fadeRadius -= 20;
         if (doorSequence.fadeRadius <= 0) {
           doorSequence.fadeRadius = 0;
@@ -625,6 +629,7 @@
         const elapsed = performance.now() - trainingPopup.startedAt;
         if (elapsed >= trainingPopup.durationMs) {
           trainingPopup.active = false;
+          trainingPopup.levelUp = false;
         }
       }
 
@@ -761,7 +766,7 @@ ctx.fillStyle = "#7b1fa2";
           ctx.fillStyle = "#4a148c";
           ctx.fillRect(nx + 10, ny + 26, 6, 6);
           ctx.fillRect(nx + 16, ny + 26, 6, 6);
-        }
+    }
       }
     }
 
@@ -786,9 +791,22 @@ ctx.fillStyle = "#7b1fa2";
 
       boxX = Math.max(0, Math.min(boxX, canvas.width - boxW));
       boxY = Math.max(0, boxY);
-      const animationProgress = Math.min(1, elapsed / trainingPopup.animDurationMs);
-      const displayXP = trainingPopup.startXP + (trainingPopup.targetXP - trainingPopup.startXP) * animationProgress;
-      const progressRatio = Math.min(1, displayXP / playerStats.disciplineXPNeeded);
+      let progressRatio;
+      if (trainingPopup.levelUp) {
+        const fillProgress = Math.min(1, elapsed / trainingPopup.animDurationMs);
+        const holdEnd = trainingPopup.animDurationMs + trainingPopup.levelUpHoldMs;
+        if (elapsed < trainingPopup.animDurationMs) {
+          progressRatio = fillProgress;
+        } else if (elapsed < holdEnd) {
+          progressRatio = 1;
+        } else {
+          progressRatio = 0;
+        }
+      } else {
+        const animationProgress = Math.min(1, elapsed / trainingPopup.animDurationMs);
+        const displayXP = trainingPopup.startXP + (trainingPopup.targetXP - trainingPopup.startXP) * animationProgress;
+        progressRatio = Math.min(1, displayXP / playerStats.disciplineXPNeeded);
+      }
 
       ctx.save();
       ctx.globalAlpha = fadeRatio;
@@ -971,3 +989,4 @@ ctx.fillStyle = "#7b1fa2";
   </script>
 </body>
 </html>
+
