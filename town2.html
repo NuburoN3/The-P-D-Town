@@ -14,7 +14,7 @@
     canvas {
       display: block;
       margin: auto;
-      image-rendering: pixelated;
+image-rendering: pixelated;
       background: #a7d9a8;
     }
   </style>
@@ -45,6 +45,8 @@
       durationMs: 2000,
       startXP: 0,
       targetXP: 0,
+      xpGained: 0,
+      xpNeededSnapshot: 0,
       animDurationMs: 400,
       levelUp: false,
       levelUpHoldMs: 250
@@ -121,7 +123,7 @@
         dialogue: ["Hello there!", "Welcome to the dojo.", "I train students here", "where they practice Hana Sakura style Karate", "which means \"the way of the cherry blossom\".", "Would you like me to teach you?"],
         alreadyTrainingDialogue: "Your training has already begun. Focus your mind.",
         hasTrainingChoice: true
-      }
+ }
     ];
 
     const keys = {};
@@ -146,11 +148,15 @@
       const onTrainingTile = tilePos.x === trainingTile.x && tilePos.y === trainingTile.y;
       if (!onTrainingTile) return;
 
-      const previousXP = playerStats.disciplineXP;
-      playerStats.disciplineXP += 1;
+      const startXP = playerStats.disciplineXP;
+      const xpEarned = 1;
+      trainingPopup.xpNeededSnapshot = playerStats.disciplineXPNeeded;
 
-      trainingPopup.startXP = previousXP;
+      playerStats.disciplineXP += xpEarned;
+
+      trainingPopup.startXP = startXP;
       trainingPopup.targetXP = playerStats.disciplineXP;
+      trainingPopup.xpGained = xpEarned;
       trainingPopup.levelUp = false;
       trainingPopup.active = true;
       trainingPopup.startedAt = performance.now();
@@ -777,7 +783,7 @@ ctx.fillStyle = "#7b1fa2";
       const fadeRatio = Math.max(0, 1 - elapsed / trainingPopup.durationMs);
       if (fadeRatio <= 0) return;
 
-      const px = player.x - cam.x + TILE / 2;
+const px = player.x - cam.x + TILE / 2;
       const py = player.y - cam.y;
 
       const boxW = 120;
@@ -802,11 +808,11 @@ ctx.fillStyle = "#7b1fa2";
         } else {
           progressRatio = 0;
         }
-      } else {
-        const animationProgress = Math.min(1, elapsed / trainingPopup.animDurationMs);
-        const displayXP = trainingPopup.startXP + (trainingPopup.targetXP - trainingPopup.startXP) * animationProgress;
-        progressRatio = Math.min(1, displayXP / playerStats.disciplineXPNeeded);
-      }
+      } else {␊
+        const animationProgress = Math.min(1, elapsed / trainingPopup.animDurationMs);␊
+        const displayXP = trainingPopup.startXP + (trainingPopup.targetXP - trainingPopup.startXP) * animationProgress;␊
+        progressRatio = Math.min(1, displayXP / trainingPopup.xpNeededSnapshot);
+      }␊
 
       ctx.save();
       ctx.globalAlpha = fadeRatio;
@@ -818,10 +824,10 @@ ctx.fillStyle = "#7b1fa2";
       ctx.lineWidth = 1;
       ctx.strokeRect(boxX, boxY, boxW, boxH);
 
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "12px monospace";
-      ctx.fillText(`Lv. ${playerStats.disciplineLevel}`, boxX + 8, boxY + 13);
-      ctx.fillText("+1 XP", boxX + 78, boxY + 13);
+      ctx.fillStyle = "#ffffff";␊
+      ctx.font = "12px monospace";␊
+      ctx.fillText(`Lv. ${playerStats.disciplineLevel}`, boxX + 8, boxY + 13);␊
+      ctx.fillText(`+${trainingPopup.xpGained} XP`, boxX + 78, boxY + 13);
 
       const barX = boxX + 8;
       const barY = boxY + 21;
@@ -989,4 +995,5 @@ ctx.fillStyle = "#7b1fa2";
   </script>
 </body>
 </html>
+
 
