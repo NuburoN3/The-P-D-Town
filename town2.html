@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+<meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dojo Town</title>
   <style>
@@ -27,6 +27,10 @@
     const ctx = canvas.getContext("2d");
 
     const TILE = 32;
+
+    const gameFlags = {
+      acceptedTraining: false
+    };
 
     // 0 grass, 1 path, 2 tree, 3 dojo/wall, 4 signpost, 5 door, 6 interior floor
     const OVERWORLD_W = 30;
@@ -66,7 +70,7 @@
 
     const treeClusters = [
       [4, 4], [5, 4], [4, 5], [24, 4], [25, 4], [24, 5],
-      [5, 23], [4, 24], [24, 23], [25, 24], [22, 20], [8, 20]
+       [5, 23], [4, 24], [24, 23], [25, 24], [22, 20], [8, 20]
     ];
     for (const [x, y] of treeClusters) {
       overworldMap[y][x] = 2;
@@ -94,6 +98,7 @@
         height: TILE,
         name: "Mr. Hanami",
         dialogue: ["Hello there!", "Welcome to the dojo.", "I train students here", "where they practice Hana Sakura style Karate", "which means \"the way of the cherry blossom\".", "Would you like me to teach you?"],
+        alreadyTrainingDialogue: "Your training has already begun. Focus your mind.",
         hasTrainingChoice: true
       }
     ];
@@ -374,7 +379,7 @@
       const bottom = Math.floor((player.y + TILE - inset) / TILE) + 1;
 
       for (let ty = top; ty <= bottom; ty++) {
-        if (ty < 0 || ty >= currentMapH) continue;
+   if (ty < 0 || ty >= currentMapH) continue;
 
         for (let tx = left; tx <= right; tx++) {
           if (tx < 0 || tx >= currentMapW) continue;
@@ -401,9 +406,16 @@
 
         if (dx <= interactReach && dy <= interactReach) {
           if (npc.hasTrainingChoice) {
+            if (gameFlags.acceptedTraining) {
+              showDialogue(npc.name, npc.alreadyTrainingDialogue);
+              interactPressed = false;
+              return;
+            }
+
             showDialogue(npc.name, npc.dialogue, () => {
               openYesNoChoice((selectedOption) => {
                 if (selectedOption === "Yes") {
+                  gameFlags.acceptedTraining = true;
                   showDialogue(npc.name, "Very good. Training begins with discipline.");
                 } else {
                   showDialogue(npc.name, "Come speak to me when you are ready.");
@@ -729,3 +741,4 @@
   </script>
 </body>
 </html>
+
