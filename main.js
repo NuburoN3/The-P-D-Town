@@ -242,6 +242,8 @@ const player = {
   frame: 0
 };
 
+const cam = { x: 0, y: 0 };
+
 const keys = {};
 let interactPressed = false;
 
@@ -888,6 +890,8 @@ function update() {
   if (gameState !== "transition") {
     handleInteraction();
   }
+
+  camera();
 }
 
 // ============================================================================
@@ -901,10 +905,13 @@ function camera() {
   let cx = player.x - canvas.width / 2 + TILE / 2;
   let cy = player.y - canvas.height / 2 + TILE / 2;
 
-  cx = Math.max(0, Math.min(cx, Math.max(0, worldW - canvas.width)));
-  cy = Math.max(0, Math.min(cy, Math.max(0, worldH - canvas.height)));
+  const minX = Math.min(0, worldW - canvas.width);
+  const maxX = Math.max(0, worldW - canvas.width);
+  const minY = Math.min(0, worldH - canvas.height);
+  const maxY = Math.max(0, worldH - canvas.height);
 
-  return { x: cx, y: cy };
+  cam.x = Math.max(minX, Math.min(cx, maxX));
+  cam.y = Math.max(minY, Math.min(cy, maxY));
 }
 
 // ============================================================================
@@ -1257,7 +1264,6 @@ function drawInventoryOverlay() {
 }
 
 function render() {
-  const cam = camera();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // Draw map
