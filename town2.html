@@ -1012,10 +1012,11 @@ const px = player.x - cam.x + TILE / 2;
       if (pageComplete && !choiceState.active && blink) {
         const indicatorText = "►";
         const indicatorX = canvas.width - 20 - 18 - ctx.measureText(indicatorText).width;
-        const indicatorY = boxY + boxHeight - 12;
+        const bobOffsetY = Math.sin(performance.now() * 0.008) * 3;
+        const indicatorY = boxY + boxHeight - 12 + bobOffsetY;
         ctx.fillText(indicatorText, indicatorX, indicatorY);
-      }␊
-    }␊
+      }
+    }
 
     function drawDoorTransition(cam) {
       if (gameState !== "transition") return;
@@ -1138,6 +1139,7 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
+
 
 
 
