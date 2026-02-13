@@ -124,8 +124,7 @@ image-rendering: pixelated;
         y: 4 * TILE,
         width: TILE,
         height: TILE,
-        spriteWidth: TILE * 2,
-        spriteHeight: TILE * 2.5,
+        spriteScale: 1.35,
         name: "Mr. Hanami",
         sprite: hanamiSprite,
         dialogue: ["Hello there!", "Welcome to the dojo.", "I train students here", "where they practice Hana Sakura style Karate", "which means \"the way of the cherry blossom\".", "Would you like me to teach you?"],
@@ -858,7 +857,14 @@ ctx.fillStyle = "#6d5b4c";
           ny < canvas.height
         ) {
           if (npc.sprite) {
-            if (npc.spriteWidth && npc.spriteHeight) {
+            if (npc.spriteScale && npc.sprite.width && npc.sprite.height) {
+              const drawWidth = npc.sprite.width * npc.spriteScale;
+              const drawHeight = npc.sprite.height * npc.spriteScale;
+              const drawX = Math.round(npc.x - cam.x - (drawWidth - TILE) / 2);
+              const drawY = Math.round(npc.y - cam.y - (drawHeight - TILE));
+
+              ctx.drawImage(npc.sprite, drawX, drawY, drawWidth, drawHeight);
+            } else if (npc.spriteWidth && npc.spriteHeight) {
               const drawX = Math.round(npc.x - cam.x - (npc.spriteWidth - TILE) / 2);
               const drawY = Math.round(npc.y - cam.y - (npc.spriteHeight - TILE));
 
@@ -1169,10 +1175,3 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
-
-
-
-
-
-
-
