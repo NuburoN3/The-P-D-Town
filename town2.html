@@ -246,7 +246,7 @@ image-rendering: pixelated;
     let dialogueName = "";
     let dialogueLines = [];
     let dialogueIndex = 0;
-    let dialogueEndAction = null;
+let dialogueEndAction = null;
 
     const choiceState = {
       active: false,
@@ -273,7 +273,35 @@ image-rendering: pixelated;
 
     function showDialogue(name, textOrLines, endAction = null) {
       dialogueName = (name || "").trim();
-      dialogueLines = Array.isArray(textOrLines) ? textOrLines : [textOrLines];
+      const sourceLines = Array.isArray(textOrLines) ? textOrLines : [textOrLines];
+
+      ctx.save();
+      ctx.font = "20px monospace";
+
+      const textMaxWidth = canvas.width - 80;
+      const lineSpacing = 24;
+      const boxHeight = 90;
+      const boxY = canvas.height - boxHeight - 20;
+      const dialogueTextStartY = dialogueName ? boxY + 62 : boxY + 48;
+      const maxBaselineY = boxY + boxHeight - 4;
+      const maxLinesPerPage = Math.max(
+        1,
+        Math.floor((maxBaselineY - dialogueTextStartY) / lineSpacing) + 1
+      );
+
+      const pagedDialogue = [];
+
+      for (const entry of sourceLines) {
+        const wrapped = wrapText(ctx, String(entry ?? ""), textMaxWidth);
+
+        for (let i = 0; i < wrapped.length; i += maxLinesPerPage) {
+          const pageLines = wrapped.slice(i, i + maxLinesPerPage);
+          pagedDialogue.push(pageLines.join("\n"));
+        }
+      }
+
+      dialogueLines = pagedDialogue;
+      ctx.restore();
       dialogueIndex = 0;
       dialogueEndAction = endAction;
       closeChoice();
@@ -1057,3 +1085,4 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
+
