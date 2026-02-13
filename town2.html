@@ -973,6 +973,7 @@ const px = player.x - cam.x + TILE / 2;
       const textStartX = 40;
       const lineSpacing = 24;
       updateVisibleCharacters();
+
       const fullPageLines = currentDialogueLine().split("\n");
       const wrappedLines = [];
       let remainingCharacters = visibleCharacters;
@@ -996,6 +997,15 @@ const px = player.x - cam.x + TILE / 2;
 
       for (let i = 0; i < wrappedLines.length; i++) {
         ctx.fillText(wrappedLines[i], textStartX, centeredStartY + i * lineSpacing);
+      }
+
+      const pageComplete = visibleCharacters >= currentDialogueVisibleLength();
+      const indicatorVisible = Math.floor(performance.now() / 500) % 2 === 0;
+      if (pageComplete && indicatorVisible && !choiceState.active) {
+        const indicatorText = "►";
+        const indicatorX = canvas.width - 20 - 12 - ctx.measureText(indicatorText).width;
+        const indicatorY = boxY + boxHeight - 12;
+        ctx.fillText(indicatorText, indicatorX, indicatorY);
       }
 
       if (choiceState.active) {
@@ -1128,6 +1138,7 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
+
 
 
 
