@@ -296,7 +296,7 @@ image-rendering: pixelated;
       const textMaxWidth = canvas.width - 80;
       const lineSpacing = 24;
       const boxHeight = 112;
-      const boxY = canvas.height - boxHeight - 20;␊
+      const boxY = canvas.height - boxHeight - 20;
       const dialogueTextStartY = dialogueName ? boxY + 66 : boxY + 52;
       const maxBaselineY = boxY + boxHeight - 8;
       const maxLinesPerPage = Math.max(
@@ -954,7 +954,7 @@ const px = player.x - cam.x + TILE / 2;
       if (!isDialogueActive() || gameState === "inventory") return;
 
       const boxHeight = choiceState.active ? 152 : 112;
-      const boxY = canvas.height - boxHeight - 20;␊
+      const boxY = canvas.height - boxHeight - 20;
 
       ctx.fillStyle = "rgba(0,0,0,0.75)";
       ctx.fillRect(20, boxY, canvas.width - 40, boxHeight);
@@ -1111,5 +1111,4 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
-
 
