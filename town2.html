@@ -129,7 +129,8 @@ image-rendering: pixelated;
         sprite: hanamiSprite,
         dialogue: ["Hello there!", "Welcome to the dojo.", "I train students here", "where they practice Hana Sakura style Karate", "which means \"the way of the cherry blossom\".", "Would you like me to teach you?"],
         alreadyTrainingDialogue: "Your training has already begun. Focus your mind.",
-        hasTrainingChoice: true
+        hasTrainingChoice: true,
+        dir: "down"
  }
     ];
 
@@ -549,6 +550,15 @@ let worldName = "overworld";
         const dy = Math.abs(playerCenterY - npcCenterY);
 
         if (dx <= interactReach && dy <= interactReach) {
+          const relativeX = playerCenterX - npcCenterX;
+          const relativeY = playerCenterY - npcCenterY;
+
+          if (Math.abs(relativeX) >= Math.abs(relativeY)) {
+            npc.dir = relativeX < 0 ? "left" : "right";
+          } else {
+            npc.dir = relativeY < 0 ? "up" : "down";
+          }
+
           if (npc.hasTrainingChoice) {
             if (gameFlags.completedTraining) {
               showDialogue(npc.name, ["Excellent.", "You have mastered the basics and are now ready for your next lesson. I won't tell you what it is though!"]);
@@ -1177,4 +1187,3 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
-
