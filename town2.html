@@ -941,6 +941,7 @@ const px = player.x - cam.x + TILE / 2;
         const word = words[i];
         const testLine = `${currentLine} ${word}`;
 
+
         if (ctx.measureText(testLine).width <= maxWidth) {
           currentLine = testLine;
         } else {
@@ -971,7 +972,6 @@ const px = player.x - cam.x + TILE / 2;
 
       const textStartX = 40;
       const lineSpacing = 24;
-      const dialogueTextStartY = dialogueName ? boxY + 66 : boxY + 52;
       updateVisibleCharacters();
       const fullPageLines = currentDialogueLine().split("\n");
       const wrappedLines = [];
@@ -987,12 +987,15 @@ const px = player.x - cam.x + TILE / 2;
         if (visibleInLine < line.length) break;
       }
 
+      const textHeight = wrappedLines.length * lineSpacing;
+      const centeredStartY = boxY + (boxHeight - textHeight) / 2 + lineSpacing - 6;
+
       if (dialogueName) {
         ctx.fillText(dialogueName, 40, boxY + 28);
       }
 
       for (let i = 0; i < wrappedLines.length; i++) {
-        ctx.fillText(wrappedLines[i], textStartX, dialogueTextStartY + i * lineSpacing);
+        ctx.fillText(wrappedLines[i], textStartX, centeredStartY + i * lineSpacing);
       }
 
       if (choiceState.active) {
@@ -1125,5 +1128,6 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
+
 
 
