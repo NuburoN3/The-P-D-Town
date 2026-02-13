@@ -875,26 +875,54 @@ ctx.fillStyle = "#6d5b4c";
               const drawX = Math.round(npc.x - cam.x - (drawWidth - TILE) / 2);
               const drawY = Math.round(npc.y - cam.y - (drawHeight - TILE));
 
+              ctx.save();
+              if (npc.dir === "left") {
+                ctx.translate(drawX + drawWidth / 2, 0);
+                ctx.scale(-1, 1);
+                ctx.translate(-(drawX + drawWidth / 2), 0);
+              }
               ctx.drawImage(npc.sprite, drawX, drawY, drawWidth, drawHeight);
+              if (npc.dir === "up") {
+                ctx.fillStyle = "rgba(0,0,0,0.25)";
+                ctx.fillRect(drawX, drawY, drawWidth, drawHeight);
+              }
+              ctx.restore();
             } else if (npc.spriteWidth && npc.spriteHeight) {
-              const drawX = Math.round(npc.x - cam.x - (npc.spriteWidth - TILE) / 2);
-              const drawY = Math.round(npc.y - cam.y - (npc.spriteHeight - TILE));
+              const drawWidth = npc.spriteWidth;
+              const drawHeight = npc.spriteHeight;
+              const drawX = Math.round(npc.x - cam.x - (drawWidth - TILE) / 2);
+              const drawY = Math.round(npc.y - cam.y - (drawHeight - TILE));
 
-              ctx.drawImage(
-                npc.sprite,
-                drawX,
-                drawY,
-                npc.spriteWidth,
-                npc.spriteHeight
-              );
+              ctx.save();
+              if (npc.dir === "left") {
+                ctx.translate(drawX + drawWidth / 2, 0);
+                ctx.scale(-1, 1);
+                ctx.translate(-(drawX + drawWidth / 2), 0);
+              }
+              ctx.drawImage(npc.sprite, drawX, drawY, drawWidth, drawHeight);
+              if (npc.dir === "up") {
+                ctx.fillStyle = "rgba(0,0,0,0.25)";
+                ctx.fillRect(drawX, drawY, drawWidth, drawHeight);
+              }
+              ctx.restore();
             } else {
-              ctx.drawImage(
-                npc.sprite,
-                Math.round(npc.x - cam.x),
-                Math.round(npc.y - cam.y),
-                TILE,
-                TILE
-              );
+              const drawWidth = TILE;
+              const drawHeight = TILE;
+              const drawX = Math.round(npc.x - cam.x);
+              const drawY = Math.round(npc.y - cam.y);
+
+              ctx.save();
+              if (npc.dir === "left") {
+                ctx.translate(drawX + drawWidth / 2, 0);
+                ctx.scale(-1, 1);
+                ctx.translate(-(drawX + drawWidth / 2), 0);
+              }
+              ctx.drawImage(npc.sprite, drawX, drawY, drawWidth, drawHeight);
+              if (npc.dir === "up") {
+                ctx.fillStyle = "rgba(0,0,0,0.25)";
+                ctx.fillRect(drawX, drawY, drawWidth, drawHeight);
+              }
+              ctx.restore();
             }
           } else {
             ctx.fillStyle = "#7b1fa2";
