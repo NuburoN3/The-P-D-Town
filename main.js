@@ -10,6 +10,7 @@ const OVERWORLD_W = 30;
 const OVERWORLD_H = 30;
 const INTERIOR_W = 12;
 const INTERIOR_H = 10;
+const PLAYER_SPRITE_HEIGHT_TILES = 1.15;
 
 // Tile type IDs
 const TILE_TYPES = {
@@ -197,6 +198,8 @@ const trainingTile = interiorData.trainingTile;
 
 const hanamiSprite = new Image();
 hanamiSprite.src = "mr_hanami.png";
+const playerSprite = new Image();
+playerSprite.src = "protagonist.png";
 
 const npcs = [
   {
@@ -239,7 +242,9 @@ const player = {
   speed: 2.2,
   dir: "down",
   walking: false,
-  frame: 0
+  frame: 0,
+  sprite: playerSprite,
+  desiredHeightTiles: PLAYER_SPRITE_HEIGHT_TILES
 };
 
 const cam = { x: 0, y: 0 };
@@ -976,22 +981,14 @@ function drawTile(type, x, y, tileX, tileY) {
 }
 
 function drawPlayer(cam) {
-  const px = player.x - cam.x;
-  const py = player.y - cam.y;
-
-  ctx.fillStyle = COLORS.PLAYER_BODY;
-  ctx.fillRect(px + 6, py + 8, 20, 20);
-
-  ctx.fillStyle = COLORS.PLAYER_FACE;
-  ctx.fillRect(px + 10, py + 4, 12, 8);
-
-  const legFrame = Math.floor(player.frame / 12) % 2;
-  if (player.walking && legFrame === 0) {
-    ctx.fillRect(px + 8, py + 26, 6, 6);
-    ctx.fillRect(px + 18, py + 26, 6, 6);
-  } else {
-    ctx.fillRect(px + 10, py + 26, 6, 6);
-    ctx.fillRect(px + 16, py + 26, 6, 6);
+  if (player.sprite && player.sprite.width && player.sprite.height) {
+    const targetHeight = TILE * player.desiredHeightTiles;
+    const scale = targetHeight / player.sprite.height;
+    const drawWidth = player.sprite.width * scale;
+    const drawHeight = player.sprite.height * scale;
+    const drawX = Math.round(player.x - cam.x - (drawWidth - TILE) / 2);
+    const drawY = Math.round(player.y - cam.y - (drawHeight - TILE));
+    ctx.drawImage(player.sprite, drawX, drawY, drawWidth, drawHeight);
   }
 }
 
@@ -1291,10 +1288,14 @@ function render() {
 // GAME LOOP
 // ============================================================================
 
-function loop() {
-  update();
-  render();
+
+let lastTime = performance.now();
+function loop(currentTime) {
+  const delta = (currentTime - lastTime) / 1000; // seconds
+  lastTime = currentTime;
+  update(delta, currentTime);
+  render(delta, currentTime);
   requestAnimationFrame(loop);
 }
 
-loop();
+requestAnimationFrame(loop);
