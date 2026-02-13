@@ -974,7 +974,7 @@ const px = player.x - cam.x + TILE / 2;
       const lineSpacing = 24;
       updateVisibleCharacters();
 
-      const fullPageLines = currentDialogueLine().split("\n");
+ const fullPageLines = currentDialogueLine().split("\n");
       const wrappedLines = [];
       let remainingCharacters = visibleCharacters;
 
@@ -999,15 +999,6 @@ const px = player.x - cam.x + TILE / 2;
         ctx.fillText(wrappedLines[i], textStartX, centeredStartY + i * lineSpacing);
       }
 
-      const pageComplete = visibleCharacters >= currentDialogueVisibleLength();
-      const indicatorVisible = Math.floor(performance.now() / 500) % 2 === 0;
-      if (pageComplete && indicatorVisible && !choiceState.active) {
-        const indicatorText = "►";
-        const indicatorX = canvas.width - 20 - 12 - ctx.measureText(indicatorText).width;
-        const indicatorY = boxY + boxHeight - 12;
-        ctx.fillText(indicatorText, indicatorX, indicatorY);
-      }
-
       if (choiceState.active) {
         const optionsStartY = boxY + 90;
         for (let i = 0; i < choiceState.options.length; i++) {
@@ -1015,7 +1006,16 @@ const px = player.x - cam.x + TILE / 2;
           ctx.fillText(prefix + choiceState.options[i], 40, optionsStartY + i * 24);
         }
       }
-    }
+
+      const pageComplete = visibleCharacters >= currentDialogueVisibleLength();
+      const blink = Math.floor(performance.now() / 500) % 2 === 0;
+      if (pageComplete && !choiceState.active && blink) {
+        const indicatorText = "►";
+        const indicatorX = canvas.width - 20 - 18 - ctx.measureText(indicatorText).width;
+        const indicatorY = boxY + boxHeight - 12;
+        ctx.fillText(indicatorText, indicatorX, indicatorY);
+      }␊
+    }␊
 
     function drawDoorTransition(cam) {
       if (gameState !== "transition") return;
@@ -1138,6 +1138,7 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
+
 
 
 
