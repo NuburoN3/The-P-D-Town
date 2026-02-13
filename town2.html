@@ -124,7 +124,7 @@ image-rendering: pixelated;
         y: 4 * TILE,
         width: TILE,
         height: TILE,
-        spriteScale: 1.35,
+        desiredHeightTiles: 1.4,
         name: "Mr. Hanami",
         sprite: hanamiSprite,
         dialogue: ["Hello there!", "Welcome to the dojo.", "I train students here", "where they practice Hana Sakura style Karate", "which means \"the way of the cherry blossom\".", "Would you like me to teach you?"],
@@ -857,9 +857,11 @@ ctx.fillStyle = "#6d5b4c";
           ny < canvas.height
         ) {
           if (npc.sprite) {
-            if (npc.spriteScale && npc.sprite.width && npc.sprite.height) {
-              const drawWidth = npc.sprite.width * npc.spriteScale;
-              const drawHeight = npc.sprite.height * npc.spriteScale;
+            if (npc.desiredHeightTiles && npc.sprite.width && npc.sprite.height) {
+              const targetHeight = TILE * npc.desiredHeightTiles;
+              const scale = targetHeight / npc.sprite.height;
+              const drawWidth = npc.sprite.width * scale;
+              const drawHeight = npc.sprite.height * scale;
               const drawX = Math.round(npc.x - cam.x - (drawWidth - TILE) / 2);
               const drawY = Math.round(npc.y - cam.y - (drawHeight - TILE));
 
