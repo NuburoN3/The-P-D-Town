@@ -88,7 +88,7 @@ image-rendering: pixelated;
     const overworldDoor = { x: dojoLeft + Math.floor(dojoW / 2), y: dojoTop + dojoH - 1 };
     overworldMap[overworldDoor.y][overworldDoor.x] = 5;
 
-    overworldMap[14][14] = 4;
+ overworldMap[14][14] = 4;
 
     const treeClusters = [
       [4, 4], [5, 4], [4, 5], [24, 4], [25, 4], [24, 5],
@@ -113,6 +113,9 @@ image-rendering: pixelated;
     const trainingTile = { x: 4, y: 5 };
     interiorMap[trainingTile.y][trainingTile.x] = 7;
 
+    const hanamiSprite = new Image();
+    hanamiSprite.src = "mr_hanami.png";
+
     // NPC entities are separate from map tiles.
     const npcs = [
       {
@@ -122,6 +125,7 @@ image-rendering: pixelated;
         width: TILE,
         height: TILE,
         name: "Mr. Hanami",
+        sprite: hanamiSprite,
         dialogue: ["Hello there!", "Welcome to the dojo.", "I train students here", "where they practice Hana Sakura style Karate", "which means \"the way of the cherry blossom\".", "Would you like me to teach you?"],
         alreadyTrainingDialogue: "Your training has already begun. Focus your mind.",
         hasTrainingChoice: true
@@ -149,6 +153,7 @@ image-rendering: pixelated;
       const tilePos = playerTilePosition();
       const onTrainingTile = tilePos.x === trainingTile.x && tilePos.y === trainingTile.y;
       if (!onTrainingTile) return;
+
 
       if (playerStats.disciplineLevel >= 2) {
         showDialogue("", "Training complete. Speak to Mr. Hanami.");
@@ -850,16 +855,26 @@ ctx.fillStyle = "#6d5b4c";
           nx < canvas.width &&
           ny < canvas.height
         ) {
-ctx.fillStyle = "#7b1fa2";
-          ctx.fillRect(nx + 6, ny + 8, 20, 20);
+          if (npc.sprite) {
+            ctx.drawImage(
+              npc.sprite,
+              Math.round(npc.x - cam.x),
+              Math.round(npc.y - cam.y),
+              TILE,
+              TILE
+            );
+          } else {
+            ctx.fillStyle = "#7b1fa2";
+            ctx.fillRect(nx + 6, ny + 8, 20, 20);
 
-          ctx.fillStyle = "#ffe0b2";
-          ctx.fillRect(nx + 10, ny + 4, 12, 8);
+            ctx.fillStyle = "#ffe0b2";
+            ctx.fillRect(nx + 10, ny + 4, 12, 8);
 
-          ctx.fillStyle = "#4a148c";
-          ctx.fillRect(nx + 10, ny + 26, 6, 6);
-          ctx.fillRect(nx + 16, ny + 26, 6, 6);
-    }
+            ctx.fillStyle = "#4a148c";
+            ctx.fillRect(nx + 10, ny + 26, 6, 6);
+            ctx.fillRect(nx + 16, ny + 26, 6, 6);
+          }
+        }
       }
     }
 
@@ -1139,6 +1154,7 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
+
 
 
 
