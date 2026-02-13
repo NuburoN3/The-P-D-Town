@@ -489,7 +489,7 @@ image-rendering: pixelated;
         if (dx <= interactReach && dy <= interactReach) {
           if (npc.hasTrainingChoice) {
             if (gameFlags.completedTraining) {
-              showDialogue(npc.name, ["Excellent.", "You have mastered the basics.", "You are ready for your next lesson."]);
+              showDialogue(npc.name, ["Excellent.", "You have mastered the basics and are now ready for your next lesson. I won't tell you what it is though!"]);
               interactPressed = false;
               return;
             }
