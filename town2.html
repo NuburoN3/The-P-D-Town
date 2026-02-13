@@ -246,7 +246,22 @@ image-rendering: pixelated;
     let dialogueName = "";
     let dialogueLines = [];
     let dialogueIndex = 0;
-let dialogueEndAction = null;
+    let dialogueEndAction = null;
+    let visibleCharacters = 0;
+    let textStartTime = 0;
+    const charactersPerSecond = 100;
+
+    function resetDialogueAnimation() {
+      visibleCharacters = 0;
+      textStartTime = performance.now();
+    }
+
+    function updateVisibleCharacters() {
+      const line = currentDialogueLine();
+      const elapsedSeconds = Math.max(0, (performance.now() - textStartTime) / 1000);
+      visibleCharacters = Math.min(line.length, Math.floor(elapsedSeconds * charactersPerSecond));
+      return visibleCharacters;
+    }
 
     const choiceState = {
       active: false,
@@ -280,10 +295,10 @@ let dialogueEndAction = null;
 
       const textMaxWidth = canvas.width - 80;
       const lineSpacing = 24;
-      const boxHeight = 90;
-      const boxY = canvas.height - boxHeight - 20;
-      const dialogueTextStartY = dialogueName ? boxY + 62 : boxY + 48;
-      const maxBaselineY = boxY + boxHeight - 4;
+      const boxHeight = 112;
+      const boxY = canvas.height - boxHeight - 20;␊
+      const dialogueTextStartY = dialogueName ? boxY + 66 : boxY + 52;
+      const maxBaselineY = boxY + boxHeight - 8;
       const maxLinesPerPage = Math.max(
         1,
         Math.floor((maxBaselineY - dialogueTextStartY) / lineSpacing) + 1
@@ -305,6 +320,7 @@ let dialogueEndAction = null;
       dialogueIndex = 0;
       dialogueEndAction = endAction;
       closeChoice();
+      resetDialogueAnimation();
     }
 
     function openYesNoChoice(onConfirm) {
@@ -331,9 +347,16 @@ let dialogueEndAction = null;
 
     function advanceDialogue() {
       if (!isDialogueActive() || choiceState.active) return;
+      updateVisibleCharacters();
+
+      if (visibleCharacters < currentDialogueLine().length) {
+        visibleCharacters = currentDialogueLine().length;
+        return;
+      }
 
       if (dialogueIndex < dialogueLines.length - 1) {
         dialogueIndex++;
+        resetDialogueAnimation();
       } else if (dialogueEndAction) {
         const endAction = dialogueEndAction;
         dialogueEndAction = null;
@@ -348,6 +371,8 @@ let dialogueEndAction = null;
       dialogueLines = [];
       dialogueIndex = 0;
       dialogueEndAction = null;
+      visibleCharacters = 0;
+      textStartTime = 0;
       closeChoice();
     }
 
@@ -928,8 +953,8 @@ const px = player.x - cam.x + TILE / 2;
     function drawTextbox() {
       if (!isDialogueActive() || gameState === "inventory") return;
 
-      const boxHeight = choiceState.active ? 130 : 90;
-      const boxY = canvas.height - boxHeight - 20;
+      const boxHeight = choiceState.active ? 152 : 112;
+      const boxY = canvas.height - boxHeight - 20;␊
 
       ctx.fillStyle = "rgba(0,0,0,0.75)";
       ctx.fillRect(20, boxY, canvas.width - 40, boxHeight);
@@ -942,10 +967,11 @@ const px = player.x - cam.x + TILE / 2;
       ctx.font = "20px monospace";
 
       const textStartX = 40;
-      const textMaxWidth = canvas.width - 80;
       const lineSpacing = 24;
-      const dialogueTextStartY = dialogueName ? boxY + 62 : boxY + 48;
-      const wrappedLines = wrapText(ctx, currentDialogueLine(), textMaxWidth);
+      const dialogueTextStartY = dialogueName ? boxY + 66 : boxY + 52;
+      updateVisibleCharacters();
+      const animatedText = currentDialogueLine().slice(0, visibleCharacters);
+      const wrappedLines = animatedText.length ? animatedText.split("\n") : [""];
 
       if (dialogueName) {
         ctx.fillText(dialogueName, 40, boxY + 28);
@@ -1085,4 +1111,5 @@ const px = player.x - cam.x + TILE / 2;
   </script>
 </body>
 </html>
+
 
