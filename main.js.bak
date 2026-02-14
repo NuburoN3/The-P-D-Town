@@ -1,7 +1,5 @@
 import { AudioManager } from "./music-manager.js";
-import { initializeInput, keys, getInteractPressed, clearInteractPressed } from "./src/InputManager.js";
-import { collides as collidesAt, collidesWithNPC as collidesWithNPCAt, doorFromCollision as detectDoorCollision } from "./src/CollisionSystem.js";
-import { drawTile as drawTileSystem } from "./src/TileSystem.js";
+
 // ============================================================================
 // CONFIGURATION & CONSTANTS
 // ============================================================================
@@ -508,6 +506,8 @@ const player = {
 
 const cam = { x: 0, y: 0 };
 
+const keys = {};
+let interactPressed = false;
 
 const doorSequence = {
   active: false,
@@ -710,16 +710,80 @@ function syncMusicForCurrentArea() {
   musicManager.playMusicForArea(areaName);
 }
 
+function tileAtPixel(px, py) {
+  const tx = Math.floor(px / TILE);
+  const ty = Math.floor(py / TILE);
+  if (tx < 0 || ty < 0 || tx >= currentMapW || ty >= currentMapH) return TILE_TYPES.TREE;
+  return currentMap[ty][tx];
+}
+
+function isBlockedAtPixel(px, py) {
+  const tile = tileAtPixel(px, py);
+  return tile === TILE_TYPES.TREE || tile === TILE_TYPES.WALL || 
+         tile === TILE_TYPES.SIGNPOST || tile === TILE_TYPES.DOOR;
+}
+
+// ============================================================================
+// COLLISION SYSTEM
+// ============================================================================
+
 function collides(nx, ny) {
-  return collidesAt(nx, ny, currentMap, currentMapW, currentMapH);
+  const inset = 5;
+  const left = nx + inset;
+  const right = nx + TILE - inset;
+  const top = ny + inset;
+  const bottom = ny + TILE - inset;
+
+  return (
+    isBlockedAtPixel(left, top) ||
+    isBlockedAtPixel(right, top) ||
+    isBlockedAtPixel(left, bottom) ||
+    isBlockedAtPixel(right, bottom)
+  );
+}
+
+function rectsOverlap(a, b) {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
 }
 
 function collidesWithNPC(nx, ny) {
-  return collidesWithNPCAt(nx, ny, npcs, currentAreaType);
+  const playerRect = {
+    x: nx + 5,
+    y: ny + 5,
+    width: TILE - 10,
+    height: TILE - 10
+  };
+
+  for (const npc of npcs) {
+    if (npc.world !== currentAreaType) continue;
+    if (rectsOverlap(playerRect, npc)) return true;
+  }
+  return false;
 }
 
 function doorFromCollision(nx, ny) {
-  return detectDoorCollision(nx, ny, currentMap, currentMapW, currentMapH);
+  const inset = 5;
+  const corners = [
+    [nx + inset, ny + inset],
+    [nx + TILE - inset, ny + inset],
+    [nx + inset, ny + TILE - inset],
+    [nx + TILE - inset, ny + TILE - inset]
+  ];
+
+  for (const [px, py] of corners) {
+    const tx = Math.floor(px / TILE);
+    const ty = Math.floor(py / TILE);
+    if (tx < 0 || ty < 0 || tx >= currentMapW || ty >= currentMapH) continue;
+    if (currentMap[ty][tx] === TILE_TYPES.DOOR) {
+      return { tx, ty };
+    }
+  }
+  return null;
 }
 
 // ============================================================================
@@ -788,7 +852,7 @@ function tryTrainingAction() {
 function toggleInventory() {
   if (gameState === "inventory") {
     gameState = previousWorldState;
-    clearInteractPressed();
+    interactPressed = false;
     return;
   }
 
@@ -798,7 +862,7 @@ function toggleInventory() {
 
   previousWorldState = gameState;
   gameState = "inventory";
-  clearInteractPressed();
+  interactPressed = false;
 }
 
 function handleNPCInteraction(npc) {
@@ -880,7 +944,7 @@ function beginDoorSequence(doorTile) {
   doorSequence.fadeRadius = doorSequence.maxFadeRadius;
   doorSequence.transitionPhase = "out";
   gameState = "enteringDoor";
-  clearInteractPressed();
+  interactPressed = false;
 }
 
 // ============================================================================
@@ -889,20 +953,20 @@ function beginDoorSequence(doorTile) {
 
 function handleInteraction() {
   if (gameState === "inventory") {
-    clearInteractPressed();
+    interactPressed = false;
     return;
   }
 
-  if (!getInteractPressed()) return;
+  if (!interactPressed) return;
 
   if (isDialogueActive()) {
     advanceDialogue();
-    clearInteractPressed();
+    interactPressed = false;
     return;
   }
 
   if (gameState === "enteringDoor" || gameState === "transition") {
-    clearInteractPressed();
+    interactPressed = false;
     return;
   }
 
@@ -929,7 +993,7 @@ function handleInteraction() {
       }
 
       handleNPCInteraction(npc);
-      clearInteractPressed();
+      interactPressed = false;
       return;
     }
   }
@@ -947,7 +1011,7 @@ function handleInteraction() {
       if (tx < 0 || tx >= currentMapW) continue;
       if (currentMap[ty][tx] === TILE_TYPES.SIGNPOST) {
         showDialogue("", "The Dojo");
-        clearInteractPressed();
+        interactPressed = false;
         return;
       }
     }
@@ -962,38 +1026,47 @@ function handleInteraction() {
         const onTrainingTile = tilePos.x === interior.trainingTile.x && tilePos.y === interior.trainingTile.y;
         if (onTrainingTile) {
           tryTrainingAction();
-          clearInteractPressed();
+          interactPressed = false;
           return;
         }
       }
     }
   }
 
-  clearInteractPressed();
+  interactPressed = false;
 }
 
 // ============================================================================
 // INPUT HANDLING
 // ============================================================================
 
-initializeInput();
-document.addEventListener("toggleInventory", () => {
-  toggleInventory();
+addEventListener("keydown", (e) => {
+  const key = e.key.toLowerCase();
+  keys[key] = true;
+
+  if (key === "i" && !e.repeat) {
+    toggleInventory();
+    return;
+  }
+
+  if (choiceState.active) {
+    if (!e.repeat && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      const direction = e.key === "ArrowUp" ? -1 : 1;
+      const total = choiceState.options.length;
+      choiceState.selected = (choiceState.selected + direction + total) % total;
+    }
+
+    if (e.key === "Enter" && !e.repeat) {
+      confirmChoice();
+    }
+    return;
+  }
+
+  if (e.key === "Enter" && !e.repeat) interactPressed = true;
 });
 
-addEventListener("keydown", (e) => {
-  if (!choiceState.active) return;
-
-  if (!e.repeat && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-    const direction = e.key === "ArrowUp" ? -1 : 1;
-    const total = choiceState.options.length;
-    choiceState.selected = (choiceState.selected + direction + total) % total;
-  }
-
-  if (e.key === "Enter" && !e.repeat) {
-    confirmChoice();
-    clearInteractPressed();
-  }
+addEventListener("keyup", (e) => {
+  keys[e.key.toLowerCase()] = false;
 });
 
 // ============================================================================
@@ -1171,7 +1244,173 @@ function camera() {
 // ============================================================================
 
 function drawTile(type, x, y, tileX, tileY) {
-  drawTileSystem(ctx, currentTownId, gameState, doorSequence, type, x, y, tileX, tileY);
+  switch (type) {
+    case TILE_TYPES.GRASS:
+      ctx.fillStyle = COLORS.GRASS;
+      ctx.fillRect(x, y, TILE, TILE);
+      break;
+
+    case TILE_TYPES.PATH:
+      ctx.fillStyle = COLORS.PATH;
+      ctx.fillRect(x, y, TILE, TILE);
+      break;
+
+    case TILE_TYPES.TREE:
+      // Grass background
+      ctx.fillStyle = COLORS.GRASS;
+      ctx.fillRect(x, y, TILE, TILE);
+      
+      // Tree trunk
+      ctx.fillStyle = "#5d4037";
+      ctx.fillRect(x + 12, y + 18, 8, 14);
+      
+      // Trunk shading
+      ctx.fillStyle = "#3e2723";
+      ctx.fillRect(x + 12, y + 22, 8, 2);
+      
+      // Main foliage - bottom circle
+      ctx.fillStyle = COLORS.TREE_DARK;
+      ctx.beginPath();
+      ctx.arc(x + 16, y + 16, 11, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Mid foliage - middle circle
+      ctx.fillStyle = COLORS.TREE_LIGHT;
+      ctx.beginPath();
+      ctx.arc(x + 16, y + 10, 10, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Top foliage - top circle
+      ctx.fillStyle = "#4caf50";
+      ctx.beginPath();
+      ctx.arc(x + 16, y + 5, 8, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Foliage highlights for depth
+      ctx.fillStyle = "rgba(76,175,80,0.6)";
+      ctx.beginPath();
+      ctx.arc(x + 14, y + 8, 3, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.fillStyle = "rgba(46,125,50,0.6)";
+      ctx.beginPath();
+      ctx.arc(x + 18, y + 14, 4, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+
+    case TILE_TYPES.WALL:
+      // Check if this wall is part of a building
+      const building = getBuilding(currentTownId, tileX, tileY);
+      
+      if (building) {
+        renderBuildingTile(building, x, y, tileX, tileY);
+      } else {
+        // Regular wall
+        ctx.fillStyle = COLORS.WALL;
+        ctx.fillRect(x, y, TILE, TILE);
+      }
+      break;
+
+    case TILE_TYPES.SIGNPOST:
+      ctx.fillStyle = COLORS.SIGNPOST_WOOD;
+      ctx.fillRect(x + 12, y + 8, 8, 18);
+      ctx.fillStyle = COLORS.SIGNPOST_SIGN;
+      ctx.fillRect(x + 6, y + 6, 20, 10);
+      break;
+
+    case TILE_TYPES.DOOR:
+      const isActiveDoor = gameState === "enteringDoor" && tileX === doorSequence.tx && tileY === doorSequence.ty;
+      ctx.fillStyle = isActiveDoor ? COLORS.DOOR_ACTIVE : COLORS.DOOR_INACTIVE;
+      ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = isActiveDoor ? COLORS.DOOR_FRAME_ACTIVE : COLORS.DOOR_FRAME_INACTIVE;
+      ctx.fillRect(x + 6, y + 4, 20, 24);
+      ctx.fillStyle = COLORS.DOOR_KNOB;
+      ctx.fillRect(x + 18, y + 14, 3, 3);
+      break;
+
+    case TILE_TYPES.INTERIOR_FLOOR:
+      // Dojo wooden floor with tatami-like pattern
+      ctx.fillStyle = COLORS.INTERIOR_FLOOR_LIGHT;
+      ctx.fillRect(x, y, TILE, TILE);
+      
+      // Wooden plank lines for texture
+      ctx.strokeStyle = COLORS.INTERIOR_FLOOR_DARK;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, y + TILE / 2);
+      ctx.lineTo(x + TILE, y + TILE / 2);
+      ctx.stroke();
+      
+      // Subtle grain pattern
+      ctx.strokeStyle = "rgba(161, 136, 127, 0.4)";
+      ctx.lineWidth = 0.5;
+      for (let i = 0; i < TILE; i += 4) {
+        ctx.beginPath();
+        ctx.moveTo(x + i, y);
+        ctx.lineTo(x + i, y + TILE);
+        ctx.stroke();
+      }
+      
+      // Darker corners for depth
+      ctx.fillStyle = "rgba(161, 136, 127, 0.2)";
+      ctx.fillRect(x, y, 4, 4);
+      ctx.fillRect(x + TILE - 4, y, 4, 4);
+      ctx.fillRect(x, y + TILE - 4, 4, 4);
+      ctx.fillRect(x + TILE - 4, y + TILE - 4, 4, 4);
+      break;
+
+    case TILE_TYPES.CHERRY_BLOSSOM:
+      // Grass background
+      ctx.fillStyle = COLORS.GRASS;
+      ctx.fillRect(x, y, TILE, TILE);
+      
+      // Tree trunk
+      ctx.fillStyle = "#8b6f47";
+      ctx.fillRect(x + 11, y + 16, 10, 16);
+      
+      // Trunk shading
+      ctx.fillStyle = "#5d4037";
+      ctx.fillRect(x + 11, y + 20, 10, 2);
+      
+      // Main foliage - bottom circle (dark pink)
+      ctx.fillStyle = "#c24d6d";
+      ctx.beginPath();
+      ctx.arc(x + 16, y + 14, 12, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Mid foliage - middle circle (medium pink with blossoms)
+      ctx.fillStyle = "#d8749c";
+      ctx.beginPath();
+      ctx.arc(x + 16, y + 8, 11, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Top foliage - top circle (light pink)
+      ctx.fillStyle = "#e8a9c9";
+      ctx.beginPath();
+      ctx.arc(x + 16, y + 3, 9, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Cherry blossom highlights (white/light pink petals)
+      ctx.fillStyle = "rgba(255, 200, 220, 0.8)";
+      const petalLength = 3;
+      const petalPositions = [
+        [10, 8], [22, 8], [16, 3], [16, 20], [12, 14], [20, 14]
+      ];
+      for (const [px, py] of petalPositions) {
+        ctx.beginPath();
+        ctx.arc(x + px, y + py, petalLength, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      break;
+
+    case TILE_TYPES.TRAINING_FLOOR:
+      ctx.fillStyle = COLORS.TRAINING_FLOOR_LIGHT;
+      ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = COLORS.TRAINING_FLOOR_DARK;
+      ctx.fillRect(x + 2, y + 2, TILE - 4, TILE - 4);
+      break;
+  }
 }
 
 function drawPlayer(cam) {
@@ -1386,7 +1625,7 @@ function drawTextbox() {
   if (choiceState.active) {
     const optionsStartY = boxY + 90;
     for (let i = 0; i < choiceState.options.length; i++) {
-      const prefix = i === choiceState.selected ? "? " : "  ";
+      const prefix = i === choiceState.selected ? "► " : "  ";
       ctx.fillText(prefix + choiceState.options[i], 40, optionsStartY + i * 24);
     }
   }
@@ -1394,7 +1633,7 @@ function drawTextbox() {
   const pageComplete = visibleCharacters >= currentDialogueVisibleLength();
   const blink = Math.floor(performance.now() / 500) % 2 === 0;
   if (pageComplete && !choiceState.active && blink) {
-    const indicatorText = "?";
+    const indicatorText = "►";
     const indicatorX = canvas.width - 20 - 18 - ctx.measureText(indicatorText).width;
     const bobOffsetY = Math.sin(performance.now() * 0.008) * 3;
     const indicatorY = boxY + boxHeight - 12 + bobOffsetY;
@@ -1533,7 +1772,3 @@ function loop(currentTime) {
 }
 
 requestAnimationFrame(loop);
-
-
-
-
