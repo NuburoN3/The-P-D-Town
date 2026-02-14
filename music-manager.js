@@ -1,5 +1,5 @@
 export class AudioManager {
-  constructor({ areaTracks = {}, sfxTracks = {}, bgmVolume = 0.6, sfxVolume = 0.8 } = {}) {
+  constructor({ areaTracks = {}, sfxTracks = {}, bgmVolume = 0.6, sfxVolume = 0.8, fadeDurationMs = 600 } = {}) {
     this.areaTracks = new Map(Object.entries(areaTracks));
     this.sfxTracks = new Map(Object.entries(sfxTracks));
     this.bgmAudioBySrc = new Map();
@@ -8,6 +8,8 @@ export class AudioManager {
     this.currentAudio = null;
     this.bgmVolume = bgmVolume;
     this.sfxVolume = sfxVolume;
+    this.bgmFadeMs = fadeDurationMs;
+    this.fadeTimers = new Map();
     this._unlockBound = false;
   }
 
@@ -22,6 +24,7 @@ export class AudioManager {
   playMusicForArea(areaName) {
     const src = this.areaTracks.get(areaName);
     if (!src) {
+      // No music defined for this area -> stop any current music
       this.stopCurrentMusic();
       this.currentArea = areaName ?? null;
       return;
@@ -31,26 +34,55 @@ export class AudioManager {
     const sameArea = this.currentArea === areaName && this.currentAudio === nextAudio;
     if (sameArea && !nextAudio.paused) return;
 
+    const fadeMs = this.bgmFadeMs;
+
+    // If there's a different current audio, fade it out while fading in the next
     if (this.currentAudio && this.currentAudio !== nextAudio) {
-      this.currentAudio.pause();
-      this.currentAudio.currentTime = 0;
-    }
+      const prev = this.currentAudio;
 
-    for (const audio of this.bgmAudioBySrc.values()) {
-      if (audio !== nextAudio && !audio.paused) {
-        audio.pause();
-        audio.currentTime = 0;
+      // Prepare next audio at zero volume and start playing
+      try { nextAudio.volume = 0; } catch (e) {}
+      const playPromise = nextAudio.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {});
       }
+
+      // Fade out previous and fade in next concurrently
+      Promise.all([
+        this._fadeAudio(prev, 0, fadeMs).then(() => {
+          try { prev.pause(); prev.currentTime = 0; } catch (e) {}
+        }),
+        this._fadeAudio(nextAudio, this.bgmVolume, fadeMs)
+      ]).catch(() => {});
+
+      this.currentAudio = nextAudio;
+      this.currentArea = areaName;
+      return;
     }
 
-    this.currentAudio = nextAudio;
-    this.currentArea = areaName;
+    // If there's no current audio, just start the next audio with a fade-in
+    if (!this.currentAudio) {
+      try { nextAudio.volume = 0; } catch (e) {}
+      const playPromise = nextAudio.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {});
+      }
+      this.currentAudio = nextAudio;
+      this.currentArea = areaName;
+      this._fadeAudio(nextAudio, this.bgmVolume, fadeMs).catch(() => {});
+      return;
+    }
 
-    const playPromise = nextAudio.play();
-    if (playPromise && typeof playPromise.catch === "function") {
-      playPromise.catch((err) => {
-        console.warn("AudioManager: failed to play BGM for", areaName, "src=", src, err);
-      });
+    // If same audio but paused, try to resume with fade-in
+    if (sameArea && nextAudio.paused) {
+      try { nextAudio.volume = 0; } catch (e) {}
+      const playPromise = nextAudio.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {});
+      }
+      this._fadeAudio(nextAudio, this.bgmVolume, fadeMs).catch(() => {});
+      this.currentAudio = nextAudio;
+      this.currentArea = areaName;
     }
   }
 
@@ -76,8 +108,13 @@ export class AudioManager {
 
   stopCurrentMusic() {
     if (!this.currentAudio) return;
-    this.currentAudio.pause();
-    this.currentAudio.currentTime = 0;
+    const audio = this.currentAudio;
+    const fadeMs = this.bgmFadeMs;
+    this._fadeAudio(audio, 0, fadeMs).then(() => {
+      try { audio.pause(); audio.currentTime = 0; } catch (e) {}
+    }).catch(() => {
+      try { audio.pause(); audio.currentTime = 0; } catch (e) {}
+    });
     this.currentAudio = null;
     this.currentArea = null;
   }
@@ -110,6 +147,39 @@ export class AudioManager {
     });
     this.bgmAudioBySrc.set(src, audio);
     return audio;
+  }
+
+  _fadeAudio(audio, toVolume, duration) {
+    if (!audio || typeof audio.volume !== 'number') return Promise.resolve();
+
+    // Cancel any existing fade on this audio
+    const prev = this.fadeTimers.get(audio);
+    if (prev && prev.rafId) cancelAnimationFrame(prev.rafId);
+
+    const startVol = audio.volume;
+    const startTime = performance.now();
+    const self = this;
+
+    return new Promise((resolve) => {
+      function step(now) {
+        const t = Math.min(1, (now - startTime) / Math.max(1, duration));
+        try {
+          audio.volume = startVol + (toVolume - startVol) * t;
+        } catch (e) {}
+
+        if (t < 1) {
+          const rafId = requestAnimationFrame(step);
+          self.fadeTimers.set(audio, { rafId });
+        } else {
+          try { audio.volume = toVolume; } catch (e) {}
+          self.fadeTimers.delete(audio);
+          resolve();
+        }
+      }
+
+      const rafId = requestAnimationFrame(step);
+      self.fadeTimers.set(audio, { rafId });
+    });
   }
 
   _getOrCreateSfxPrototype(src) {

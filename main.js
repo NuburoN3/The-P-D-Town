@@ -344,11 +344,13 @@ for (const townId in townDefinitions) {
 
 const musicManager = new AudioManager({
   areaTracks: {
-    hanamiTown: "Hanami_Game_Audio_BG.wav"
+    // Play dojo music only when inside the hanamiDojo interior
+    hanamiDojo: "Hanami_Game_Audio_BG.wav"
   },
   sfxTracks: {
     enterDoor: "EnterDoor_Sound.wav"
-  }
+  },
+  fadeDurationMs: 800
 });
 musicManager.attachUnlockHandlers();
 
@@ -706,8 +708,16 @@ function areaNameForTown(townId) {
 }
 
 function syncMusicForCurrentArea() {
-  const areaName = areaNameForTown(currentTownId);
-  musicManager.playMusicForArea(areaName);
+  // Only play area music when inside an interior (e.g. the dojo).
+  // Overworld (town) will have no persistent BGM by default.
+  if (currentAreaType === 'overworld') {
+    musicManager.stopCurrentMusic();
+    return;
+  }
+
+  // currentAreaType contains the interior id (like 'hanamiDojo')
+  const interiorAreaName = currentAreaType;
+  musicManager.playMusicForArea(interiorAreaName);
 }
 
 function collides(nx, ny) {
