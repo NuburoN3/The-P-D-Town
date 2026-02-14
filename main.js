@@ -11,6 +11,10 @@ const OVERWORLD_H = 30;
 const INTERIOR_W = 12;
 const INTERIOR_H = 10;
 const PLAYER_SPRITE_HEIGHT_TILES = 1.15;
+const CAMERA_ZOOM = 1.5;
+const SPRITE_FRAME_WIDTH = 32;
+const SPRITE_FRAME_HEIGHT = 32;
+const SPRITE_FRAMES_PER_ROW = 3;
 
 // Tile type IDs
 const TILE_TYPES = {
@@ -243,6 +247,8 @@ const player = {
   dir: "down",
   walking: false,
   frame: 0,
+  animTimer: 0,
+  animFrame: 1,
   sprite: playerSprite,
   desiredHeightTiles: PLAYER_SPRITE_HEIGHT_TILES
 };
@@ -858,6 +864,19 @@ function updateTransition() {
   }
 }
 
+function updatePlayerAnimation() {
+  if (player.walking) {
+    player.animTimer += 1;
+    if (player.animTimer >= 8) {
+      player.animTimer = 0;
+      player.animFrame = (player.animFrame + 1) % SPRITE_FRAMES_PER_ROW;
+    }
+  } else {
+    player.animTimer = 0;
+    player.animFrame = 1;
+  }
+}
+
 function update() {
   const now = performance.now();
   
@@ -896,6 +915,7 @@ function update() {
     handleInteraction();
   }
 
+  updatePlayerAnimation();
   camera();
 }
 
@@ -906,14 +926,18 @@ function update() {
 function camera() {
   const worldW = currentMapW * TILE;
   const worldH = currentMapH * TILE;
+  const visibleW = canvas.width / CAMERA_ZOOM;
+  const visibleH = canvas.height / CAMERA_ZOOM;
+  const halfVisibleW = visibleW / 2;
+  const halfVisibleH = visibleH / 2;
 
-  let cx = player.x - canvas.width / 2 + TILE / 2;
-  let cy = player.y - canvas.height / 2 + TILE / 2;
+  let cx = player.x - halfVisibleW;
+  let cy = player.y - halfVisibleH;
 
-  const minX = Math.min(0, worldW - canvas.width);
-  const maxX = Math.max(0, worldW - canvas.width);
-  const minY = Math.min(0, worldH - canvas.height);
-  const maxY = Math.max(0, worldH - canvas.height);
+  const minX = Math.min(0, worldW - visibleW);
+  const maxX = Math.max(0, worldW - visibleW);
+  const minY = Math.min(0, worldH - visibleH);
+  const maxY = Math.max(0, worldH - visibleH);
 
   cam.x = Math.max(minX, Math.min(cx, maxX));
   cam.y = Math.max(minY, Math.min(cy, maxY));
@@ -983,12 +1007,34 @@ function drawTile(type, x, y, tileX, tileY) {
 function drawPlayer(cam) {
   if (player.sprite && player.sprite.width && player.sprite.height) {
     const targetHeight = TILE * player.desiredHeightTiles;
-    const scale = targetHeight / player.sprite.height;
-    const drawWidth = player.sprite.width * scale;
-    const drawHeight = player.sprite.height * scale;
+    const scale = targetHeight / SPRITE_FRAME_HEIGHT;
+    const drawWidth = SPRITE_FRAME_WIDTH * scale;
+    const drawHeight = SPRITE_FRAME_HEIGHT * scale;
     const drawX = Math.round(player.x - cam.x - (drawWidth - TILE) / 2);
     const drawY = Math.round(player.y - cam.y - (drawHeight - TILE));
-    ctx.drawImage(player.sprite, drawX, drawY, drawWidth, drawHeight);
+
+    const directionToRow = {
+      down: 0,
+      left: 1,
+      right: 2,
+      up: 3
+    };
+    const row = directionToRow[player.dir] ?? 0;
+    const frame = player.walking ? player.animFrame : 1;
+    const sx = frame * SPRITE_FRAME_WIDTH;
+    const sy = row * SPRITE_FRAME_HEIGHT;
+
+    ctx.drawImage(
+      player.sprite,
+      sx,
+      sy,
+      SPRITE_FRAME_WIDTH,
+      SPRITE_FRAME_HEIGHT,
+      drawX,
+      drawY,
+      drawWidth,
+      drawHeight
+    );
   }
 }
 
@@ -1263,13 +1309,19 @@ function drawInventoryOverlay() {
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  // Zoom world rendering in world-space; camera offsets remain source of truth.
+  ctx.save();
+  ctx.scale(CAMERA_ZOOM, CAMERA_ZOOM);
+  const visibleW = canvas.width / CAMERA_ZOOM;
+  const visibleH = canvas.height / CAMERA_ZOOM;
+
   // Draw map
   for (let y = 0; y < currentMapH; y++) {
     for (let x = 0; x < currentMapW; x++) {
       const drawX = x * TILE - cam.x;
       const drawY = y * TILE - cam.y;
 
-      if (drawX > -TILE && drawY > -TILE && drawX < canvas.width && drawY < canvas.height) {
+      if (drawX > -TILE && drawY > -TILE && drawX < visibleW && drawY < visibleH) {
         drawTile(currentMap[y][x], drawX, drawY, x, y);
       }
     }
@@ -1280,6 +1332,8 @@ function render() {
   drawPlayer(cam);
   drawTrainingPopup(cam);
   drawDoorTransition(cam);
+  ctx.restore();
+
   drawInventoryOverlay();
   drawTextbox();
 }
