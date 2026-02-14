@@ -984,10 +984,46 @@ function drawTile(type, x, y, tileX, tileY) {
       break;
 
     case TILE_TYPES.TREE:
-      ctx.fillStyle = COLORS.TREE_LIGHT;
+      // Grass background
+      ctx.fillStyle = COLORS.GRASS;
       ctx.fillRect(x, y, TILE, TILE);
+      
+      // Tree trunk
+      ctx.fillStyle = "#5d4037";
+      ctx.fillRect(x + 12, y + 18, 8, 14);
+      
+      // Trunk shading
+      ctx.fillStyle = "#3e2723";
+      ctx.fillRect(x + 12, y + 22, 8, 2);
+      
+      // Main foliage - bottom circle
       ctx.fillStyle = COLORS.TREE_DARK;
-      ctx.fillRect(x + 8, y + 8, 16, 16);
+      ctx.beginPath();
+      ctx.arc(x + 16, y + 16, 11, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Mid foliage - middle circle
+      ctx.fillStyle = COLORS.TREE_LIGHT;
+      ctx.beginPath();
+      ctx.arc(x + 16, y + 10, 10, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Top foliage - top circle
+      ctx.fillStyle = "#4caf50";
+      ctx.beginPath();
+      ctx.arc(x + 16, y + 5, 8, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Foliage highlights for depth
+      ctx.fillStyle = "rgba(76,175,80,0.6)";
+      ctx.beginPath();
+      ctx.arc(x + 14, y + 8, 3, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.fillStyle = "rgba(46,125,50,0.6)";
+      ctx.beginPath();
+      ctx.arc(x + 18, y + 14, 4, 0, Math.PI * 2);
+      ctx.fill();
       break;
 
     case TILE_TYPES.WALL:
