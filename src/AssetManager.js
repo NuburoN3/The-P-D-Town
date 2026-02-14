@@ -21,4 +21,5 @@ export const AssetManager = {
 export function initializeAssets() {
   AssetManager.loadSprite('mr_hanami', 'mr_hanami.png');
   AssetManager.loadSprite('protagonist', 'protagonist.png');
+  AssetManager.loadSprite('protagonist_handstand', 'protagonist_handstand.png');
 }

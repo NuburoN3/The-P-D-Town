@@ -1,98 +1,37 @@
 import { AudioManager } from "./music-manager.js";
+import {
+  TILE,
+  OVERWORLD_W,
+  OVERWORLD_H,
+  INTERIOR_W,
+  INTERIOR_H,
+  PLAYER_SPRITE_HEIGHT_TILES,
+  CAMERA_ZOOM,
+  SPRITE_FRAME_WIDTH,
+  SPRITE_FRAME_HEIGHT,
+  SPRITE_FRAMES_PER_ROW,
+  TILE_TYPES,
+  COLORS,
+  UI,
+  TRAINING
+} from "./src/constants.js";
+import { AssetManager, initializeAssets } from "./src/AssetManager.js";
 import { initializeInput, keys, getInteractPressed, clearInteractPressed } from "./src/InputManager.js";
 import { collides as collidesAt, collidesWithNPC as collidesWithNPCAt, doorFromCollision as detectDoorCollision } from "./src/CollisionSystem.js";
 import { drawTile as drawTileSystem } from "./src/TileSystem.js";
-import { initializeBuildingRenderers } from "./src/WorldManager.js";
+import {
+  initializeBuildingRenderers,
+  initializeTowns,
+  townDefinitions,
+  getBuilding,
+  createNPCsForTown
+} from "./src/WorldManager.js";
 // ============================================================================
 // CONFIGURATION & CONSTANTS
 // ============================================================================
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-
-const TILE = 32;
-const OVERWORLD_W = 30;
-const OVERWORLD_H = 30;
-const INTERIOR_W = 12;
-const INTERIOR_H = 10;
-const PLAYER_SPRITE_HEIGHT_TILES = 1.15;
-const CAMERA_ZOOM = 1.4;
-const SPRITE_FRAME_WIDTH = 32;
-const SPRITE_FRAME_HEIGHT = 32;
-const SPRITE_FRAMES_PER_ROW = 3;
-
-// Tile type IDs
-const TILE_TYPES = {
-  GRASS: 0,
-  PATH: 1,
-  TREE: 2,
-  WALL: 3,
-  SIGNPOST: 4,
-  DOOR: 5,
-  INTERIOR_FLOOR: 6,
-  TRAINING_FLOOR: 7,
-  CHERRY_BLOSSOM: 8
-};
-
-// Colors for rendering
-const COLORS = {
-  GRASS: "#2e7d32",
-  TREE_LIGHT: "#2e7d32",
-  TREE_DARK: "#1b5e20",
-  WALL: "#8d6e63",
-  SIGNPOST_WOOD: "#6d4c41",
-  SIGNPOST_SIGN: "#d7ccc8",
-  DOOR_INACTIVE: "#5d4037",
-  DOOR_ACTIVE: "#ffcc80",
-  DOOR_FRAME_INACTIVE: "#8d6e63",
-  DOOR_FRAME_ACTIVE: "#ffe0b2",
-  DOOR_KNOB: "#3e2723",
-  INTERIOR_FLOOR_LIGHT: "#bca58a",
-  INTERIOR_FLOOR_DARK: "#a1887f",
-  TRAINING_FLOOR_LIGHT: "#8d7964",
-  TRAINING_FLOOR_DARK: "#6d5b4c",
-  PATH: "#d8c89a",
-  PLAYER_BODY: "#2b2b2b",
-  PLAYER_FACE: "#ffffff",
-  NPC_BODY: "#7b1fa2",
-  NPC_FACE: "#ffe0b2",
-  NPC_LEGS: "#4a148c",
-  DIALOGUE_BG: "rgba(0,0,0,0.75)",
-  DIALOGUE_BORDER: "#ffffff",
-  TEXT: "#ffffff",
-  POPUP_BG: "rgba(12,18,28,0.9)",
-  POPUP_BORDER: "#ffffff",
-  POPUP_BAR_BG: "#263238",
-  POPUP_BAR_FILL: "#4caf50",
-  INVENTORY_BG: "rgba(22,28,38,0.96)",
-  INVENTORY_OVERLAY: "rgba(0,0,0,0.6)",
-  INVENTORY_BAR_FILL: "#66bb6a",
-  SHADOW: "rgba(0,0,0,0.25)"
-};
-
-// UI Constants
-const UI = {
-  TEXT_BOX_HEIGHT: 112,
-  CHOICE_BOX_HEIGHT: 152,
-  TEXT_BOX_PADDING: 20,
-  LINE_SPACING: 24,
-  CHARACTERS_PER_SECOND: 100,
-  TRAINING_POPUP_WIDTH: 120,
-  TRAINING_POPUP_HEIGHT: 44,
-  INVENTORY_BOX_WIDTH: 420,
-  INVENTORY_BOX_HEIGHT: 280,
-  INTERACT_REACH: TILE
-};
-
-// Training Constants
-const TRAINING = {
-  DURATION_MS: 2000,
-  ANIM_DURATION_MS: 400,
-  LEVEL_UP_HOLD_MS: 250,
-  XP_PER_SESSION: 5,
-  INITIAL_XP_NEEDED: 10,
-  XP_INCREMENT: 5
-};
 
 // Initialize building renderers with canvas context and constants
 initializeBuildingRenderers(ctx, TILE, COLORS);
@@ -101,402 +40,9 @@ initializeBuildingRenderers(ctx, TILE, COLORS);
 // ASSET MANAGER
 // ============================================================================
 
-const AssetManager = {
-  sprites: {},
-  
-  loadSprite(name, src) {
-    const img = new Image();
-    img.src = src;
-    this.sprites[name] = img;
-    return img;
-  },
-  
-  getSprite(name) {
-    return this.sprites[name] || null;
-  }
-};
+initializeAssets();
 
-// Load all sprites upfront
-AssetManager.loadSprite('mr_hanami', 'mr_hanami.png');
-AssetManager.loadSprite('protagonist', 'protagonist.png');
-AssetManager.loadSprite('protagonist_handstand', 'protagonist_handstand.png');
-
-// ============================================================================
-// BUILDING DEFINITIONS
-// ============================================================================
-
-const BUILDING_TYPES = {
-  DOJO: 'DOJO',
-  HOUSE: 'HOUSE',
-  SHOP: 'SHOP',
-  SHRINE: 'SHRINE'
-};
-
-// Building-specific tile renderers
-const buildingRenderers = {
-  DOJO: {
-    renderTile(x, y, tileX, tileY, isTopRow, isBottomRow, isLeftCol, isRightCol) {
-      // Enhanced Japanese dojo with beautiful pixel art style
-      const roofDarkRed = "#8b2020";
-      const roofBrightRed = "#d32f2f";
-      const roofHighlight = "#ff6b6b";
-      const woodDark = "#5d4037";
-      const woodMid = "#795548";
-      const woodLight = "#a1887f";
-      const wallLight = "#e8d5c4";
-      const wallMid = "#d4af7a";
-      const wallDark = "#b8956a";
-      const shadowColor = "#3e2723";
-      const goldAccent = "#ffd700";
-      const goldDark = "#daa520";
-      const windowColor = "#87ceeb";
-      
-      // Main wall body with gradient effect
-      ctx.fillStyle = wallLight;
-      ctx.fillRect(x, y, TILE, TILE);
-      
-      // Wall shading - darker on bottom for depth
-      ctx.fillStyle = "rgba(184, 149, 106, 0.4)";
-      ctx.fillRect(x, y + 20, TILE, 12);
-      
-      // Wall texture - subtle horizontal lines
-      ctx.strokeStyle = "rgba(139, 69, 19, 0.15)";
-      ctx.lineWidth = 1;
-      for (let i = 0; i < TILE; i += 4) {
-        ctx.beginPath();
-        ctx.moveTo(x, y + i);
-        ctx.lineTo(x + TILE, y + i);
-        ctx.stroke();
-      }
-      
-      // ROOF (TOP ROW)
-      if (isTopRow) {
-        // Base roof - broad overhang
-        ctx.fillStyle = roofDarkRed;
-        ctx.fillRect(x - 2, y - 2, TILE + 4, 12);
-        
-        // Bright red main roof
-        ctx.fillStyle = roofBrightRed;
-        ctx.fillRect(x, y, TILE, 9);
-        
-        // Roof highlight
-        ctx.fillStyle = roofHighlight;
-        ctx.fillRect(x + 2, y + 1, TILE - 4, 3);
-        
-        // Roof ridge shadow
-        ctx.fillStyle = roofDarkRed;
-        ctx.fillRect(x + 1, y + 5, TILE - 2, 2);
-        
-        // Decorative roof tiles
-        for (let i = 0; i < TILE; i += 4) {
-          ctx.fillStyle = roofDarkRed;
-          ctx.fillRect(x + i, y + 7, 3, 2);
-        }
-        
-        // Gold decorative trim at roof edge
-        ctx.fillStyle = goldDark;
-        ctx.fillRect(x, y + 9, TILE, 2);
-        
-        // Corner ornaments
-        if (isLeftCol) {
-          ctx.fillStyle = goldAccent;
-          ctx.beginPath();
-          ctx.arc(x + 4, y + 5, 2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = goldDark;
-          ctx.beginPath();
-          ctx.arc(x + 4, y + 5, 1, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        if (isRightCol) {
-          ctx.fillStyle = goldAccent;
-          ctx.beginPath();
-          ctx.arc(x + TILE - 4, y + 5, 2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = goldDark;
-          ctx.beginPath();
-          ctx.arc(x + TILE - 4, y + 5, 1, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      
-      // WOODEN STRUCTURAL POSTS
-      if (isLeftCol) {
-        // Left pillar with 3D effect
-        ctx.fillStyle = woodDark;
-        ctx.fillRect(x + 1, y + 10, 5, TILE - 10);
-        ctx.fillStyle = woodMid;
-        ctx.fillRect(x + 2, y + 10, 3, TILE - 10);
-        
-        // Post shadow and highlight
-        ctx.fillStyle = "rgba(0,0,0,0.3)";
-        ctx.fillRect(x + 1, y + 10, 2, TILE - 10);
-        ctx.fillStyle = "rgba(255,255,255,0.2)";
-        ctx.fillRect(x + 4, y + 10, 1, TILE - 10);
-      }
-      
-      if (isRightCol) {
-        // Right pillar
-        ctx.fillStyle = woodDark;
-        ctx.fillRect(x + TILE - 6, y + 10, 5, TILE - 10);
-        ctx.fillStyle = woodMid;
-        ctx.fillRect(x + TILE - 5, y + 10, 3, TILE - 10);
-        
-        // Post details
-        ctx.fillStyle = "rgba(0,0,0,0.3)";
-        ctx.fillRect(x + TILE - 6, y + 10, 2, TILE - 10);
-        ctx.fillStyle = "rgba(255,255,255,0.2)";
-        ctx.fillRect(x + TILE - 3, y + 10, 1, TILE - 10);
-      }
-      
-      // HORIZONTAL BEAMS
-      if (!isTopRow && !isBottomRow) {
-        // Upper beam with 3D effect
-        ctx.fillStyle = woodDark;
-        ctx.fillRect(x, y + 12, TILE, 2);
-        ctx.fillStyle = "rgba(0,0,0,0.3)";
-        ctx.fillRect(x, y + 12, TILE, 1);
-        ctx.fillStyle = "rgba(255,255,255,0.1)";
-        ctx.fillRect(x, y + 13, TILE, 1);
-        
-        // Lower beam
-        ctx.fillStyle = woodDark;
-        ctx.fillRect(x, y + 22, TILE, 2);
-        ctx.fillStyle = "rgba(0,0,0,0.3)";
-        ctx.fillRect(x, y + 22, TILE, 1);
-        ctx.fillStyle = "rgba(255,255,255,0.1)";
-        ctx.fillRect(x, y + 23, TILE, 1);
-      }
-      
-      // WINDOWS on middle rows
-      if (!isTopRow && !isBottomRow && !isLeftCol && !isRightCol) {
-        // Window frame
-        ctx.fillStyle = woodDark;
-        ctx.fillRect(x + 8, y + 14, 16, 10);
-        
-        // Window panes
-        ctx.fillStyle = windowColor;
-        ctx.fillRect(x + 10, y + 16, 6, 6);
-        ctx.fillRect(x + 18, y + 16, 6, 6);
-        
-        // Window reflection
-        ctx.fillStyle = "rgba(255,255,255,0.4)";
-        ctx.fillRect(x + 11, y + 17, 2, 2);
-        ctx.fillRect(x + 19, y + 17, 2, 2);
-        
-        // Window divider
-        ctx.strokeStyle = woodDark;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x + 16, y + 16);
-        ctx.lineTo(x + 16, y + 22);
-        ctx.stroke();
-      }
-      
-      // DOOR FRAME on bottom center
-      if (isBottomRow && !isLeftCol && !isRightCol) {
-        // Door frame
-        ctx.fillStyle = woodDark;
-        ctx.fillRect(x + 6, y + 12, 20, 20);
-        
-        // Door panels
-        ctx.fillStyle = "#6d4c41";
-        ctx.fillRect(x + 8, y + 14, 8, 16);
-        ctx.fillRect(x + 18, y + 14, 8, 16);
-        
-        // Door panel details
-        ctx.fillStyle = "#4caf50";
-        ctx.fillRect(x + 9, y + 15, 2, 14);
-        ctx.fillRect(x + 19, y + 15, 2, 14);
-        
-        // Gold ring door handles
-        ctx.fillStyle = goldAccent;
-        ctx.beginPath();
-        ctx.arc(x + 12, y + 22, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(x + 22, y + 22, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Handle shadows
-        ctx.fillStyle = goldDark;
-        ctx.beginPath();
-        ctx.arc(x + 12, y + 22, 0.8, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(x + 22, y + 22, 0.8, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      
-      // DECORATIVE BORDER
-      ctx.strokeStyle = shadowColor;
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(x, y, TILE, TILE);
-      
-      // Inner highlight
-      ctx.strokeStyle = "rgba(255,255,255,0.3)";
-      ctx.lineWidth = 0.5;
-      ctx.strokeRect(x + 1, y + 1, TILE - 2, TILE - 2);
-      
-      // CORNER ORNAMENTS
-      if (isTopRow && isLeftCol) {
-        ctx.fillStyle = goldAccent;
-        ctx.fillRect(x + 2, y + 4, 4, 4);
-        ctx.fillStyle = goldDark;
-        ctx.fillRect(x + 3, y + 5, 2, 2);
-      }
-      
-      if (isTopRow && isRightCol) {
-        ctx.fillStyle = goldAccent;
-        ctx.fillRect(x + TILE - 6, y + 4, 4, 4);
-        ctx.fillStyle = goldDark;
-        ctx.fillRect(x + TILE - 5, y + 5, 2, 2);
-      }
-    }
-  },
-  HOUSE: {
-    renderTile(x, y, tileX, tileY, isTopRow, isBottomRow, isLeftCol, isRightCol) {
-      ctx.fillStyle = "#a1887f";
-      ctx.fillRect(x, y, TILE, TILE);
-      ctx.strokeStyle = "#8d6e63";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x, y, TILE, TILE);
-    }
-  },
-  SHOP: {
-    renderTile(x, y, tileX, tileY, isTopRow, isBottomRow, isLeftCol, isRightCol) {
-      ctx.fillStyle = "#9b7d6f";
-      ctx.fillRect(x, y, TILE, TILE);
-      ctx.strokeStyle = "#6d5b4c";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x, y, TILE, TILE);
-    }
-  },
-  SHRINE: {
-    renderTile(x, y, tileX, tileY, isTopRow, isBottomRow, isLeftCol, isRightCol) {
-      ctx.fillStyle = "#8b6f47";
-      ctx.fillRect(x, y, TILE, TILE);
-      ctx.strokeStyle = "#6d5b3f";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x, y, TILE, TILE);
-    }
-  }
-};
-
-// ============================================================================
-// TOWN DEFINITIONS
-// ============================================================================
-
-const townDefinitions = {
-  hanamiTown: {
-    id: 'hanamiTown',
-    name: 'Hanami Town',
-    areaLabel: 'hanamiTown',
-    
-    buildings: [
-      {
-        type: BUILDING_TYPES.DOJO,
-        x: 13,
-        y: 10,
-        width: 5,
-        height: 4,
-        doorPos: { x: 15, y: 13 },
-        interiorId: 'hanamiDojo',
-        npcId: 'mrHanami'
-      }
-    ],
-    
-    overworldMap: null,
-    interiorMaps: {
-      hanamiDojo: null
-    },
-    
-    generateOverworldMap() {
-      const map = Array.from({ length: OVERWORLD_H }, (_, y) =>
-        Array.from({ length: OVERWORLD_W }, (_, x) => {
-          if (x === 0 || y === 0 || x === OVERWORLD_W - 1 || y === OVERWORLD_H - 1) {
-            return TILE_TYPES.TREE;
-          }
-          return TILE_TYPES.GRASS;
-        })
-      );
-
-      const pathX = 15;
-      for (let y = 2; y < OVERWORLD_H - 2; y++) {
-        map[y][pathX] = TILE_TYPES.PATH;
-      }
-
-      for (let x = 8; x <= 22; x++) {
-        map[15][x] = TILE_TYPES.PATH;
-      }
-
-      for (const building of this.buildings) {
-        for (let y = building.y; y < building.y + building.height; y++) {
-          for (let x = building.x; x < building.x + building.width; x++) {
-            map[y][x] = TILE_TYPES.WALL;
-          }
-        }
-      }
-
-      const building = this.buildings[0];
-      map[building.doorPos.y][building.doorPos.x] = TILE_TYPES.DOOR;
-      map[14][14] = TILE_TYPES.SIGNPOST;
-
-      const treeClusters = [
-        [4, 4], [5, 4], [4, 5], [24, 4], [25, 4], [24, 5],
-        [5, 23], [4, 24], [24, 23], [25, 24], [22, 20], [8, 20]
-      ];
-      for (const [x, y] of treeClusters) {
-        map[y][x] = TILE_TYPES.TREE;
-      }
-
-      // Cherry blossom tree behind the dojo (like in Hanami Town)
-      const cherryBlossomPositions = [
-        [15, 5], [14, 6], [15, 6], [16, 6], [14, 7], [15, 7], [16, 7]
-      ];
-      for (const [x, y] of cherryBlossomPositions) {
-        if (x >= 0 && x < OVERWORLD_W && y >= 0 && y < OVERWORLD_H) {
-          map[y][x] = TILE_TYPES.CHERRY_BLOSSOM;
-        }
-      }
-
-      return map;
-    },
-
-    generateInteriorMap(interiorId) {
-      const map = Array.from({ length: INTERIOR_H }, (_, y) =>
-        Array.from({ length: INTERIOR_W }, (_, x) => {
-          if (x === 0 || y === 0 || x === INTERIOR_W - 1 || y === INTERIOR_H - 1) {
-            return TILE_TYPES.WALL;
-          }
-          return TILE_TYPES.INTERIOR_FLOOR;
-        })
-      );
-
-      const door = { x: Math.floor(INTERIOR_W / 2), y: INTERIOR_H - 1 };
-      map[door.y][door.x] = TILE_TYPES.DOOR;
-
-      const trainingTile = { x: 4, y: 5 };
-      map[trainingTile.y][trainingTile.x] = TILE_TYPES.TRAINING_FLOOR;
-
-      return { map, door, trainingTile };
-    }
-  }
-};
-
-// Initialize town maps
-for (const townId in townDefinitions) {
-  const town = townDefinitions[townId];
-  town.overworldMap = town.generateOverworldMap();
-  for (const interiorId in town.interiorMaps) {
-    const interior = town.generateInteriorMap(interiorId);
-    town.interiorMaps[interiorId] = {
-      map: interior.map,
-      door: interior.door,
-      trainingTile: interior.trainingTile
-    };
-  }
-}
+initializeTowns();
 
 // Create WAV audio data URLs for synthetic sound effects
 // Walking sound - subtle 80Hz tone
@@ -577,96 +123,14 @@ let currentMap = currentTown.overworldMap;
 let currentMapW = OVERWORLD_W;
 let currentMapH = OVERWORLD_H;
 
-// Helper to get town building by coordinates
-function getBuilding(townId, tileX, tileY) {
-  const town = townDefinitions[townId];
-  if (!town) return null;
-  
-  for (const building of town.buildings) {
-    if (tileX >= building.x && tileX < building.x + building.width &&
-        tileY >= building.y && tileY < building.y + building.height) {
-      return building;
-    }
-  }
-  return null;
-}
-
-// Helper to render a building tile
-function renderBuildingTile(building, x, y, tileX, tileY) {
-  const isTopRow = tileY === building.y;
-  const isBottomRow = tileY === building.y + building.height - 1;
-  const isLeftCol = tileX === building.x;
-  const isRightCol = tileX === building.x + building.width - 1;
-  
-  const renderer = buildingRenderers[building.type];
-  if (renderer) {
-    renderer.renderTile(x, y, tileX, tileY, isTopRow, isBottomRow, isLeftCol, isRightCol);
-  }
-}
-
 // ============================================================================
 // ASSETS & NPCs
 // ============================================================================
 
-const npcRegistry = {
-  mrHanami: {
-    id: 'mrHanami',
-    name: 'Mr. Hanami',
-    spriteName: 'mr_hanami',
-    desiredHeightTiles: 1.15,
-    dialogue: [
-      "Hello there!",
-      "Welcome to the dojo.",
-      "I train students here",
-      "where they practice Hana Sakura style Karate",
-      "which means \"the way of the cherry blossom\".",
-      "Would you like me to teach you?"
-    ],
-    alreadyTrainingDialogue: "Your training has already begun. Focus your mind.",
-    hasTrainingChoice: true,
-    towns: {
-      hanamiTown: {
-        interiorId: 'hanamiDojo',
-        x: 7 * TILE,
-        y: 4 * TILE,
-        dir: 'down'
-      }
-    }
-  }
-};
-
-const npcs = [];
-
-// Load NPCs for current town
-function loadNPCsForTown(townId) {
-  npcs.length = 0;
-  
-  for (const npcId in npcRegistry) {
-    const npcDef = npcRegistry[npcId];
-    const townData = npcDef.towns[townId];
-    
-    if (townData) {
-      npcs.push({
-        id: npcId,
-        world: townData.interiorId,
-        x: townData.x,
-        y: townData.y,
-        width: TILE,
-        height: TILE,
-        desiredHeightTiles: npcDef.desiredHeightTiles,
-        name: npcDef.name,
-        sprite: AssetManager.getSprite(npcDef.spriteName),
-        dialogue: npcDef.dialogue,
-        alreadyTrainingDialogue: npcDef.alreadyTrainingDialogue,
-        hasTrainingChoice: npcDef.hasTrainingChoice,
-        dir: townData.dir
-      });
-    }
-  }
-}
-
-// Initialize NPCs for current town
-loadNPCsForTown(currentTownId);
+const npcs = createNPCsForTown(currentTownId, {
+  tileSize: TILE,
+  getSprite: (name) => AssetManager.getSprite(name)
+});
 
 // ============================================================================
 // WORLD & GAME STATE
@@ -885,11 +349,6 @@ function setArea(areaType) {
   }
   
   syncMusicForCurrentArea();
-}
-
-function areaNameForTown(townId) {
-  const town = townDefinitions[townId];
-  return town ? town.areaLabel : null;
 }
 
 function syncMusicForCurrentArea() {

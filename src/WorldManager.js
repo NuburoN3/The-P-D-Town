@@ -2,7 +2,7 @@
 // WORLD MANAGER - Towns, buildings, maps, and NPCs
 // ============================================================================
 
-import { TILE_TYPES, OVERWORLD_W, OVERWORLD_H, INTERIOR_W, INTERIOR_H } from './constants.js';
+import { TILE, TILE_TYPES, OVERWORLD_W, OVERWORLD_H, INTERIOR_W, INTERIOR_H } from './constants.js';
 import { AssetManager } from './AssetManager.js';
 
 // Building types enum
@@ -429,4 +429,32 @@ export function renderBuildingTile(building, x, y, tileX, tileY) {
 export function areaNameForTown(townId) {
   const town = townDefinitions[townId];
   return town ? town.areaLabel : null;
+}
+
+export function createNPCsForTown(townId, { tileSize = TILE, getSprite = (name) => AssetManager.getSprite(name) } = {}) {
+  const npcs = [];
+
+  for (const npcId in npcRegistry) {
+    const npcDef = npcRegistry[npcId];
+    const townData = npcDef.towns[townId];
+    if (!townData) continue;
+
+    npcs.push({
+      id: npcId,
+      world: townData.interiorId,
+      x: townData.x,
+      y: townData.y,
+      width: tileSize,
+      height: tileSize,
+      desiredHeightTiles: npcDef.desiredHeightTiles,
+      name: npcDef.name,
+      sprite: getSprite(npcDef.spriteName),
+      dialogue: npcDef.dialogue,
+      alreadyTrainingDialogue: npcDef.alreadyTrainingDialogue,
+      hasTrainingChoice: npcDef.hasTrainingChoice,
+      dir: townData.dir
+    });
+  }
+
+  return npcs;
 }
