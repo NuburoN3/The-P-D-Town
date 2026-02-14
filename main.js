@@ -1,3 +1,5 @@
+import { AudioManager } from "./music-manager.js";
+
 // ============================================================================
 // CONFIGURATION & CONSTANTS
 // ============================================================================
@@ -10,6 +12,11 @@ const OVERWORLD_W = 30;
 const OVERWORLD_H = 30;
 const INTERIOR_W = 12;
 const INTERIOR_H = 10;
+const PLAYER_SPRITE_HEIGHT_TILES = 1.15;
+const CAMERA_ZOOM = 1.4;
+const SPRITE_FRAME_WIDTH = 32;
+const SPRITE_FRAME_HEIGHT = 32;
+const SPRITE_FRAMES_PER_ROW = 3;
 
 // Tile type IDs
 const TILE_TYPES = {
@@ -82,6 +89,16 @@ const TRAINING = {
   INITIAL_XP_NEEDED: 10,
   XP_INCREMENT: 5
 };
+
+const musicManager = new AudioManager({
+  areaTracks: {
+    hanamiTown: "Hanami_Game_Audio_BG.wav"
+  },
+  sfxTracks: {
+    enterDoor: "EnterDoor_Sound.wav"
+  }
+});
+musicManager.attachUnlockHandlers();
 
 // ============================================================================
 // STATE MANAGEMENT
@@ -197,6 +214,8 @@ const trainingTile = interiorData.trainingTile;
 
 const hanamiSprite = new Image();
 hanamiSprite.src = "mr_hanami.png";
+const playerSprite = new Image();
+playerSprite.src = "protagonist.png";
 
 const npcs = [
   {
@@ -239,8 +258,14 @@ const player = {
   speed: 2.2,
   dir: "down",
   walking: false,
-  frame: 0
+  frame: 0,
+  animTimer: 0,
+  animFrame: 1,
+  sprite: playerSprite,
+  desiredHeightTiles: PLAYER_SPRITE_HEIGHT_TILES
 };
+
+const cam = { x: 0, y: 0 };
 
 const keys = {};
 let interactPressed = false;
@@ -426,6 +451,17 @@ function setWorld(name) {
     currentMapH = INTERIOR_H;
   }
   worldName = name;
+  syncMusicForCurrentArea();
+}
+
+function areaNameForWorld(world) {
+  if (world === "overworld" || world === "interior") return "hanamiTown";
+  return null;
+}
+
+function syncMusicForCurrentArea() {
+  const areaName = areaNameForWorld(worldName);
+  musicManager.playMusicForArea(areaName);
 }
 
 function tileAtPixel(px, py) {
@@ -607,6 +643,7 @@ function handleNPCInteraction(npc) {
 
 function beginDoorSequence(doorTile) {
   if (gameState === "enteringDoor" || gameState === "transition") return;
+  musicManager.playSfx("enterDoor");
 
   const playerCenterX = player.x + TILE / 2;
   const playerCenterY = player.y + TILE / 2;
@@ -851,6 +888,19 @@ function updateTransition() {
   }
 }
 
+function updatePlayerAnimation() {
+  if (player.walking) {
+    player.animTimer += 1;
+    if (player.animTimer >= 8) {
+      player.animTimer = 0;
+      player.animFrame = (player.animFrame + 1) % SPRITE_FRAMES_PER_ROW;
+    }
+  } else {
+    player.animTimer = 0;
+    player.animFrame = 1;
+  }
+}
+
 function update() {
   const now = performance.now();
   
@@ -888,6 +938,9 @@ function update() {
   if (gameState !== "transition") {
     handleInteraction();
   }
+
+  updatePlayerAnimation();
+  camera();
 }
 
 // ============================================================================
@@ -897,14 +950,21 @@ function update() {
 function camera() {
   const worldW = currentMapW * TILE;
   const worldH = currentMapH * TILE;
+  const visibleW = canvas.width / CAMERA_ZOOM;
+  const visibleH = canvas.height / CAMERA_ZOOM;
+  const halfVisibleW = visibleW / 2;
+  const halfVisibleH = visibleH / 2;
 
-  let cx = player.x - canvas.width / 2 + TILE / 2;
-  let cy = player.y - canvas.height / 2 + TILE / 2;
+  let cx = player.x - halfVisibleW;
+  let cy = player.y - halfVisibleH;
 
-  cx = Math.max(0, Math.min(cx, Math.max(0, worldW - canvas.width)));
-  cy = Math.max(0, Math.min(cy, Math.max(0, worldH - canvas.height)));
+  const minX = Math.min(0, worldW - visibleW);
+  const maxX = Math.max(0, worldW - visibleW);
+  const minY = Math.min(0, worldH - visibleH);
+  const maxY = Math.max(0, worldH - visibleH);
 
-  return { x: cx, y: cy };
+  cam.x = Math.max(minX, Math.min(cx, maxX));
+  cam.y = Math.max(minY, Math.min(cy, maxY));
 }
 
 // ============================================================================
@@ -969,22 +1029,36 @@ function drawTile(type, x, y, tileX, tileY) {
 }
 
 function drawPlayer(cam) {
-  const px = player.x - cam.x;
-  const py = player.y - cam.y;
+  if (player.sprite && player.sprite.width && player.sprite.height) {
+    const targetHeight = TILE * player.desiredHeightTiles;
+    const scale = targetHeight / SPRITE_FRAME_HEIGHT;
+    const drawWidth = SPRITE_FRAME_WIDTH * scale;
+    const drawHeight = SPRITE_FRAME_HEIGHT * scale;
+    const drawX = Math.round(player.x - cam.x - (drawWidth - TILE) / 2);
+    const drawY = Math.round(player.y - cam.y - (drawHeight - TILE));
 
-  ctx.fillStyle = COLORS.PLAYER_BODY;
-  ctx.fillRect(px + 6, py + 8, 20, 20);
+    const directionToRow = {
+      down: 0,
+      left: 1,
+      right: 2,
+      up: 3
+    };
+    const row = directionToRow[player.dir] ?? 0;
+    const frame = player.walking ? player.animFrame : 1;
+    const sx = frame * SPRITE_FRAME_WIDTH;
+    const sy = row * SPRITE_FRAME_HEIGHT;
 
-  ctx.fillStyle = COLORS.PLAYER_FACE;
-  ctx.fillRect(px + 10, py + 4, 12, 8);
-
-  const legFrame = Math.floor(player.frame / 12) % 2;
-  if (player.walking && legFrame === 0) {
-    ctx.fillRect(px + 8, py + 26, 6, 6);
-    ctx.fillRect(px + 18, py + 26, 6, 6);
-  } else {
-    ctx.fillRect(px + 10, py + 26, 6, 6);
-    ctx.fillRect(px + 16, py + 26, 6, 6);
+    ctx.drawImage(
+      player.sprite,
+      sx,
+      sy,
+      SPRITE_FRAME_WIDTH,
+      SPRITE_FRAME_HEIGHT,
+      drawX,
+      drawY,
+      drawWidth,
+      drawHeight
+    );
   }
 }
 
@@ -1144,14 +1218,23 @@ function drawTextbox() {
   }
 
   const textHeight = wrappedLines.length * lineSpacing;
-  const centeredStartY = boxY + (boxHeight - textHeight) / 2 + lineSpacing - 6;
+  let textStartY;
+  if (choiceState.active) {
+    // When choices are active, position text in upper portion to avoid overlap
+    const textAreaTop = dialogueName ? boxY + 40 : boxY + 26;
+    const textAreaHeight = 50; // Reserve space for options below
+    textStartY = textAreaTop + (textAreaHeight - textHeight) / 2 + lineSpacing - 6;
+  } else {
+    // Center text in the entire box when no choices
+    textStartY = boxY + (boxHeight - textHeight) / 2 + lineSpacing - 6;
+  }
 
   if (dialogueName) {
     ctx.fillText(dialogueName, 40, boxY + 28);
   }
 
   for (let i = 0; i < wrappedLines.length; i++) {
-    ctx.fillText(wrappedLines[i], textStartX, centeredStartY + i * lineSpacing);
+    ctx.fillText(wrappedLines[i], textStartX, textStartY + i * lineSpacing);
   }
 
   if (choiceState.active) {
@@ -1257,8 +1340,13 @@ function drawInventoryOverlay() {
 }
 
 function render() {
-  const cam = camera();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Zoom world rendering in world-space; camera offsets remain source of truth.
+  ctx.save();
+  ctx.scale(CAMERA_ZOOM, CAMERA_ZOOM);
+  const visibleW = canvas.width / CAMERA_ZOOM;
+  const visibleH = canvas.height / CAMERA_ZOOM;
 
   // Draw map
   for (let y = 0; y < currentMapH; y++) {
@@ -1266,7 +1354,7 @@ function render() {
       const drawX = x * TILE - cam.x;
       const drawY = y * TILE - cam.y;
 
-      if (drawX > -TILE && drawY > -TILE && drawX < canvas.width && drawY < canvas.height) {
+      if (drawX > -TILE && drawY > -TILE && drawX < visibleW && drawY < visibleH) {
         drawTile(currentMap[y][x], drawX, drawY, x, y);
       }
     }
@@ -1277,6 +1365,8 @@ function render() {
   drawPlayer(cam);
   drawTrainingPopup(cam);
   drawDoorTransition(cam);
+  ctx.restore();
+
   drawInventoryOverlay();
   drawTextbox();
 }
@@ -1285,10 +1375,15 @@ function render() {
 // GAME LOOP
 // ============================================================================
 
-function loop() {
-  update();
-  render();
+
+let lastTime = performance.now();
+syncMusicForCurrentArea();
+function loop(currentTime) {
+  const delta = (currentTime - lastTime) / 1000; // seconds
+  lastTime = currentTime;
+  update(delta, currentTime);
+  render(delta, currentTime);
   requestAnimationFrame(loop);
 }
 
-loop();
+requestAnimationFrame(loop);
