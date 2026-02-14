@@ -6,29 +6,24 @@ import { TILE_TYPES, TILE, COLORS } from "./constants.js";
 import { getBuilding, renderBuildingTile } from "./WorldManager.js";
 
 function drawGrassTile(ctx, x, y, tileX, tileY) {
-  const patch = 8;
-  const phase = (tileX + tileY) & 1;
-
+  // Almost flat grass: base fill plus a few slightly darker speckles
   ctx.fillStyle = COLORS.GRASS;
   ctx.fillRect(x, y, TILE, TILE);
 
-  for (let py = 0; py < 4; py++) {
-    for (let px = 0; px < 4; px++) {
-      const check = (px + py + phase) & 1;
-      ctx.fillStyle = check === 0 ? "#2f7a2e" : "#63b84e";
-      ctx.fillRect(x + px * patch, y + py * patch, patch, patch);
-    }
+  // Draw a couple of tiny vertical blade-like speckles so they read as grass
+  const blades = 2;
+  for (let i = 0; i < blades; i++) {
+    const sx = 2 + ((tileX * 13 + tileY * 7 + i * 11) % (TILE - 6));
+    const sy = 6 + ((tileX * 5 + tileY * 17 + i * 19) % (TILE - 10));
+    const h = 2 + ((tileX + tileY + i) % 2); // 2 or 3 px tall
+    const color = i % 2 === 0 ? COLORS.GRASS_SPECKLE : COLORS.GRASS_DARK;
+    ctx.fillStyle = color;
+    ctx.fillRect(x + sx, y + sy, 1, h);
   }
 
-  for (let i = 0; i < 6; i++) {
-    const bladeX = x + 2 + i * 5 + ((tileX * 7 + tileY * 11 + i * 3) % 3) - 1;
-    const bladeH = 5 + ((tileX * 19 + tileY * 23 + i * 13) % 4);
-    ctx.fillStyle = i % 2 === 0 ? "#285f26" : "#7fd35f";
-    ctx.fillRect(bladeX, y + 2, 3, bladeH);
-  }
-
-  ctx.fillStyle = "rgba(0,0,0,0.12)";
-  ctx.fillRect(x, y + TILE - 5, TILE, 5);
+  // Very subtle bottom shadow to anchor tiles (minimal)
+  ctx.fillStyle = "rgba(0,0,0,0.04)";
+  ctx.fillRect(x, y + TILE - 3, TILE, 3);
 }
 
 const tileRenderers = {

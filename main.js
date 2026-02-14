@@ -115,6 +115,7 @@ const AssetManager = {
 // Load all sprites upfront
 AssetManager.loadSprite('mr_hanami', 'mr_hanami.png');
 AssetManager.loadSprite('protagonist', 'protagonist.png');
+AssetManager.loadSprite('protagonist_handstand', 'protagonist_handstand.png');
 
 // ============================================================================
 // BUILDING DEFINITIONS
@@ -344,11 +345,14 @@ for (const townId in townDefinitions) {
 
 const musicManager = new AudioManager({
   areaTracks: {
-    hanamiTown: "Hanami_Game_Audio_BG.wav"
+    // Play dojo music only when inside the hanamiDojo interior
+    hanamiDojo: "Hanami_Game_Audio_BG.wav"
   },
   sfxTracks: {
-    enterDoor: "EnterDoor_Sound.wav"
-  }
+    enterDoor: "EnterDoor_Sound.wav",
+    itemUnlock: "Item_Unlock.wav"
+  },
+  fadeDurationMs: 800
 });
 musicManager.attachUnlockHandlers();
 
@@ -381,6 +385,20 @@ const trainingPopup = {
   levelUp: false,
   levelUpHoldMs: TRAINING.LEVEL_UP_HOLD_MS,
   pendingLevelUpDialogueAt: null
+};
+
+// Item / notification state
+let itemAlert = {
+  active: false,
+  text: "",
+  startedAt: 0,
+  durationMs: 3000
+};
+
+let inventoryHint = {
+  active: false,
+  startedAt: 0,
+  durationMs: 4500
 };
 
 // ============================================================================
@@ -505,6 +523,11 @@ const player = {
   sprite: AssetManager.getSprite('protagonist'),
   desiredHeightTiles: PLAYER_SPRITE_HEIGHT_TILES
 };
+
+// training/handstand animation state on the player
+player.isTraining = false;
+player.handstandAnimTimer = 0;
+player.handstandFrame = 0;
 
 const cam = { x: 0, y: 0 };
 
@@ -706,8 +729,16 @@ function areaNameForTown(townId) {
 }
 
 function syncMusicForCurrentArea() {
-  const areaName = areaNameForTown(currentTownId);
-  musicManager.playMusicForArea(areaName);
+  // Only play area music when inside an interior (e.g. the dojo).
+  // Overworld (town) will have no persistent BGM by default.
+  if (currentAreaType === 'overworld') {
+    musicManager.stopCurrentMusic();
+    return;
+  }
+
+  // currentAreaType contains the interior id (like 'hanamiDojo')
+  const interiorAreaName = currentAreaType;
+  musicManager.playMusicForArea(interiorAreaName);
 }
 
 function collides(nx, ny) {
@@ -773,6 +804,12 @@ function tryTrainingAction() {
   trainingPopup.active = true;
   trainingPopup.startedAt = performance.now();
 
+  // start player handstand/training animation
+  player.isTraining = true;
+  player.handstandAnimTimer = 0;
+  player.handstandFrame = 0;
+  player.walking = false;
+
   if (playerStats.disciplineXP >= playerStats.disciplineXPNeeded) {
     trainingPopup.levelUp = true;
     trainingPopup.pendingLevelUpDialogueAt = trainingPopup.startedAt + trainingPopup.animDurationMs;
@@ -822,6 +859,14 @@ function handleNPCInteraction(npc) {
           gameFlags.acceptedTraining = true;
           if (!playerInventory["Training Headband"]) {
             playerInventory["Training Headband"] = 1;
+            // show item alert above player and inventory hint
+            itemAlert.active = true;
+            itemAlert.text = "New item: Training Headband";
+            itemAlert.startedAt = performance.now();
+            inventoryHint.active = true;
+            inventoryHint.startedAt = performance.now();
+            // play unlock SFX
+            try { musicManager.playSfx("itemUnlock"); } catch (e) {}
           }
           showDialogue(npc.name, "You received a Training Headband!");
         } else {
@@ -1088,6 +1133,19 @@ function updateTransition() {
 }
 
 function updatePlayerAnimation() {
+  // If player is performing the training handstand animation, animate that
+  if (player.isTraining) {
+    player.handstandAnimTimer += 1;
+    if (player.handstandAnimTimer >= 10) {
+      player.handstandAnimTimer = 0;
+      player.handstandFrame = (player.handstandFrame + 1) % SPRITE_FRAMES_PER_ROW;
+    }
+    // Pause normal walking animation
+    player.animTimer = 0;
+    player.animFrame = 1;
+    return;
+  }
+
   if (player.walking) {
     player.animTimer += 1;
     if (player.animTimer >= 8) {
@@ -1120,12 +1178,29 @@ function update() {
     if (elapsed >= trainingPopup.durationMs) {
       trainingPopup.active = false;
       trainingPopup.levelUp = false;
+      // stop training animation when popup ends
+      player.isTraining = false;
+    }
+  }
+
+  // Update item alert timers
+  if (itemAlert.active) {
+    if (now - itemAlert.startedAt >= itemAlert.durationMs) {
+      itemAlert.active = false;
+    }
+  }
+
+  if (inventoryHint.active) {
+    if (now - inventoryHint.startedAt >= inventoryHint.durationMs) {
+      inventoryHint.active = false;
     }
   }
 
   // Update game state
   if ((gameState === "overworld" || gameState === "interior") && !isDialogueActive()) {
-    updatePlayerMovement();
+    if (!player.isTraining) {
+      updatePlayerMovement();
+    }
   } else if (isDialogueActive()) {
     player.walking = false;
   } else if (gameState === "enteringDoor") {
@@ -1183,28 +1258,46 @@ function drawPlayer(cam) {
     const drawX = Math.round(player.x - cam.x - (drawWidth - TILE) / 2);
     const drawY = Math.round(player.y - cam.y - (drawHeight - TILE));
 
-    const directionToRow = {
-      down: 0,
-      left: 1,
-      right: 2,
-      up: 3
-    };
-    const row = directionToRow[player.dir] ?? 0;
-    const frame = player.walking ? player.animFrame : 1;
-    const sx = frame * SPRITE_FRAME_WIDTH;
-    const sy = row * SPRITE_FRAME_HEIGHT;
+    if (player.isTraining) {
+      const handSprite = AssetManager.getSprite('protagonist_handstand') || player.sprite;
+      const frame = player.handstandFrame || 0;
+      const sx = frame * SPRITE_FRAME_WIDTH;
+      const sy = 0;
+      ctx.drawImage(
+        handSprite,
+        sx,
+        sy,
+        SPRITE_FRAME_WIDTH,
+        SPRITE_FRAME_HEIGHT,
+        drawX,
+        drawY,
+        drawWidth,
+        drawHeight
+      );
+    } else {
+      const directionToRow = {
+        down: 0,
+        left: 1,
+        right: 2,
+        up: 3
+      };
+      const row = directionToRow[player.dir] ?? 0;
+      const frame = player.walking ? player.animFrame : 1;
+      const sx = frame * SPRITE_FRAME_WIDTH;
+      const sy = row * SPRITE_FRAME_HEIGHT;
 
-    ctx.drawImage(
-      player.sprite,
-      sx,
-      sy,
-      SPRITE_FRAME_WIDTH,
-      SPRITE_FRAME_HEIGHT,
-      drawX,
-      drawY,
-      drawWidth,
-      drawHeight
-    );
+      ctx.drawImage(
+        player.sprite,
+        sx,
+        sy,
+        SPRITE_FRAME_WIDTH,
+        SPRITE_FRAME_HEIGHT,
+        drawX,
+        drawY,
+        drawWidth,
+        drawHeight
+      );
+    }
   }
 }
 
@@ -1334,7 +1427,8 @@ function drawTrainingPopup(cam) {
 function drawTextbox() {
   if (!isDialogueActive() || gameState === "inventory") return;
 
-  const boxHeight = choiceState.active ? UI.CHOICE_BOX_HEIGHT : UI.TEXT_BOX_HEIGHT;
+  // Keep dialogue box height fixed so it doesn't resize when choices appear
+  const boxHeight = UI.TEXT_BOX_HEIGHT;
   const boxY = canvas.height - boxHeight - 20;
 
   ctx.fillStyle = COLORS.DIALOGUE_BG;
@@ -1364,16 +1458,8 @@ function drawTextbox() {
   }
 
   const textHeight = wrappedLines.length * lineSpacing;
-  let textStartY;
-  if (choiceState.active) {
-    // When choices are active, position text in upper portion to avoid overlap
-    const textAreaTop = dialogueName ? boxY + 40 : boxY + 26;
-    const textAreaHeight = 50; // Reserve space for options below
-    textStartY = textAreaTop + (textAreaHeight - textHeight) / 2 + lineSpacing - 6;
-  } else {
-    // Center text in the entire box when no choices
-    textStartY = boxY + (boxHeight - textHeight) / 2 + lineSpacing - 6;
-  }
+  // Center text vertically in the dialogue box; choices will be drawn above the box
+  const textStartY = boxY + (boxHeight - textHeight) / 2 + lineSpacing - 6;
 
   if (dialogueName) {
     ctx.fillText(dialogueName, 40, boxY + 28);
@@ -1383,22 +1469,59 @@ function drawTextbox() {
     ctx.fillText(wrappedLines[i], textStartX, textStartY + i * lineSpacing);
   }
 
+  // Draw choices in a small box above the dialogue when active
   if (choiceState.active) {
-    const optionsStartY = boxY + 90;
+    const optPadding = 10;
+    ctx.font = "20px monospace";
+    let maxW = 0;
+    for (const opt of choiceState.options) {
+      maxW = Math.max(maxW, ctx.measureText(opt).width);
+    }
+    const optionsW = Math.max(120, maxW + 40);
+    const optionsH = choiceState.options.length * UI.LINE_SPACING + optPadding * 2;
+    // Place options on the left (aligned with dialogue text) instead of centered
+    const optionsX = 40; // align with `textStartX`
+    const optionsY = boxY - optionsH - 12; // 12px gap above dialog box
+
+    // Background and border
+    ctx.fillStyle = COLORS.POPUP_BG;
+    ctx.fillRect(optionsX, optionsY, optionsW, optionsH);
+    ctx.strokeStyle = COLORS.DIALOGUE_BORDER;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(optionsX, optionsY, optionsW, optionsH);
+
+    // Draw options and selection marker
     for (let i = 0; i < choiceState.options.length; i++) {
-      const prefix = i === choiceState.selected ? "? " : "  ";
-      ctx.fillText(prefix + choiceState.options[i], 40, optionsStartY + i * 24);
+      const optY = optionsY + optPadding + (i + 0.8) * UI.LINE_SPACING;
+      const textX = optionsX + 20;
+      if (i === choiceState.selected) {
+        // small right-pointing triangle to the left of the option
+        ctx.beginPath();
+        ctx.moveTo(textX - 12 + 8, optY - 6);
+        ctx.lineTo(textX - 12, optY - 10);
+        ctx.lineTo(textX - 12, optY - 2);
+        ctx.closePath();
+        ctx.fillStyle = COLORS.TEXT;
+        ctx.fill();
+      }
+      ctx.fillStyle = COLORS.TEXT;
+      ctx.fillText(choiceState.options[i], textX, optY);
     }
   }
 
   const pageComplete = visibleCharacters >= currentDialogueVisibleLength();
   const blink = Math.floor(performance.now() / 500) % 2 === 0;
   if (pageComplete && !choiceState.active && blink) {
-    const indicatorText = "?";
-    const indicatorX = canvas.width - 20 - 18 - ctx.measureText(indicatorText).width;
+    // Draw a small right-pointing triangle as the page indicator
     const bobOffsetY = Math.sin(performance.now() * 0.008) * 3;
     const indicatorY = boxY + boxHeight - 12 + bobOffsetY;
-    ctx.fillText(indicatorText, indicatorX, indicatorY);
+    const indicatorX = canvas.width - 28;
+    ctx.beginPath();
+    ctx.moveTo(indicatorX + 8, indicatorY); // tip on the right
+    ctx.lineTo(indicatorX, indicatorY - 6);
+    ctx.lineTo(indicatorX, indicatorY + 6);
+    ctx.closePath();
+    ctx.fill();
   }
 }
 
@@ -1512,9 +1635,68 @@ function render() {
   drawTrainingPopup(cam);
   drawDoorTransition(cam);
   ctx.restore();
+  // Draw in-screen notifications (above-player and top-left hints)
+  drawItemNotifications();
 
   drawInventoryOverlay();
   drawTextbox();
+}
+
+function drawItemNotifications() {
+  // Draw above-player item alert in screen space
+  if (itemAlert.active) {
+    const elapsed = performance.now() - itemAlert.startedAt;
+    const t = Math.min(1, elapsed / itemAlert.durationMs);
+    const alpha = 1 - Math.max(0, (elapsed - (itemAlert.durationMs - 400)) / 400);
+
+    const screenX = (player.x - cam.x) * CAMERA_ZOOM + (TILE * CAMERA_ZOOM) / 2;
+    const screenY = (player.y - cam.y) * CAMERA_ZOOM - 18;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = "18px monospace";
+    const padding = 8;
+    const text = itemAlert.text;
+    const textW = ctx.measureText(text).width;
+    const boxW = Math.max(120, textW + padding * 2);
+    const boxH = 28;
+    const boxX = Math.round(screenX - boxW / 2);
+    const boxY = Math.round(screenY - boxH);
+
+    ctx.fillStyle = COLORS.POPUP_BG;
+    ctx.fillRect(boxX, boxY, boxW, boxH);
+    ctx.strokeStyle = COLORS.POPUP_BORDER;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+    ctx.fillStyle = COLORS.TEXT;
+    ctx.fillText(text, boxX + padding, boxY + 19);
+    ctx.restore();
+  }
+
+  // Draw top-left inventory hint
+  if (inventoryHint.active) {
+    const elapsed = performance.now() - inventoryHint.startedAt;
+    const alpha = 1 - Math.max(0, (elapsed - (inventoryHint.durationMs - 600)) / 600);
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.95;
+    ctx.font = "16px monospace";
+    const hintText = "New item received — press I to view your inventory";
+    const padding = 8;
+    const textW = ctx.measureText(hintText).width;
+    const boxW = textW + padding * 2;
+    const boxH = 28;
+    const boxX = 12;
+    const boxY = 12;
+    ctx.fillStyle = COLORS.POPUP_BG;
+    ctx.fillRect(boxX, boxY, boxW, boxH);
+    ctx.strokeStyle = COLORS.POPUP_BORDER;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(boxX, boxY, boxW, boxH);
+    ctx.fillStyle = COLORS.TEXT;
+    ctx.fillText(hintText, boxX + padding, boxY + 19);
+    ctx.restore();
+  }
 }
 
 // ============================================================================
