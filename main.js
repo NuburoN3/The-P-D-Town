@@ -2,6 +2,7 @@ import { AudioManager } from "./music-manager.js";
 import { initializeInput, keys, getInteractPressed, clearInteractPressed } from "./src/InputManager.js";
 import { collides as collidesAt, collidesWithNPC as collidesWithNPCAt, doorFromCollision as detectDoorCollision } from "./src/CollisionSystem.js";
 import { drawTile as drawTileSystem } from "./src/TileSystem.js";
+import { initializeBuildingRenderers } from "./src/WorldManager.js";
 // ============================================================================
 // CONFIGURATION & CONSTANTS
 // ============================================================================
@@ -93,6 +94,9 @@ const TRAINING = {
   XP_INCREMENT: 5
 };
 
+// Initialize building renderers with canvas context and constants
+initializeBuildingRenderers(ctx, TILE, COLORS);
+
 // ============================================================================
 // ASSET MANAGER
 // ============================================================================
@@ -132,70 +136,221 @@ const BUILDING_TYPES = {
 const buildingRenderers = {
   DOJO: {
     renderTile(x, y, tileX, tileY, isTopRow, isBottomRow, isLeftCol, isRightCol) {
-      // Japanese temple aesthetic
-      const roofColor = "#c41e3a"; // Traditional temple red
-      const roofDark = "#8b0000";
-      const woodColor = "#8b6f47"; // Dark wood
-      const wallColor = "#d4af7a"; // Light gold/tan
-      const trimColor = "#3d2817"; // Dark brown
+      // Enhanced Japanese dojo with beautiful pixel art style
+      const roofDarkRed = "#8b2020";
+      const roofBrightRed = "#d32f2f";
+      const roofHighlight = "#ff6b6b";
+      const woodDark = "#5d4037";
+      const woodMid = "#795548";
+      const woodLight = "#a1887f";
+      const wallLight = "#e8d5c4";
+      const wallMid = "#d4af7a";
+      const wallDark = "#b8956a";
+      const shadowColor = "#3e2723";
+      const goldAccent = "#ffd700";
+      const goldDark = "#daa520";
+      const windowColor = "#87ceeb";
       
-      // Draw main wall body
-      ctx.fillStyle = wallColor;
+      // Main wall body with gradient effect
+      ctx.fillStyle = wallLight;
       ctx.fillRect(x, y, TILE, TILE);
       
-      // Add temple roof effect on top rows
+      // Wall shading - darker on bottom for depth
+      ctx.fillStyle = "rgba(184, 149, 106, 0.4)";
+      ctx.fillRect(x, y + 20, TILE, 12);
+      
+      // Wall texture - subtle horizontal lines
+      ctx.strokeStyle = "rgba(139, 69, 19, 0.15)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i < TILE; i += 4) {
+        ctx.beginPath();
+        ctx.moveTo(x, y + i);
+        ctx.lineTo(x + TILE, y + i);
+        ctx.stroke();
+      }
+      
+      // ROOF (TOP ROW)
       if (isTopRow) {
-        // Draw pitched roof with multiple layers
-        ctx.fillStyle = roofColor;
-        ctx.fillRect(x, y, TILE, 10);
+        // Base roof - broad overhang
+        ctx.fillStyle = roofDarkRed;
+        ctx.fillRect(x - 2, y - 2, TILE + 4, 12);
         
-        // Roof trim/edge
-        ctx.fillStyle = roofDark;
+        // Bright red main roof
+        ctx.fillStyle = roofBrightRed;
+        ctx.fillRect(x, y, TILE, 9);
+        
+        // Roof highlight
+        ctx.fillStyle = roofHighlight;
+        ctx.fillRect(x + 2, y + 1, TILE - 4, 3);
+        
+        // Roof ridge shadow
+        ctx.fillStyle = roofDarkRed;
+        ctx.fillRect(x + 1, y + 5, TILE - 2, 2);
+        
+        // Decorative roof tiles
+        for (let i = 0; i < TILE; i += 4) {
+          ctx.fillStyle = roofDarkRed;
+          ctx.fillRect(x + i, y + 7, 3, 2);
+        }
+        
+        // Gold decorative trim at roof edge
+        ctx.fillStyle = goldDark;
         ctx.fillRect(x, y + 9, TILE, 2);
         
-        // Subtle eave pattern
-        ctx.fillStyle = "rgba(196, 30, 58, 0.6)";
-        ctx.fillRect(x + 2, y + 3, TILE - 4, 4);
+        // Corner ornaments
+        if (isLeftCol) {
+          ctx.fillStyle = goldAccent;
+          ctx.beginPath();
+          ctx.arc(x + 4, y + 5, 2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = goldDark;
+          ctx.beginPath();
+          ctx.arc(x + 4, y + 5, 1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (isRightCol) {
+          ctx.fillStyle = goldAccent;
+          ctx.beginPath();
+          ctx.arc(x + TILE - 4, y + 5, 2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = goldDark;
+          ctx.beginPath();
+          ctx.arc(x + TILE - 4, y + 5, 1, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
       
-      // Draw wooden posts/pillars on sides
+      // WOODEN STRUCTURAL POSTS
       if (isLeftCol) {
-        ctx.fillStyle = woodColor;
-        ctx.fillRect(x, y + 6, 4, TILE - 6);
+        // Left pillar with 3D effect
+        ctx.fillStyle = woodDark;
+        ctx.fillRect(x + 1, y + 10, 5, TILE - 10);
+        ctx.fillStyle = woodMid;
+        ctx.fillRect(x + 2, y + 10, 3, TILE - 10);
+        
+        // Post shadow and highlight
+        ctx.fillStyle = "rgba(0,0,0,0.3)";
+        ctx.fillRect(x + 1, y + 10, 2, TILE - 10);
+        ctx.fillStyle = "rgba(255,255,255,0.2)";
+        ctx.fillRect(x + 4, y + 10, 1, TILE - 10);
       }
+      
       if (isRightCol) {
-        ctx.fillStyle = woodColor;
-        ctx.fillRect(x + TILE - 4, y + 6, 4, TILE - 6);
+        // Right pillar
+        ctx.fillStyle = woodDark;
+        ctx.fillRect(x + TILE - 6, y + 10, 5, TILE - 10);
+        ctx.fillStyle = woodMid;
+        ctx.fillRect(x + TILE - 5, y + 10, 3, TILE - 10);
+        
+        // Post details
+        ctx.fillStyle = "rgba(0,0,0,0.3)";
+        ctx.fillRect(x + TILE - 6, y + 10, 2, TILE - 10);
+        ctx.fillStyle = "rgba(255,255,255,0.2)";
+        ctx.fillRect(x + TILE - 3, y + 10, 1, TILE - 10);
       }
       
-      // Add decorative horizontal beams
+      // HORIZONTAL BEAMS
       if (!isTopRow && !isBottomRow) {
-        ctx.fillStyle = woodColor;
-        ctx.fillRect(x, y + 8, TILE, 2);
-        ctx.fillRect(x, y + 20, TILE, 2);
+        // Upper beam with 3D effect
+        ctx.fillStyle = woodDark;
+        ctx.fillRect(x, y + 12, TILE, 2);
+        ctx.fillStyle = "rgba(0,0,0,0.3)";
+        ctx.fillRect(x, y + 12, TILE, 1);
+        ctx.fillStyle = "rgba(255,255,255,0.1)";
+        ctx.fillRect(x, y + 13, TILE, 1);
+        
+        // Lower beam
+        ctx.fillStyle = woodDark;
+        ctx.fillRect(x, y + 22, TILE, 2);
+        ctx.fillStyle = "rgba(0,0,0,0.3)";
+        ctx.fillRect(x, y + 22, TILE, 1);
+        ctx.fillStyle = "rgba(255,255,255,0.1)";
+        ctx.fillRect(x, y + 23, TILE, 1);
       }
       
-      // Dark trim/frame around edge
-      ctx.strokeStyle = trimColor;
-      ctx.lineWidth = 1;
+      // WINDOWS on middle rows
+      if (!isTopRow && !isBottomRow && !isLeftCol && !isRightCol) {
+        // Window frame
+        ctx.fillStyle = woodDark;
+        ctx.fillRect(x + 8, y + 14, 16, 10);
+        
+        // Window panes
+        ctx.fillStyle = windowColor;
+        ctx.fillRect(x + 10, y + 16, 6, 6);
+        ctx.fillRect(x + 18, y + 16, 6, 6);
+        
+        // Window reflection
+        ctx.fillStyle = "rgba(255,255,255,0.4)";
+        ctx.fillRect(x + 11, y + 17, 2, 2);
+        ctx.fillRect(x + 19, y + 17, 2, 2);
+        
+        // Window divider
+        ctx.strokeStyle = woodDark;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + 16, y + 16);
+        ctx.lineTo(x + 16, y + 22);
+        ctx.stroke();
+      }
+      
+      // DOOR FRAME on bottom center
+      if (isBottomRow && !isLeftCol && !isRightCol) {
+        // Door frame
+        ctx.fillStyle = woodDark;
+        ctx.fillRect(x + 6, y + 12, 20, 20);
+        
+        // Door panels
+        ctx.fillStyle = "#6d4c41";
+        ctx.fillRect(x + 8, y + 14, 8, 16);
+        ctx.fillRect(x + 18, y + 14, 8, 16);
+        
+        // Door panel details
+        ctx.fillStyle = "#4caf50";
+        ctx.fillRect(x + 9, y + 15, 2, 14);
+        ctx.fillRect(x + 19, y + 15, 2, 14);
+        
+        // Gold ring door handles
+        ctx.fillStyle = goldAccent;
+        ctx.beginPath();
+        ctx.arc(x + 12, y + 22, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x + 22, y + 22, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Handle shadows
+        ctx.fillStyle = goldDark;
+        ctx.beginPath();
+        ctx.arc(x + 12, y + 22, 0.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x + 22, y + 22, 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // DECORATIVE BORDER
+      ctx.strokeStyle = shadowColor;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x, y, TILE, TILE);
+      
+      // Inner highlight
+      ctx.strokeStyle = "rgba(255,255,255,0.3)";
+      ctx.lineWidth = 0.5;
       ctx.strokeRect(x + 1, y + 1, TILE - 2, TILE - 2);
       
-      // Add internal grid pattern for detail
-      ctx.strokeStyle = "rgba(61, 40, 23, 0.3)";
-      ctx.lineWidth = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(x + TILE / 2, y + 2);
-      ctx.lineTo(x + TILE / 2, y + TILE - 2);
-      ctx.stroke();
-      
-      // Gold/decorative accents on corners
+      // CORNER ORNAMENTS
       if (isTopRow && isLeftCol) {
-        ctx.fillStyle = "#ffd700";
-        ctx.fillRect(x + 2, y + 5, 3, 3);
+        ctx.fillStyle = goldAccent;
+        ctx.fillRect(x + 2, y + 4, 4, 4);
+        ctx.fillStyle = goldDark;
+        ctx.fillRect(x + 3, y + 5, 2, 2);
       }
+      
       if (isTopRow && isRightCol) {
-        ctx.fillStyle = "#ffd700";
-        ctx.fillRect(x + TILE - 5, y + 5, 3, 3);
+        ctx.fillStyle = goldAccent;
+        ctx.fillRect(x + TILE - 6, y + 4, 4, 4);
+        ctx.fillStyle = goldDark;
+        ctx.fillRect(x + TILE - 5, y + 5, 2, 2);
       }
     }
   },
@@ -343,6 +498,13 @@ for (const townId in townDefinitions) {
   }
 }
 
+// Create WAV audio data URLs for synthetic sound effects
+// Walking sound - subtle 80Hz tone
+const WALKING_WAV = "walking_sound.wav";
+
+// Collision sound - brief white noise burst  
+const COLLISION_WAV = "collision_sound.wav";
+
 const musicManager = new AudioManager({
   areaTracks: {
     // Play dojo music only when inside the hanamiDojo interior
@@ -350,7 +512,9 @@ const musicManager = new AudioManager({
   },
   sfxTracks: {
     enterDoor: "EnterDoor_Sound.wav",
-    itemUnlock: "Item_Unlock.wav"
+    itemUnlock: "Item_Unlock.wav",
+    walking: WALKING_WAV,
+    collision: COLLISION_WAV
   },
   fadeDurationMs: 800
 });
@@ -1045,6 +1209,9 @@ addEventListener("keydown", (e) => {
 // GAME UPDATE LOGIC
 // ============================================================================
 
+let lastWalkSoundTime = 0;
+const WALK_SOUND_INTERVAL = 300; // milliseconds between walk sounds
+
 function updatePlayerMovement() {
   let dx = 0;
   let dy = 0;
@@ -1068,6 +1235,15 @@ function updatePlayerMovement() {
 
   player.walking = dx !== 0 || dy !== 0;
 
+  // Play walking sound at intervals
+  if (player.walking) {
+    const now = performance.now();
+    if (now - lastWalkSoundTime > WALK_SOUND_INTERVAL) {
+      musicManager.playSfx("walking");
+      lastWalkSoundTime = now;
+    }
+  }
+
   if (dx !== 0 && dy !== 0) {
     const s = Math.SQRT1_2;
     dx *= s;
@@ -1081,14 +1257,24 @@ function updatePlayerMovement() {
     player.x = nx;
   } else if (dx !== 0) {
     const doorTile = doorFromCollision(nx, player.y);
-    if (doorTile) beginDoorSequence(doorTile);
+    if (doorTile) {
+      beginDoorSequence(doorTile);
+    } else {
+      // Hit a wall or obstacle - play collision sound
+      musicManager.playSfx("collision");
+    }
   }
 
   if (!collides(player.x, ny) && !collidesWithNPC(player.x, ny)) {
     player.y = ny;
   } else if (dy !== 0) {
     const doorTile = doorFromCollision(player.x, ny);
-    if (doorTile) beginDoorSequence(doorTile);
+    if (doorTile) {
+      beginDoorSequence(doorTile);
+    } else {
+      // Hit a wall or obstacle - play collision sound
+      musicManager.playSfx("collision");
+    }
   }
 
   if (player.walking) {
