@@ -1,3 +1,5 @@
+import { MusicManager } from "./music-manager.js";
+
 // ============================================================================
 // CONFIGURATION & CONSTANTS
 // ============================================================================
@@ -11,7 +13,7 @@ const OVERWORLD_H = 30;
 const INTERIOR_W = 12;
 const INTERIOR_H = 10;
 const PLAYER_SPRITE_HEIGHT_TILES = 1.15;
-const CAMERA_ZOOM = 1.5;
+const CAMERA_ZOOM = 1.4;
 const SPRITE_FRAME_WIDTH = 32;
 const SPRITE_FRAME_HEIGHT = 32;
 const SPRITE_FRAMES_PER_ROW = 3;
@@ -87,6 +89,13 @@ const TRAINING = {
   INITIAL_XP_NEEDED: 10,
   XP_INCREMENT: 5
 };
+
+const musicManager = new MusicManager({
+  areaTracks: {
+    hanamiTown: "Hanami_Game_Audio_BG.wav"
+  }
+});
+musicManager.attachUnlockHandlers();
 
 // ============================================================================
 // STATE MANAGEMENT
@@ -439,6 +448,17 @@ function setWorld(name) {
     currentMapH = INTERIOR_H;
   }
   worldName = name;
+  syncMusicForCurrentArea();
+}
+
+function areaNameForWorld(world) {
+  if (world === "overworld" || world === "interior") return "hanamiTown";
+  return null;
+}
+
+function syncMusicForCurrentArea() {
+  const areaName = areaNameForWorld(worldName);
+  musicManager.playMusicForArea(areaName);
 }
 
 function tileAtPixel(px, py) {
@@ -1344,6 +1364,7 @@ function render() {
 
 
 let lastTime = performance.now();
+syncMusicForCurrentArea();
 function loop(currentTime) {
   const delta = (currentTime - lastTime) / 1000; // seconds
   lastTime = currentTime;
