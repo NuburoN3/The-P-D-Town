@@ -28,7 +28,10 @@ export const TILE_TYPES = {
 
 // Colors for rendering
 export const COLORS = {
-  GRASS: "#2e7d32",
+  // Slightly darker, low-key grass base
+  GRASS: "#4fae57",
+  GRASS_DARK: "#387a3f",
+  GRASS_SPECKLE: "#3b9b4a",
   TREE_LIGHT: "#2e7d32",
   TREE_DARK: "#1b5e20",
   WALL: "#8d6e63",
