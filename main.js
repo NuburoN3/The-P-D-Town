@@ -1,4 +1,4 @@
-import { MusicManager } from "./music-manager.js";
+import { AudioManager } from "./music-manager.js";
 
 // ============================================================================
 // CONFIGURATION & CONSTANTS
@@ -90,9 +90,12 @@ const TRAINING = {
   XP_INCREMENT: 5
 };
 
-const musicManager = new MusicManager({
+const musicManager = new AudioManager({
   areaTracks: {
     hanamiTown: "Hanami_Game_Audio_BG.wav"
+  },
+  sfxTracks: {
+    enterDoor: "EnterDoor_Sound.wav"
   }
 });
 musicManager.attachUnlockHandlers();
@@ -640,6 +643,7 @@ function handleNPCInteraction(npc) {
 
 function beginDoorSequence(doorTile) {
   if (gameState === "enteringDoor" || gameState === "transition") return;
+  musicManager.playSfx("enterDoor");
 
   const playerCenterX = player.x + TILE / 2;
   const playerCenterY = player.y + TILE / 2;
