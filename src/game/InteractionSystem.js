@@ -1,0 +1,310 @@
+export function createInteractionSystem({
+  tileSize,
+  ui,
+  training,
+  tileTypes,
+  canvas,
+  gameFlags,
+  playerInventory,
+  playerStats,
+  trainingPopup,
+  itemAlert,
+  inventoryHint,
+  player,
+  npcs,
+  doorSequence,
+  musicManager,
+  getBuilding,
+  getCurrentTownId,
+  getCurrentTown,
+  getCurrentAreaType,
+  getCurrentMap,
+  getCurrentMapW,
+  getCurrentMapH,
+  getGameState,
+  setGameState,
+  getPreviousWorldState,
+  setPreviousWorldState,
+  isDialogueActive,
+  choiceState,
+  showDialogue,
+  openYesNoChoice,
+  advanceDialogue,
+  getInteractPressed,
+  clearInteractPressed
+}) {
+  function playerTilePosition() {
+    return {
+      x: Math.floor((player.x + tileSize / 2) / tileSize),
+      y: Math.floor((player.y + tileSize / 2) / tileSize)
+    };
+  }
+
+  function tryTrainingAction() {
+    const gameState = getGameState();
+    const isFreeExploreState = gameState === "overworld" || gameState === "interior";
+    if (!isFreeExploreState) return;
+    if (isDialogueActive() || choiceState.active || doorSequence.active) return;
+
+    const currentAreaType = getCurrentAreaType();
+    if (currentAreaType === "overworld") return;
+    if (!gameFlags.acceptedTraining) return;
+
+    const currentTown = getCurrentTown();
+    const interior = currentTown?.interiorMaps?.[currentAreaType];
+    if (!interior || !interior.trainingTile) return;
+
+    const tilePos = playerTilePosition();
+    if (!tilePos) return;
+
+    const onTrainingTile = tilePos.x === interior.trainingTile.x && tilePos.y === interior.trainingTile.y;
+    if (!onTrainingTile) return;
+
+    if (playerStats.disciplineLevel >= 2) {
+      if (!isDialogueActive()) {
+        showDialogue("", "Training complete. Speak to Mr. Hanami.");
+      }
+      return;
+    }
+
+    if (trainingPopup.active) return;
+
+    const startXP = playerStats.disciplineXP;
+    const xpEarned = training.XP_PER_SESSION;
+    trainingPopup.xpNeededSnapshot = playerStats.disciplineXPNeeded;
+
+    playerStats.disciplineXP += xpEarned;
+    trainingPopup.startXP = startXP;
+    trainingPopup.targetXP = playerStats.disciplineXP;
+    trainingPopup.xpGained = xpEarned;
+    trainingPopup.levelUp = false;
+    trainingPopup.pendingLevelUpDialogueAt = null;
+    trainingPopup.active = true;
+    trainingPopup.startedAt = performance.now();
+
+    player.isTraining = true;
+    player.handstandAnimTimer = 0;
+    player.handstandFrame = 0;
+    player.walking = false;
+
+    if (playerStats.disciplineXP >= playerStats.disciplineXPNeeded) {
+      trainingPopup.levelUp = true;
+      trainingPopup.pendingLevelUpDialogueAt = trainingPopup.startedAt + trainingPopup.animDurationMs;
+      playerStats.disciplineLevel += 1;
+      if (!gameFlags.completedTraining && playerStats.disciplineLevel >= 2) {
+        gameFlags.completedTraining = true;
+      }
+      playerStats.disciplineXP = 0;
+      playerStats.disciplineXPNeeded += training.XP_INCREMENT;
+    }
+  }
+
+  function toggleInventory() {
+    const gameState = getGameState();
+    if (gameState === "inventory") {
+      setGameState(getPreviousWorldState());
+      clearInteractPressed();
+      return;
+    }
+
+    const isFreeExploreState = gameState === "overworld" || gameState === "interior";
+    if (!isFreeExploreState) return;
+    if (isDialogueActive() || choiceState.active || doorSequence.active) return;
+
+    setPreviousWorldState(gameState);
+    setGameState("inventory");
+    clearInteractPressed();
+  }
+
+  function handleNPCInteraction(npc) {
+    if (npc.hasTrainingChoice) {
+      if (gameFlags.completedTraining) {
+        showDialogue(npc.name, [
+          "Excellent.",
+          "You have mastered the basics and are now ready for your next lesson. I won't tell you what it is though!"
+        ]);
+        return;
+      }
+
+      if (gameFlags.acceptedTraining) {
+        showDialogue(npc.name, npc.alreadyTrainingDialogue);
+        return;
+      }
+
+      showDialogue(npc.name, npc.dialogue, () => {
+        openYesNoChoice((selectedOption) => {
+          if (selectedOption === "Yes") {
+            gameFlags.acceptedTraining = true;
+            if (!playerInventory["Training Headband"]) {
+              playerInventory["Training Headband"] = 1;
+              itemAlert.active = true;
+              itemAlert.text = "New item: Training Headband";
+              itemAlert.startedAt = performance.now();
+              inventoryHint.active = true;
+              inventoryHint.startedAt = performance.now();
+              try { musicManager.playSfx("itemUnlock"); } catch (_) {}
+            }
+            showDialogue(npc.name, "You received a Training Headband!");
+          } else {
+            showDialogue(npc.name, "Come speak to me when you are ready.");
+          }
+        });
+      });
+      return;
+    }
+
+    showDialogue(npc.name, npc.dialogue);
+  }
+
+  function beginDoorSequence(doorTile) {
+    const gameState = getGameState();
+    if (gameState === "enteringDoor" || gameState === "transition") return;
+    musicManager.playSfx("enterDoor");
+
+    const playerCenterX = player.x + tileSize / 2;
+    const playerCenterY = player.y + tileSize / 2;
+    const doorCenterX = doorTile.tx * tileSize + tileSize / 2;
+    const doorCenterY = doorTile.ty * tileSize + tileSize / 2;
+
+    let vx = doorCenterX - playerCenterX;
+    let vy = doorCenterY - playerCenterY;
+    const len = Math.hypot(vx, vy) || 1;
+    vx /= len;
+    vy /= len;
+
+    doorSequence.active = true;
+    doorSequence.tx = doorTile.tx;
+    doorSequence.ty = doorTile.ty;
+    doorSequence.stepDx = vx * 1.5;
+    doorSequence.stepDy = vy * 1.5;
+    doorSequence.stepFrames = 20;
+    doorSequence.frame = 0;
+
+    const currentAreaType = getCurrentAreaType();
+    const currentTown = getCurrentTown();
+    const currentTownId = getCurrentTownId();
+
+    if (currentAreaType === "overworld") {
+      const building = getBuilding(currentTownId, doorTile.tx, doorTile.ty);
+      if (building) {
+        doorSequence.targetAreaType = building.interiorId;
+        const interior = currentTown.interiorMaps[building.interiorId];
+        const door = interior.door;
+        doorSequence.targetX = door.x * tileSize;
+        doorSequence.targetY = (door.y - 1) * tileSize;
+      }
+    } else {
+      doorSequence.targetAreaType = "overworld";
+      const building = Array.from(currentTown.buildings).find((b) => b.interiorId === currentAreaType);
+      if (building) {
+        doorSequence.targetX = building.doorPos.x * tileSize;
+        doorSequence.targetY = (building.doorPos.y + 1) * tileSize;
+      }
+    }
+
+    doorSequence.maxFadeRadius = Math.hypot(canvas.width, canvas.height);
+    doorSequence.fadeRadius = doorSequence.maxFadeRadius;
+    doorSequence.transitionPhase = "out";
+    setGameState("enteringDoor");
+    clearInteractPressed();
+  }
+
+  function handleInteraction() {
+    const gameState = getGameState();
+
+    if (gameState === "inventory") {
+      clearInteractPressed();
+      return;
+    }
+
+    if (!getInteractPressed()) return;
+
+    if (isDialogueActive()) {
+      advanceDialogue();
+      clearInteractPressed();
+      return;
+    }
+
+    if (gameState === "enteringDoor" || gameState === "transition") {
+      clearInteractPressed();
+      return;
+    }
+
+    const currentAreaType = getCurrentAreaType();
+    const currentMap = getCurrentMap();
+    const currentMapW = getCurrentMapW();
+    const currentMapH = getCurrentMapH();
+    const currentTown = getCurrentTown();
+
+    const playerCenterX = player.x + tileSize / 2;
+    const playerCenterY = player.y + tileSize / 2;
+
+    for (const npc of npcs) {
+      if (npc.world !== currentAreaType) continue;
+
+      const npcCenterX = npc.x + npc.width / 2;
+      const npcCenterY = npc.y + npc.height / 2;
+      const dx = Math.abs(playerCenterX - npcCenterX);
+      const dy = Math.abs(playerCenterY - npcCenterY);
+
+      if (dx <= ui.INTERACT_REACH && dy <= ui.INTERACT_REACH) {
+        const relativeX = playerCenterX - npcCenterX;
+        const relativeY = playerCenterY - npcCenterY;
+
+        if (Math.abs(relativeX) >= Math.abs(relativeY)) {
+          npc.dir = relativeX < 0 ? "left" : "right";
+        } else {
+          npc.dir = relativeY < 0 ? "up" : "down";
+        }
+
+        handleNPCInteraction(npc);
+        clearInteractPressed();
+        return;
+      }
+    }
+
+    const inset = 5;
+    const left = Math.floor((player.x + inset) / tileSize) - 1;
+    const right = Math.floor((player.x + tileSize - inset) / tileSize) + 1;
+    const top = Math.floor((player.y + inset) / tileSize) - 1;
+    const bottom = Math.floor((player.y + tileSize - inset) / tileSize) + 1;
+
+    for (let ty = top; ty <= bottom; ty++) {
+      if (ty < 0 || ty >= currentMapH) continue;
+      for (let tx = left; tx <= right; tx++) {
+        if (tx < 0 || tx >= currentMapW) continue;
+        if (currentMap[ty][tx] === tileTypes.SIGNPOST) {
+          showDialogue("", "The Dojo");
+          clearInteractPressed();
+          return;
+        }
+      }
+    }
+
+    if (currentAreaType !== "overworld" && gameFlags.acceptedTraining) {
+      const interior = currentTown?.interiorMaps?.[currentAreaType];
+      if (interior && interior.trainingTile) {
+        const tilePos = playerTilePosition();
+        if (tilePos) {
+          const onTrainingTile = tilePos.x === interior.trainingTile.x && tilePos.y === interior.trainingTile.y;
+          if (onTrainingTile) {
+            tryTrainingAction();
+            clearInteractPressed();
+            return;
+          }
+        }
+      }
+    }
+
+    clearInteractPressed();
+  }
+
+  return {
+    playerTilePosition,
+    tryTrainingAction,
+    toggleInventory,
+    handleNPCInteraction,
+    beginDoorSequence,
+    handleInteraction
+  };
+}
