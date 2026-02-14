@@ -1218,14 +1218,23 @@ function drawTextbox() {
   }
 
   const textHeight = wrappedLines.length * lineSpacing;
-  const centeredStartY = boxY + (boxHeight - textHeight) / 2 + lineSpacing - 6;
+  let textStartY;
+  if (choiceState.active) {
+    // When choices are active, position text in upper portion to avoid overlap
+    const textAreaTop = dialogueName ? boxY + 40 : boxY + 26;
+    const textAreaHeight = 50; // Reserve space for options below
+    textStartY = textAreaTop + (textAreaHeight - textHeight) / 2 + lineSpacing - 6;
+  } else {
+    // Center text in the entire box when no choices
+    textStartY = boxY + (boxHeight - textHeight) / 2 + lineSpacing - 6;
+  }
 
   if (dialogueName) {
     ctx.fillText(dialogueName, 40, boxY + 28);
   }
 
   for (let i = 0; i < wrappedLines.length; i++) {
-    ctx.fillText(wrappedLines[i], textStartX, centeredStartY + i * lineSpacing);
+    ctx.fillText(wrappedLines[i], textStartX, textStartY + i * lineSpacing);
   }
 
   if (choiceState.active) {
