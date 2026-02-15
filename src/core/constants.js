@@ -125,6 +125,8 @@ export const COLORS = {
   INVENTORY_BG: "rgba(22,28,38,0.96)",
   INVENTORY_OVERLAY: "rgba(0,0,0,0.6)",
   INVENTORY_BAR_FILL: "#66bb6a",
+  INVENTORY_SLOT_BG: "rgba(255,255,255,0.1)",
+  INVENTORY_SLOT_BORDER: "#d8bf89",
   SHADOW: "rgba(0,0,0,0.25)",
   GROUND_SHADOW: "rgba(0,0,0,0.2)",
   AMBIENT_TOP: "rgba(255, 234, 192, 0.11)",

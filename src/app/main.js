@@ -49,6 +49,11 @@ let { currentTownId, currentAreaId, currentMap, currentMapW, currentMapH, gameSt
 
 let previousGameState = GAME_STATES.OVERWORLD;
 let gameController = null;
+const mouseUiState = {
+  x: 0,
+  y: 0,
+  insideCanvas: false
+};
 
 const userSettings = loadUserSettings();
 const settingsUiState = {
@@ -74,6 +79,21 @@ const SETTINGS_ITEMS = Object.freeze([
   { id: "saveGame", kind: "action", label: "Save Game" },
   { id: "loadGame", kind: "action", label: "Load Game" }
 ]);
+
+function updateMouseUiPosition(e) {
+  const rect = canvas.getBoundingClientRect();
+  if (!rect || rect.width <= 0 || rect.height <= 0) return;
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  mouseUiState.x = (e.clientX - rect.left) * scaleX;
+  mouseUiState.y = (e.clientY - rect.top) * scaleY;
+  mouseUiState.insideCanvas = true;
+}
+
+canvas.addEventListener("mousemove", updateMouseUiPosition);
+canvas.addEventListener("mouseleave", () => {
+  mouseUiState.insideCanvas = false;
+});
 
 let interactionSystem = null;
 const input = new InputManager({
@@ -109,7 +129,7 @@ const choiceState = dialogue.choiceState;
 const pauseMenuState = {
   active: false,
   selected: 0,
-  options: ["Inventory", "Attributes", "Settings", "Quit"],
+  options: ["Inventory", "Attributes", "Settings", "Save", "Load", "Quit"],
   highContrast: Boolean(userSettings.highContrastMenu),
   animationMode: "idle",
   animationStartedAt: 0,
@@ -132,10 +152,6 @@ const combatFeedback = {
   shakeUntil: 0,
   shakeMagnitude: 0,
   lastEnemyTelegraphAt: 0
-};
-
-const saveState = {
-  nextAutosaveAt: performance.now() + 14000
 };
 
 function persistUserSettings() {
@@ -308,10 +324,12 @@ function performLoadGame() {
   setSettingsStatus("Save loaded.");
 }
 
-const startupSnapshot = loadGameSnapshot();
-if (startupSnapshot) {
-  applyGameSnapshot(startupSnapshot);
+const newGameBaselineSnapshot = buildGameSnapshot();
+const titlePreviewSnapshot = loadGameSnapshot();
+if (titlePreviewSnapshot) {
+  applyGameSnapshot(titlePreviewSnapshot);
 }
+
 const HANAMI_DOJO_UPSTAIRS_DOOR_TILE = Object.freeze({
   areaId: "hanamiDojo",
   x: 9,
@@ -596,7 +614,7 @@ const gameplayStartState = gameState;
 const titleState = {
   startedAt: performance.now(),
   selected: 0,
-  options: ["Start Journey", "How To Play"],
+  options: ["Continue", "Start Journey", "How To Play"],
   showHowTo: false,
   fadeOutActive: false,
   fadeOutStartedAt: 0,
@@ -643,6 +661,10 @@ function normalizeInputKey(key) {
   return String(key || "").toLowerCase();
 }
 
+function isPauseKey(key) {
+  return input.matchesActionKey("pause", key) && !input.matchesActionKey("inventory", key);
+}
+
 function moveTitleSelection(direction) {
   const total = titleState.options.length;
   titleState.selected = (titleState.selected + direction + total) % total;
@@ -650,10 +672,21 @@ function moveTitleSelection(direction) {
 }
 
 function confirmTitleSelection() {
-  if (titleState.selected === 1) {
+  const selected = titleState.options[titleState.selected];
+  if (selected === "How To Play") {
     titleState.showHowTo = !titleState.showHowTo;
     musicManager.playSfx("menuSelect");
     return;
+  }
+
+  if (selected === "Continue") {
+    const snapshot = loadGameSnapshot();
+    if (!snapshot || !applyGameSnapshot(snapshot)) {
+      musicManager.playSfx("uiError");
+      return;
+    }
+  } else if (selected === "Start Journey") {
+    applyGameSnapshot(newGameBaselineSnapshot);
   }
 
   titleState.fadeOutActive = true;
@@ -1035,6 +1068,10 @@ function selectPauseMenuOption() {
   } else if (selected === "Settings") {
     setPauseMenuAnimation("out", 140);
     gameState = GAME_STATES.SETTINGS;
+  } else if (selected === "Save") {
+    performSaveGame();
+  } else if (selected === "Load") {
+    performLoadGame();
   } else if (selected === "Quit") {
     if (confirm("Quit game?")) {
       window.location.reload();
@@ -1244,7 +1281,7 @@ addEventListener("keydown", (e) => {
       const direction = (key === "arrowup" || key === "w") ? -1 : 1;
       movePauseMenuSelection(direction);
     }
-    if ((key === "enter" || key === "escape" || input.matchesActionKey("pause", key)) && !e.repeat) {
+    if ((key === "enter" || key === "escape" || isPauseKey(key)) && !e.repeat) {
       resumeFromPauseMenu();
       return;
     }
@@ -1264,7 +1301,7 @@ addEventListener("keydown", (e) => {
     } else if (!e.repeat && (key === "space" || key === "enter")) {
       activateSettingsItem();
       e.preventDefault();
-    } else if ((key === "escape" || input.matchesActionKey("pause", key)) && !e.repeat) {
+    } else if ((key === "escape" || isPauseKey(key)) && !e.repeat) {
       returnToPauseMenu();
       e.preventDefault();
     }
@@ -1272,14 +1309,18 @@ addEventListener("keydown", (e) => {
   }
 
   if (gameState === GAME_STATES.INVENTORY || gameState === GAME_STATES.ATTRIBUTES) {
-    if ((key === "enter" || key === "escape" || input.matchesActionKey("pause", key)) && !e.repeat) {
+    if ((
+      key === "enter" ||
+      key === "escape" ||
+      isPauseKey(key)
+    ) && !e.repeat) {
       returnToPauseMenu();
       e.preventDefault();
     }
     return;
   }
 
-  if ((key === "enter" || key === "escape" || input.matchesActionKey("pause", key)) && !e.repeat && isFreeExploreState(gameState)) {
+  if ((key === "enter" || key === "escape" || isPauseKey(key)) && !e.repeat && isFreeExploreState(gameState)) {
     openPauseMenu();
   }
 });
@@ -1353,6 +1394,7 @@ function render() {
     ui: UI,
     drawTile,
     getHandstandSprite: () => assets.getSprite("protagonist_handstand"),
+    getItemSprite: (name) => assets.getSprite(name),
     drawCustomOverlays: ({ ctx: frameCtx, canvas: frameCanvas, colors: frameColors, ui: frameUi, state: frameState }) => {
       featureCoordinator.renderOverlays({
         ctx: frameCtx,
@@ -1390,21 +1432,14 @@ function render() {
       playerInventory,
       itemAlert,
       inventoryHint,
-      pauseMenuState
+      pauseMenuState,
+      mouseUiState
     },
     dialogue
   });
 }
 
 gameController.syncMusicForCurrentArea();
-
-function maybeAutosave(now) {
-  if (now < saveState.nextAutosaveAt) return;
-  saveState.nextAutosaveAt = now + 14000;
-
-  if (!isFreeExploreState(gameState) || doorSequence.active || playerDefeatSequence.active) return;
-  saveGameSnapshot(buildGameSnapshot());
-}
 
 function loop() {
   const now = performance.now();
@@ -1456,7 +1491,6 @@ function loop() {
       updateFountainHealing(now);
     }
     input.clearAttackPressed();
-    maybeAutosave(now);
   }
 
   if (!hitstopActive) {

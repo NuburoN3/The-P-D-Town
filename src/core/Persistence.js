@@ -36,6 +36,17 @@ function writeJson(storageKey, value) {
   }
 }
 
+function removeItem(storageKey) {
+  if (!hasLocalStorage()) return false;
+  try {
+    window.localStorage.removeItem(storageKey);
+    return true;
+  } catch (error) {
+    console.warn(`[Persistence] Failed to remove '${storageKey}':`, error);
+    return false;
+  }
+}
+
 function clampTextSpeed(value) {
   if (!Number.isFinite(value)) return DEFAULT_USER_SETTINGS.textSpeedMultiplier;
   return Math.max(0.5, Math.min(2, value));
@@ -75,4 +86,8 @@ export function saveGameSnapshot(snapshot) {
     ...snapshot,
     savedAtIso: new Date().toISOString()
   });
+}
+
+export function clearGameSnapshot() {
+  return removeItem(SAVE_STORAGE_KEY);
 }
