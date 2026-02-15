@@ -257,7 +257,7 @@ export const GAME_CONTENT = {
             {
               id: "hanamiBarFront",
               type: BUILDING_TYPES.BAR,
-              x: 21,
+              x: 24,
               y: 16,
               width: 5,
               height: 4
@@ -265,7 +265,7 @@ export const GAME_CONTENT = {
           ],
           signposts: [
             { x: 12, y: 10, text: "The Dojo" },
-            { x: 21, y: 20, text: "Sakura Bar" },
+            { x: 24, y: 20, text: "Sakura Bar" },
             { x: 15, y: 23, text: "Hanami Grand Fountain" }
           ]
         },
@@ -292,7 +292,7 @@ export const GAME_CONTENT = {
         townGate: { areaId: "overworld", x: 15, y: 26, dir: "up" },
         dojoExteriorDoor: { areaId: "overworld", x: 15, y: 9, dir: "down" },
         dojoInteriorDoor: { areaId: "hanamiDojo", x: 6, y: 8, dir: "up" },
-        barExteriorDoor: { areaId: "overworld", x: 22, y: 20, dir: "down" },
+        barExteriorDoor: { areaId: "overworld", x: 25, y: 20, dir: "down" },
         barInteriorDoor: { areaId: "hanamiBar", x: 6, y: 8, dir: "up" }
       },
       doors: [
@@ -309,7 +309,7 @@ export const GAME_CONTENT = {
           to: { townId: "hanamiTown", spawnId: "dojoExteriorDoor" }
         },
         {
-          from: { areaId: "overworld", x: 22, y: 19 },
+          from: { areaId: "overworld", x: 25, y: 19 },
           to: { townId: "hanamiTown", spawnId: "barInteriorDoor" }
         },
         {
