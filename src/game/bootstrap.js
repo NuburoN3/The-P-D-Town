@@ -1,39 +1,51 @@
-import { AudioManager } from "../../music-manager.js";
+import { AudioManager } from "../audio/AudioManager.js";
 import {
   TILE,
-  OVERWORLD_W,
-  OVERWORLD_H,
-  INTERIOR_W,
-  INTERIOR_H,
   PLAYER_SPRITE_HEIGHT_TILES,
   TRAINING,
-  COLORS
-} from "../constants.js";
-import { AssetManager, initializeAssets } from "../AssetManager.js";
+  GAME_STATES,
+  AREA_KINDS
+} from "../core/constants.js";
+import { createDefaultAssetManager } from "../core/AssetManager.js";
 import {
   initializeBuildingRenderers,
-  initializeTowns,
-  townDefinitions,
-  createNPCsForTown
+  createWorldService
 } from "../WorldManager.js";
 
 export function createGameRuntime() {
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
 
-  initializeBuildingRenderers(ctx, TILE, COLORS);
-  initializeAssets();
-  initializeTowns();
+  initializeBuildingRenderers(ctx, TILE);
+
+  const assets = createDefaultAssetManager();
+  const worldService = createWorldService({
+    tileSize: TILE,
+    getSprite: (name) => assets.getSprite(name)
+  });
+
+  const initialTownId = Object.keys(worldService.towns)[0];
+  if (!initialTownId) {
+    throw new Error("World configuration has no towns.");
+  }
+
+  const initialSpawn = worldService.getInitialSpawn(initialTownId);
+  if (!initialSpawn) {
+    throw new Error(`Town '${initialTownId}' has no valid default spawn.`);
+  }
+
+  const initialArea = worldService.getArea(initialTownId, initialSpawn.areaId);
+  if (!initialArea) {
+    throw new Error(`Spawn area '${initialSpawn.areaId}' is missing for town '${initialTownId}'.`);
+  }
 
   const musicManager = new AudioManager({
-    areaTracks: {
-      hanamiDojo: "Hanami_Game_Audio_BG.wav"
-    },
+    areaTracks: worldService.areaTracks,
     sfxTracks: {
-      enterDoor: "EnterDoor_Sound.wav",
-      itemUnlock: "Item_Unlock.wav",
-      walking: "walking_sound.wav",
-      collision: "collision_sound.wav"
+      enterDoor: "assets/audio/EnterDoor_Sound.wav",
+      itemUnlock: "assets/audio/Item_Unlock.wav",
+      walking: "assets/audio/walking_sound.wav",
+      collision: "assets/audio/collision_sound.wav"
     },
     fadeDurationMs: 800
   });
@@ -79,31 +91,29 @@ export function createGameRuntime() {
     durationMs: 4500
   };
 
-  const currentTownId = "hanamiTown";
-  const currentTown = townDefinitions[currentTownId];
-  const currentAreaType = "overworld";
-  const currentMap = currentTown.overworldMap;
-  const currentMapW = OVERWORLD_W;
-  const currentMapH = OVERWORLD_H;
+  const currentTownId = initialTownId;
+  const currentAreaId = initialSpawn.areaId;
+  const currentMap = initialArea.map;
+  const currentMapW = initialArea.width;
+  const currentMapH = initialArea.height;
 
-  const npcs = createNPCsForTown(currentTownId, {
-    tileSize: TILE,
-    getSprite: (name) => AssetManager.getSprite(name)
-  });
+  const npcs = worldService.createNPCsForTown(currentTownId);
 
-  const gameState = "overworld";
-  const previousWorldState = "overworld";
+  const initialGameState =
+    initialArea.kind === AREA_KINDS.OVERWORLD ? GAME_STATES.OVERWORLD : GAME_STATES.INTERIOR;
+  const gameState = initialGameState;
+  const previousWorldState = initialGameState;
 
   const player = {
-    x: 15 * TILE,
-    y: 18 * TILE,
+    x: initialSpawn.x,
+    y: initialSpawn.y,
     speed: 2.2,
-    dir: "down",
+    dir: initialSpawn.dir,
     walking: false,
     frame: 0,
     animTimer: 0,
     animFrame: 1,
-    sprite: AssetManager.getSprite("protagonist"),
+    sprite: assets.getSprite("protagonist"),
     desiredHeightTiles: PLAYER_SPRITE_HEIGHT_TILES,
     isTraining: false,
     handstandAnimTimer: 0,
@@ -121,9 +131,10 @@ export function createGameRuntime() {
     stepFrames: 0,
     frame: 0,
     targetTownId: "",
-    targetAreaType: "",
+    targetAreaId: "",
     targetX: 0,
     targetY: 0,
+    targetDir: "down",
     transitionPhase: "out",
     fadeRadius: 0,
     maxFadeRadius: 0
@@ -132,6 +143,8 @@ export function createGameRuntime() {
   return {
     canvas,
     ctx,
+    assets,
+    worldService,
     musicManager,
     state: {
       gameFlags,
@@ -141,8 +154,7 @@ export function createGameRuntime() {
       itemAlert,
       inventoryHint,
       currentTownId,
-      currentTown,
-      currentAreaType,
+      currentAreaId,
       currentMap,
       currentMapW,
       currentMapH,

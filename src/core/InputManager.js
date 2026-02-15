@@ -8,9 +8,9 @@ const MOVEMENT_KEYS = [
 ];
 
 export class InputManager {
-  constructor({ target = window, doc = document } = {}) {
+  constructor({ target = window, onToggleInventory = null } = {}) {
     this.target = target;
-    this.doc = doc;
+    this.onToggleInventory = onToggleInventory;
     this.keys = {};
     this.interactPressed = false;
     this.initialized = false;
@@ -60,8 +60,10 @@ export class InputManager {
       return;
     }
 
-    if (key === "i") {
-      this.doc.dispatchEvent(new Event("toggleInventory"));
+    if (key === "i" && !e.repeat) {
+      if (this.onToggleInventory) {
+        this.onToggleInventory();
+      }
     }
   }
 
@@ -71,24 +73,4 @@ export class InputManager {
       this.keys[key] = false;
     }
   }
-}
-
-const defaultInputManager = new InputManager();
-
-export const keys = defaultInputManager.keys;
-
-export function initializeInput() {
-  defaultInputManager.initialize();
-}
-
-export function getInteractPressed() {
-  return defaultInputManager.getInteractPressed();
-}
-
-export function clearInteractPressed() {
-  defaultInputManager.clearInteractPressed();
-}
-
-export function isMoving() {
-  return defaultInputManager.isMoving();
 }

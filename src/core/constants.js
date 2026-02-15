@@ -3,15 +3,28 @@
 // ============================================================================
 
 export const TILE = 32;
-export const OVERWORLD_W = 30;
-export const OVERWORLD_H = 30;
-export const INTERIOR_W = 12;
-export const INTERIOR_H = 10;
 export const PLAYER_SPRITE_HEIGHT_TILES = 1.15;
 export const CAMERA_ZOOM = 1.4;
 export const SPRITE_FRAME_WIDTH = 32;
 export const SPRITE_FRAME_HEIGHT = 32;
 export const SPRITE_FRAMES_PER_ROW = 3;
+
+export const AREA_KINDS = Object.freeze({
+  OVERWORLD: "overworld",
+  INTERIOR: "interior"
+});
+
+export const GAME_STATES = Object.freeze({
+  OVERWORLD: "overworld",
+  INTERIOR: "interior",
+  INVENTORY: "inventory",
+  ENTERING_DOOR: "enteringDoor",
+  TRANSITION: "transition"
+});
+
+export function isFreeExploreState(gameState) {
+  return gameState === GAME_STATES.OVERWORLD || gameState === GAME_STATES.INTERIOR;
+}
 
 // Tile type IDs
 export const TILE_TYPES = {
@@ -86,5 +99,6 @@ export const TRAINING = {
   LEVEL_UP_HOLD_MS: 250,
   XP_PER_SESSION: 5,
   INITIAL_XP_NEEDED: 10,
-  XP_INCREMENT: 5
+  XP_INCREMENT: 5,
+  LEVEL_UP_MESSAGE: "Your discipline has grown! Level increased!"
 };

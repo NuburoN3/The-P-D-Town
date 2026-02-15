@@ -55,7 +55,7 @@ export class CollisionService {
     return false;
   }
 
-  collidesWithNPC(nx, ny, npcs, currentAreaType) {
+  collidesWithNPC(nx, ny, npcs, currentAreaId) {
     const playerRect = {
       x: nx + 5,
       y: ny + 5,
@@ -64,7 +64,7 @@ export class CollisionService {
     };
 
     for (const npc of npcs) {
-      if (npc.world !== currentAreaType) continue;
+      if (npc.world !== currentAreaId) continue;
       if (this.rectsOverlap(playerRect, npc)) return true;
     }
 
@@ -91,30 +91,4 @@ export class CollisionService {
 
     return null;
   }
-}
-
-const defaultCollisionService = new CollisionService();
-
-export function rectsOverlap(a, b) {
-  return defaultCollisionService.rectsOverlap(a, b);
-}
-
-export function collidesWithNPC(nx, ny, npcs, currentAreaType) {
-  return defaultCollisionService.collidesWithNPC(nx, ny, npcs, currentAreaType);
-}
-
-export function tileAtPixel(px, py, currentMap, currentMapW, currentMapH) {
-  return defaultCollisionService.tileAtPixel(px, py, currentMap, currentMapW, currentMapH);
-}
-
-export function isBlockedAtPixel(px, py, currentMap, currentMapW, currentMapH) {
-  return defaultCollisionService.isBlockedAtPixel(px, py, currentMap, currentMapW, currentMapH);
-}
-
-export function collides(nx, ny, currentMap, currentMapW, currentMapH) {
-  return defaultCollisionService.collides(nx, ny, currentMap, currentMapW, currentMapH);
-}
-
-export function doorFromCollision(nx, ny, currentMap, currentMapW, currentMapH) {
-  return defaultCollisionService.doorFromCollision(nx, ny, currentMap, currentMapW, currentMapH);
 }

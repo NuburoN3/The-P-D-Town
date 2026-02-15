@@ -1,3 +1,5 @@
+import { AREA_KINDS, GAME_STATES } from "../core/constants.js";
+
 export function createMovementSystem({
   keys,
   tileSize,
@@ -14,7 +16,7 @@ export function createMovementSystem({
     currentMapW,
     currentMapH,
     npcs,
-    currentAreaType
+    currentAreaId
   }, {
     collides,
     collidesWithNPC,
@@ -61,7 +63,7 @@ export function createMovementSystem({
     const ny = player.y + dy;
 
     if (!collides(nx, player.y, currentMap, currentMapW, currentMapH) &&
-        !collidesWithNPC(nx, player.y, npcs, currentAreaType)) {
+        !collidesWithNPC(nx, player.y, npcs, currentAreaId)) {
       player.x = nx;
     } else if (dx !== 0) {
       const doorTile = doorFromCollision(nx, player.y, currentMap, currentMapW, currentMapH);
@@ -73,7 +75,7 @@ export function createMovementSystem({
     }
 
     if (!collides(player.x, ny, currentMap, currentMapW, currentMapH) &&
-        !collidesWithNPC(player.x, ny, npcs, currentAreaType)) {
+        !collidesWithNPC(player.x, ny, npcs, currentAreaId)) {
       player.y = ny;
     } else if (dy !== 0) {
       const doorTile = doorFromCollision(player.x, ny, currentMap, currentMapW, currentMapH);
@@ -98,14 +100,14 @@ export function createMovementSystem({
       player.y += doorSequence.stepDy;
       doorSequence.frame++;
     } else {
-      setGameState("transition");
+      setGameState(GAME_STATES.TRANSITION);
     }
   }
 
   function updateTransition({ player, doorSequence }, {
     setArea,
     setGameState,
-    getCurrentAreaType
+    getCurrentAreaKind
   }) {
     player.walking = false;
 
@@ -113,10 +115,10 @@ export function createMovementSystem({
       doorSequence.fadeRadius -= 20;
       if (doorSequence.fadeRadius <= 0) {
         doorSequence.fadeRadius = 0;
-        setArea(doorSequence.targetAreaType);
+        setArea(doorSequence.targetTownId, doorSequence.targetAreaId);
         player.x = doorSequence.targetX;
         player.y = doorSequence.targetY;
-        player.dir = doorSequence.targetAreaType === "overworld" ? "down" : "up";
+        player.dir = doorSequence.targetDir;
         doorSequence.transitionPhase = "in";
       }
       return;
@@ -126,7 +128,11 @@ export function createMovementSystem({
     if (doorSequence.fadeRadius >= doorSequence.maxFadeRadius) {
       doorSequence.fadeRadius = doorSequence.maxFadeRadius;
       doorSequence.active = false;
-      setGameState(getCurrentAreaType() === "overworld" ? "overworld" : "interior");
+      setGameState(
+        getCurrentAreaKind() === AREA_KINDS.OVERWORLD
+          ? GAME_STATES.OVERWORLD
+          : GAME_STATES.INTERIOR
+      );
     }
   }
 

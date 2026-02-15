@@ -1,3 +1,5 @@
+import { AREA_KINDS, GAME_STATES } from "../core/constants.js";
+
 function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, spriteFrameHeight, spriteFramesPerRow) {
   const { player, cam } = state;
   if (!player.sprite || !player.sprite.width || !player.sprite.height) return;
@@ -78,11 +80,11 @@ function drawNPCPlaceholder(ctx, nx, ny, colors) {
 }
 
 function drawNPCs(ctx, state, canvas, tileSize, colors) {
-  const { currentAreaType, npcs, cam } = state;
-  if (currentAreaType === "overworld") return;
+  const { currentAreaId, currentAreaKind, npcs, cam } = state;
+  if (currentAreaKind === AREA_KINDS.OVERWORLD) return;
 
   for (const npc of npcs) {
-    if (npc.world !== currentAreaType) continue;
+    if (npc.world !== currentAreaId) continue;
 
     const nx = npc.x - cam.x;
     const ny = npc.y - cam.y;
@@ -180,7 +182,7 @@ function drawTrainingPopup(ctx, state, canvas, ui, colors, tileSize) {
 }
 
 function drawTextbox(ctx, state, canvas, ui, colors, dialogue) {
-  if (!dialogue.isActive() || state.gameState === "inventory") return;
+  if (!dialogue.isActive() || state.gameState === GAME_STATES.INVENTORY) return;
 
   const boxHeight = ui.TEXT_BOX_HEIGHT;
   const boxY = canvas.height - boxHeight - 20;
@@ -275,7 +277,7 @@ function drawTextbox(ctx, state, canvas, ui, colors, dialogue) {
 
 function drawDoorTransition(ctx, state, canvas, tileSize) {
   const { gameState, player, cam, doorSequence } = state;
-  if (gameState !== "transition") return;
+  if (gameState !== GAME_STATES.TRANSITION) return;
 
   const px = player.x - cam.x + tileSize / 2;
   const py = player.y - cam.y + tileSize / 2;
@@ -292,7 +294,7 @@ function drawDoorTransition(ctx, state, canvas, tileSize) {
 
 function drawInventoryOverlay(ctx, state, canvas, ui, colors) {
   const { gameState, playerInventory, playerStats } = state;
-  if (gameState !== "inventory") return;
+  if (gameState !== GAME_STATES.INVENTORY) return;
 
   ctx.fillStyle = colors.INVENTORY_OVERLAY;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -441,14 +443,20 @@ export function renderGameFrame({
   const visibleW = canvas.width / cameraZoom;
   const visibleH = canvas.height / cameraZoom;
 
-  for (let y = 0; y < state.currentMapH; y++) {
-    for (let x = 0; x < state.currentMapW; x++) {
+  const startX = Math.max(0, Math.floor(state.cam.x / tileSize) - 1);
+  const endX = Math.min(state.currentMapW - 1, Math.ceil((state.cam.x + visibleW) / tileSize) + 1);
+  const startY = Math.max(0, Math.floor(state.cam.y / tileSize) - 1);
+  const endY = Math.min(state.currentMapH - 1, Math.ceil((state.cam.y + visibleH) / tileSize) + 1);
+
+  for (let y = startY; y <= endY; y++) {
+    const row = state.currentMap[y];
+    if (!row) continue;
+    for (let x = startX; x <= endX; x++) {
+      const tileType = row[x];
+      if (typeof tileType !== "number") continue;
       const drawX = x * tileSize - state.cam.x;
       const drawY = y * tileSize - state.cam.y;
-
-      if (drawX > -tileSize && drawY > -tileSize && drawX < visibleW && drawY < visibleH) {
-        drawTile(state.currentMap[y][x], drawX, drawY, x, y);
-      }
+      drawTile(tileType, drawX, drawY, x, y);
     }
   }
 

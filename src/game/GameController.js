@@ -1,41 +1,43 @@
+import { GAME_STATES, isFreeExploreState } from "../core/constants.js";
+
 export function createGameController({
-  world,
   movementSystem,
   collision,
   musicManager,
+  worldService,
+  levelUpMessage,
   state,
   dialogue,
   actions
 }) {
   function syncMusicForCurrentArea() {
-    if (state.getCurrentAreaType() === "overworld") {
+    const musicKey = worldService.getAreaMusicKey(state.getCurrentTownId(), state.getCurrentAreaId());
+    if (!musicKey) {
       musicManager.stopCurrentMusic();
       return;
     }
-    musicManager.playMusicForArea(state.getCurrentAreaType());
+    musicManager.playMusicForArea(musicKey);
   }
 
-  function setArea(areaType) {
-    state.setCurrentAreaType(areaType);
+  function setArea(townId, areaId) {
+    const area = worldService.getArea(townId, areaId);
+    if (!area) return false;
 
-    if (areaType === "overworld") {
-      state.setCurrentMapContext({
-        map: state.getCurrentTown().overworldMap,
-        width: world.overworldW,
-        height: world.overworldH
-      });
-    } else {
-      const interior = state.getCurrentTown().interiorMaps[areaType];
-      if (interior) {
-        state.setCurrentMapContext({
-          map: interior.map,
-          width: world.interiorW,
-          height: world.interiorH
-        });
-      }
+    const previousTownId = state.getCurrentTownId();
+    state.setCurrentTownId(townId);
+    state.setCurrentAreaId(areaId);
+    state.setCurrentMapContext({
+      map: area.map,
+      width: area.width,
+      height: area.height
+    });
+
+    if (townId !== previousTownId) {
+      state.reloadTownNPCs(townId);
     }
 
     syncMusicForCurrentArea();
+    return true;
   }
 
   function updatePlayerMovement() {
@@ -46,7 +48,7 @@ export function createGameController({
         currentMapW: state.getCurrentMapW(),
         currentMapH: state.getCurrentMapH(),
         npcs: state.npcs,
-        currentAreaType: state.getCurrentAreaType()
+        currentAreaId: state.getCurrentAreaId()
       },
       {
         collides: collision.collidesAt,
@@ -74,14 +76,12 @@ export function createGameController({
         setGameState: (nextState) => {
           state.setGameState(nextState);
         },
-        getCurrentAreaType: state.getCurrentAreaType
+        getCurrentAreaKind: () => worldService.getAreaKind(state.getCurrentTownId(), state.getCurrentAreaId())
       }
     );
   }
 
-  function update() {
-    const now = performance.now();
-
+  function updateTransientUi(now) {
     if (
       state.trainingPopup.pendingLevelUpDialogueAt !== null &&
       now >= state.trainingPopup.pendingLevelUpDialogueAt &&
@@ -89,16 +89,13 @@ export function createGameController({
       !dialogue.isChoiceActive()
     ) {
       state.trainingPopup.pendingLevelUpDialogueAt = null;
-      dialogue.showDialogue("", "Your discipline has grown! Level increased!");
+      dialogue.showDialogue("", levelUpMessage);
     }
 
-    if (state.trainingPopup.active) {
-      const elapsed = now - state.trainingPopup.startedAt;
-      if (elapsed >= state.trainingPopup.durationMs) {
-        state.trainingPopup.active = false;
-        state.trainingPopup.levelUp = false;
-        state.player.isTraining = false;
-      }
+    if (state.trainingPopup.active && now - state.trainingPopup.startedAt >= state.trainingPopup.durationMs) {
+      state.trainingPopup.active = false;
+      state.trainingPopup.levelUp = false;
+      state.player.isTraining = false;
     }
 
     if (state.itemAlert.active && now - state.itemAlert.startedAt >= state.itemAlert.durationMs) {
@@ -108,23 +105,26 @@ export function createGameController({
     if (state.inventoryHint.active && now - state.inventoryHint.startedAt >= state.inventoryHint.durationMs) {
       state.inventoryHint.active = false;
     }
+  }
+
+  function update() {
+    const now = performance.now();
+    updateTransientUi(now);
 
     const gameState = state.getGameState();
-    const freeState = gameState === "overworld" || gameState === "interior";
-
-    if (freeState && !dialogue.isDialogueActive()) {
+    if (isFreeExploreState(gameState) && !dialogue.isDialogueActive()) {
       if (!state.player.isTraining) {
         updatePlayerMovement();
       }
     } else if (dialogue.isDialogueActive()) {
       state.player.walking = false;
-    } else if (gameState === "enteringDoor") {
+    } else if (gameState === GAME_STATES.ENTERING_DOOR) {
       updateDoorEntry();
-    } else if (gameState === "transition") {
+    } else if (gameState === GAME_STATES.TRANSITION) {
       updateTransition();
     }
 
-    if (state.getGameState() !== "transition") {
+    if (state.getGameState() !== GAME_STATES.TRANSITION) {
       actions.handleInteraction();
     }
 

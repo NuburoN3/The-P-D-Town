@@ -2,8 +2,8 @@
 // TILE SYSTEM - Strategy-based tile rendering
 // ============================================================================
 
-import { TILE_TYPES, TILE, COLORS } from "./constants.js";
-import { getBuilding, renderBuildingTile } from "./WorldManager.js";
+import { TILE_TYPES, TILE, COLORS, GAME_STATES } from "../core/constants.js";
+import { renderBuildingTile } from "../WorldManager.js";
 
 function drawGrassTile(ctx, x, y, tileX, tileY) {
   // Almost flat grass: base fill plus a few slightly darker speckles
@@ -72,7 +72,9 @@ const tileRenderers = {
   },
 
   [TILE_TYPES.WALL]: (ctx, deps) => {
-    const building = getBuilding(deps.currentTownId, deps.tileX, deps.tileY);
+    const building = deps.getBuilding
+      ? deps.getBuilding(deps.currentTownId, deps.currentAreaId, deps.tileX, deps.tileY)
+      : null;
     if (building) {
       const rendered = renderBuildingTile(building, deps.x, deps.y, deps.tileX, deps.tileY);
       if (rendered) return;
@@ -91,7 +93,7 @@ const tileRenderers = {
 
   [TILE_TYPES.DOOR]: (ctx, deps) => {
     const isActiveDoor =
-      deps.gameState === "enteringDoor" &&
+      deps.gameState === GAME_STATES.ENTERING_DOOR &&
       deps.tileX === deps.doorSequence.tx &&
       deps.tileY === deps.doorSequence.ty;
 
@@ -175,18 +177,20 @@ const tileRenderers = {
   }
 };
 
-export function drawTile(ctx, currentTownId, gameState, doorSequence, type, x, y, tileX, tileY) {
+export function drawTile(ctx, currentTownId, currentAreaId, gameState, doorSequence, type, x, y, tileX, tileY, getBuilding) {
   const renderer = tileRenderers[type];
   if (!renderer) return;
 
   renderer(ctx, {
     currentTownId,
+    currentAreaId,
     gameState,
     doorSequence,
     type,
     x,
     y,
     tileX,
-    tileY
+    tileY,
+    getBuilding
   });
 }

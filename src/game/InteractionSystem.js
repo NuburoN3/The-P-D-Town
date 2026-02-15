@@ -1,8 +1,9 @@
+import { AREA_KINDS, GAME_STATES, isFreeExploreState } from "../core/constants.js";
+
 export function createInteractionSystem({
   tileSize,
   ui,
   training,
-  tileTypes,
   canvas,
   gameFlags,
   playerInventory,
@@ -14,10 +15,11 @@ export function createInteractionSystem({
   npcs,
   doorSequence,
   musicManager,
-  getBuilding,
+  worldService,
+  trainingContent,
   getCurrentTownId,
-  getCurrentTown,
-  getCurrentAreaType,
+  getCurrentAreaId,
+  getCurrentAreaKind,
   getCurrentMap,
   getCurrentMapW,
   getCurrentMapH,
@@ -42,27 +44,23 @@ export function createInteractionSystem({
 
   function tryTrainingAction() {
     const gameState = getGameState();
-    const isFreeExploreState = gameState === "overworld" || gameState === "interior";
-    if (!isFreeExploreState) return;
+    if (!isFreeExploreState(gameState)) return;
     if (isDialogueActive() || choiceState.active || doorSequence.active) return;
-
-    const currentAreaType = getCurrentAreaType();
-    if (currentAreaType === "overworld") return;
+    if (getCurrentAreaKind() === AREA_KINDS.OVERWORLD) return;
     if (!gameFlags.acceptedTraining) return;
 
-    const currentTown = getCurrentTown();
-    const interior = currentTown?.interiorMaps?.[currentAreaType];
-    if (!interior || !interior.trainingTile) return;
+    const currentTownId = getCurrentTownId();
+    const currentAreaId = getCurrentAreaId();
+    const trainingTile = worldService.getTrainingTile(currentTownId, currentAreaId);
+    if (!trainingTile) return;
 
     const tilePos = playerTilePosition();
-    if (!tilePos) return;
-
-    const onTrainingTile = tilePos.x === interior.trainingTile.x && tilePos.y === interior.trainingTile.y;
+    const onTrainingTile = tilePos.x === trainingTile.x && tilePos.y === trainingTile.y;
     if (!onTrainingTile) return;
 
     if (playerStats.disciplineLevel >= 2) {
       if (!isDialogueActive()) {
-        showDialogue("", "Training complete. Speak to Mr. Hanami.");
+        showDialogue("", trainingContent.completedPrompt);
       }
       return;
     }
@@ -101,64 +99,73 @@ export function createInteractionSystem({
 
   function toggleInventory() {
     const gameState = getGameState();
-    if (gameState === "inventory") {
+    if (gameState === GAME_STATES.INVENTORY) {
       setGameState(getPreviousWorldState());
       clearInteractPressed();
       return;
     }
 
-    const isFreeExploreState = gameState === "overworld" || gameState === "interior";
-    if (!isFreeExploreState) return;
+    if (!isFreeExploreState(gameState)) return;
     if (isDialogueActive() || choiceState.active || doorSequence.active) return;
 
     setPreviousWorldState(gameState);
-    setGameState("inventory");
+    setGameState(GAME_STATES.INVENTORY);
     clearInteractPressed();
   }
 
   function handleNPCInteraction(npc) {
-    if (npc.hasTrainingChoice) {
-      if (gameFlags.completedTraining) {
-        showDialogue(npc.name, [
-          "Excellent.",
-          "You have mastered the basics and are now ready for your next lesson. I won't tell you what it is though!"
-        ]);
-        return;
-      }
-
-      if (gameFlags.acceptedTraining) {
-        showDialogue(npc.name, npc.alreadyTrainingDialogue);
-        return;
-      }
-
-      showDialogue(npc.name, npc.dialogue, () => {
-        openYesNoChoice((selectedOption) => {
-          if (selectedOption === "Yes") {
-            gameFlags.acceptedTraining = true;
-            if (!playerInventory["Training Headband"]) {
-              playerInventory["Training Headband"] = 1;
-              itemAlert.active = true;
-              itemAlert.text = "New item: Training Headband";
-              itemAlert.startedAt = performance.now();
-              inventoryHint.active = true;
-              inventoryHint.startedAt = performance.now();
-              try { musicManager.playSfx("itemUnlock"); } catch (_) {}
-            }
-            showDialogue(npc.name, "You received a Training Headband!");
-          } else {
-            showDialogue(npc.name, "Come speak to me when you are ready.");
-          }
-        });
-      });
+    if (!npc.hasTrainingChoice) {
+      showDialogue(npc.name, npc.dialogue);
       return;
     }
 
-    showDialogue(npc.name, npc.dialogue);
+    if (gameFlags.completedTraining) {
+      showDialogue(npc.name, trainingContent.postCompleteDialogue);
+      return;
+    }
+
+    if (gameFlags.acceptedTraining) {
+      showDialogue(npc.name, trainingContent.acceptedDialogue);
+      return;
+    }
+
+    showDialogue(npc.name, npc.dialogue, () => {
+      openYesNoChoice((selectedOption) => {
+        if (selectedOption === "Yes") {
+          gameFlags.acceptedTraining = true;
+
+          if (!playerInventory[trainingContent.itemName]) {
+            playerInventory[trainingContent.itemName] = 1;
+            itemAlert.active = true;
+            itemAlert.text = trainingContent.itemUnlockMessage;
+            itemAlert.startedAt = performance.now();
+            inventoryHint.active = true;
+            inventoryHint.startedAt = performance.now();
+            try {
+              musicManager.playSfx("itemUnlock");
+            } catch (_) {}
+          }
+
+          showDialogue(npc.name, trainingContent.itemReceivedMessage);
+        } else {
+          showDialogue(npc.name, trainingContent.declineDialogue);
+        }
+      });
+    });
   }
 
   function beginDoorSequence(doorTile) {
     const gameState = getGameState();
-    if (gameState === "enteringDoor" || gameState === "transition") return;
+    if (gameState === GAME_STATES.ENTERING_DOOR || gameState === GAME_STATES.TRANSITION) return;
+
+    const destination = worldService.resolveDoorDestination(
+      getCurrentTownId(),
+      getCurrentAreaId(),
+      doorTile.tx,
+      doorTile.ty
+    );
+    if (!destination) return;
+
     musicManager.playSfx("enterDoor");
 
     const playerCenterX = player.x + tileSize / 2;
@@ -179,40 +186,23 @@ export function createInteractionSystem({
     doorSequence.stepDy = vy * 1.5;
     doorSequence.stepFrames = 20;
     doorSequence.frame = 0;
-
-    const currentAreaType = getCurrentAreaType();
-    const currentTown = getCurrentTown();
-    const currentTownId = getCurrentTownId();
-
-    if (currentAreaType === "overworld") {
-      const building = getBuilding(currentTownId, doorTile.tx, doorTile.ty);
-      if (building) {
-        doorSequence.targetAreaType = building.interiorId;
-        const interior = currentTown.interiorMaps[building.interiorId];
-        const door = interior.door;
-        doorSequence.targetX = door.x * tileSize;
-        doorSequence.targetY = (door.y - 1) * tileSize;
-      }
-    } else {
-      doorSequence.targetAreaType = "overworld";
-      const building = Array.from(currentTown.buildings).find((b) => b.interiorId === currentAreaType);
-      if (building) {
-        doorSequence.targetX = building.doorPos.x * tileSize;
-        doorSequence.targetY = (building.doorPos.y + 1) * tileSize;
-      }
-    }
-
+    doorSequence.targetTownId = destination.townId;
+    doorSequence.targetAreaId = destination.areaId;
+    doorSequence.targetX = destination.x;
+    doorSequence.targetY = destination.y;
+    doorSequence.targetDir = destination.dir || "down";
     doorSequence.maxFadeRadius = Math.hypot(canvas.width, canvas.height);
     doorSequence.fadeRadius = doorSequence.maxFadeRadius;
     doorSequence.transitionPhase = "out";
-    setGameState("enteringDoor");
+
+    setGameState(GAME_STATES.ENTERING_DOOR);
     clearInteractPressed();
   }
 
   function handleInteraction() {
     const gameState = getGameState();
 
-    if (gameState === "inventory") {
+    if (gameState === GAME_STATES.INVENTORY) {
       clearInteractPressed();
       return;
     }
@@ -225,22 +215,21 @@ export function createInteractionSystem({
       return;
     }
 
-    if (gameState === "enteringDoor" || gameState === "transition") {
+    if (gameState === GAME_STATES.ENTERING_DOOR || gameState === GAME_STATES.TRANSITION) {
       clearInteractPressed();
       return;
     }
 
-    const currentAreaType = getCurrentAreaType();
+    const currentAreaId = getCurrentAreaId();
     const currentMap = getCurrentMap();
     const currentMapW = getCurrentMapW();
     const currentMapH = getCurrentMapH();
-    const currentTown = getCurrentTown();
 
     const playerCenterX = player.x + tileSize / 2;
     const playerCenterY = player.y + tileSize / 2;
 
     for (const npc of npcs) {
-      if (npc.world !== currentAreaType) continue;
+      if (npc.world !== currentAreaId) continue;
 
       const npcCenterX = npc.x + npc.width / 2;
       const npcCenterY = npc.y + npc.height / 2;
@@ -268,30 +257,32 @@ export function createInteractionSystem({
     const right = Math.floor((player.x + tileSize - inset) / tileSize) + 1;
     const top = Math.floor((player.y + inset) / tileSize) - 1;
     const bottom = Math.floor((player.y + tileSize - inset) / tileSize) + 1;
+    const currentTownId = getCurrentTownId();
 
     for (let ty = top; ty <= bottom; ty++) {
       if (ty < 0 || ty >= currentMapH) continue;
       for (let tx = left; tx <= right; tx++) {
         if (tx < 0 || tx >= currentMapW) continue;
-        if (currentMap[ty][tx] === tileTypes.SIGNPOST) {
-          showDialogue("", "The Dojo");
+        if (!currentMap[ty]) continue;
+
+        const signpostText = worldService.getSignpostText(currentTownId, currentAreaId, tx, ty);
+        if (signpostText) {
+          showDialogue("", signpostText);
           clearInteractPressed();
           return;
         }
       }
     }
 
-    if (currentAreaType !== "overworld" && gameFlags.acceptedTraining) {
-      const interior = currentTown?.interiorMaps?.[currentAreaType];
-      if (interior && interior.trainingTile) {
+    if (getCurrentAreaKind() !== AREA_KINDS.OVERWORLD && gameFlags.acceptedTraining) {
+      const trainingTile = worldService.getTrainingTile(currentTownId, currentAreaId);
+      if (trainingTile) {
         const tilePos = playerTilePosition();
-        if (tilePos) {
-          const onTrainingTile = tilePos.x === interior.trainingTile.x && tilePos.y === interior.trainingTile.y;
-          if (onTrainingTile) {
-            tryTrainingAction();
-            clearInteractPressed();
-            return;
-          }
+        const onTrainingTile = tilePos.x === trainingTile.x && tilePos.y === trainingTile.y;
+        if (onTrainingTile) {
+          tryTrainingAction();
+          clearInteractPressed();
+          return;
         }
       }
     }
