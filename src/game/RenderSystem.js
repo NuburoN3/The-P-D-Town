@@ -847,6 +847,7 @@ export function renderGameFrame({
   ui,
   drawTile,
   getHandstandSprite,
+  drawCustomOverlays = null,
   state,
   dialogue
 }) {
@@ -882,7 +883,9 @@ export function renderGameFrame({
 
   drawItemNotifications(ctx, state, cameraZoom, tileSize, colors);
   drawAtmosphere(ctx, canvas, colors, state);
-  drawBarMinigameOverlay(ctx, state, canvas, colors);
+  if (typeof drawCustomOverlays === "function") {
+    drawCustomOverlays({ ctx, canvas, colors, ui, state });
+  }
   drawInventoryOverlay(ctx, state, canvas, ui, colors);
   drawPauseMenuOverlay(ctx, state, canvas, ui, colors);
   drawAttributesOverlay(ctx, state, canvas, ui, colors);

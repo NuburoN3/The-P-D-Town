@@ -34,6 +34,24 @@ function paintPath(map, points, width = 1) {
   }
 }
 
+function paintRect(map, x, y, width, height, type) {
+  for (let ty = y; ty < y + height; ty++) {
+    if (ty < 0 || ty >= map.length) continue;
+    for (let tx = x; tx < x + width; tx++) {
+      if (tx < 0 || tx >= map[0].length) continue;
+      map[ty][tx] = type;
+    }
+  }
+}
+
+function paintPoints(map, points, type) {
+  for (const [x, y] of points) {
+    if (y < 0 || y >= map.length) continue;
+    if (x < 0 || x >= map[0].length) continue;
+    map[y][x] = type;
+  }
+}
+
 function generateHanamiOverworldBase(width, height) {
   const map = createFilledMap(width, height, TILE_TYPES.GRASS);
 
@@ -45,93 +63,70 @@ function generateHanamiOverworldBase(width, height) {
     }
   }
 
-  // Main meandering road
+  // Central civic plaza around fountain
+  paintRect(map, 8, 10, 15, 15, TILE_TYPES.PATH);
+
+  // Main north/south boulevard
   paintPath(
     map,
     [
-      { x: 15, y: 2 },
-      { x: 15, y: 6 },
-      { x: 16, y: 9 },
-      { x: 15, y: 13 },
-      { x: 15, y: 18 },
-      { x: 14, y: 23 },
-      { x: 15, y: 27 }
+      { x: 15, y: 1 },
+      { x: 15, y: 10 }
+    ],
+    3
+  );
+  paintPath(
+    map,
+    [
+      { x: 15, y: 24 },
+      { x: 15, y: 28 }
     ],
     3
   );
 
-  // Dojo plaza and approach
+  // East/west connectors and neighborhood lanes
   paintPath(
     map,
     [
-      { x: 10, y: 15 },
-      { x: 12, y: 15 },
-      { x: 15, y: 14 },
-      { x: 18, y: 15 },
-      { x: 20, y: 15 }
+      { x: 8, y: 18 },
+      { x: 5, y: 18 },
+      { x: 5, y: 24 }
     ],
-    3
+    2
   );
-
-  // East promenade
   paintPath(
     map,
     [
-      { x: 19, y: 19 },
-      { x: 22, y: 20 },
-      { x: 23, y: 23 },
-      { x: 21, y: 25 }
+      { x: 22, y: 18 },
+      { x: 26, y: 18 },
+      { x: 26, y: 24 }
+    ],
+    2
+  );
+  paintPath(
+    map,
+    [
+      { x: 9, y: 8 },
+      { x: 21, y: 8 }
     ],
     2
   );
 
-  // West promenade
-  paintPath(
-    map,
-    [
-      { x: 11, y: 19 },
-      { x: 8, y: 20 },
-      { x: 7, y: 23 },
-      { x: 9, y: 25 }
-    ],
-    2
-  );
+  // Structured tree belts
+  paintRect(map, 2, 2, 6, 6, TILE_TYPES.TREE);
+  paintRect(map, 22, 2, 6, 6, TILE_TYPES.TREE);
+  paintRect(map, 2, 22, 5, 6, TILE_TYPES.TREE);
+  paintRect(map, 23, 22, 5, 6, TILE_TYPES.TREE);
+  paintRect(map, 3, 11, 3, 6, TILE_TYPES.TREE);
+  paintRect(map, 24, 11, 3, 6, TILE_TYPES.TREE);
 
-  // Northern shrine lane
-  paintPath(
-    map,
-    [
-      { x: 14, y: 7 },
-      { x: 12, y: 6 },
-      { x: 10, y: 6 },
-      { x: 8, y: 7 }
-    ],
-    2
-  );
-
-  const treeClusters = [
-    [4, 4], [5, 4], [6, 4], [4, 5], [5, 5], [24, 4], [25, 4], [24, 5],
-    [5, 23], [4, 24], [24, 23], [25, 24], [8, 20], [3, 18], [26, 18],
-    [3, 12], [26, 12], [6, 10], [24, 10], [6, 16], [24, 16], [12, 26], [18, 26]
-  ];
-
-  for (const [x, y] of treeClusters) {
-    if (x >= 0 && y >= 0 && x < width && y < height) {
-      map[y][x] = TILE_TYPES.TREE;
-    }
-  }
-
+  // Garden accents around the plaza corners and lanes
   const cherryBlossomPositions = [
-    [15, 5], [14, 5], [16, 5], [13, 6], [14, 6], [15, 6], [16, 6], [17, 6],
-    [13, 7], [14, 7], [15, 7], [16, 7], [17, 7], [14, 8], [15, 8], [16, 8],
-    [9, 24], [10, 24], [20, 24], [21, 24], [11, 9], [19, 9], [8, 26], [22, 26]
+    [9, 11], [10, 11], [11, 11], [19, 11], [20, 11], [21, 11],
+    [9, 24], [10, 24], [11, 24], [19, 24], [20, 24], [21, 24],
+    [7, 18], [7, 19], [22, 18], [22, 19], [14, 8], [15, 8], [16, 8]
   ];
-
-  for (const [x, y] of cherryBlossomPositions) {
-    if (x >= 0 && y >= 0 && x < width && y < height) {
-      map[y][x] = TILE_TYPES.CHERRY_BLOSSOM;
-    }
-  }
+  paintPoints(map, cherryBlossomPositions, TILE_TYPES.CHERRY_BLOSSOM);
 
   return map;
 }
@@ -218,22 +213,31 @@ export const GAME_CONTENT = {
               id: "hanamiDojoFront",
               type: BUILDING_TYPES.DOJO,
               x: 13,
-              y: 10,
+              y: 6,
               width: 5,
               height: 4
             },
             {
+              id: "hanamiTownFountain",
+              type: BUILDING_TYPES.FOUNTAIN,
+              x: 11,
+              y: 13,
+              width: 9,
+              height: 9
+            },
+            {
               id: "hanamiBarFront",
               type: BUILDING_TYPES.BAR,
-              x: 20,
+              x: 21,
               y: 16,
               width: 5,
               height: 4
             }
           ],
           signposts: [
-            { x: 14, y: 14, text: "The Dojo" },
-            { x: 20, y: 20, text: "Sakura Bar" }
+            { x: 14, y: 10, text: "The Dojo" },
+            { x: 21, y: 20, text: "Sakura Bar" },
+            { x: 15, y: 23, text: "Hanami Grand Fountain" }
           ]
         },
         hanamiDojo: {
@@ -254,15 +258,15 @@ export const GAME_CONTENT = {
         }
       },
       spawns: {
-        townGate: { areaId: "overworld", x: 15, y: 18, dir: "down" },
-        dojoExteriorDoor: { areaId: "overworld", x: 15, y: 14, dir: "down" },
+        townGate: { areaId: "overworld", x: 15, y: 26, dir: "up" },
+        dojoExteriorDoor: { areaId: "overworld", x: 15, y: 10, dir: "down" },
         dojoInteriorDoor: { areaId: "hanamiDojo", x: 6, y: 8, dir: "up" },
         barExteriorDoor: { areaId: "overworld", x: 22, y: 20, dir: "down" },
         barInteriorDoor: { areaId: "hanamiBar", x: 6, y: 8, dir: "up" }
       },
       doors: [
         {
-          from: { areaId: "overworld", x: 15, y: 13 },
+          from: { areaId: "overworld", x: 15, y: 9 },
           to: { townId: "hanamiTown", spawnId: "dojoInteriorDoor" }
         },
         {

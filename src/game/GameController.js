@@ -118,11 +118,8 @@ export function createGameController({
       }
     } else if (dialogue.isDialogueActive()) {
       state.player.walking = false;
-    } else if (gameState === GAME_STATES.BAR_MINIGAME) {
+    } else if (typeof actions.updateFeatureState === "function" && actions.updateFeatureState(gameState)) {
       state.player.walking = false;
-      if (typeof actions.updateBarMinigame === "function") {
-        actions.updateBarMinigame();
-      }
     } else if (gameState === GAME_STATES.ENTERING_DOOR) {
       updateDoorEntry();
     } else if (gameState === GAME_STATES.TRANSITION) {
