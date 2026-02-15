@@ -170,6 +170,19 @@ export function createGameRuntime() {
     maxFadeRadius: 0
   };
 
+  const playerDefeatSequence = {
+    active: false,
+    phase: "idle",
+    phaseStartedAt: 0,
+    fallProgress: 0,
+    overlayAlpha: 0,
+    destination: null,
+    fallDurationMs: 420,
+    fadeOutDurationMs: 360,
+    blackoutHoldMs: 1000,
+    fadeInDurationMs: 420
+  };
+
   return {
     canvas,
     ctx,
@@ -194,7 +207,8 @@ export function createGameRuntime() {
       previousWorldState,
       player,
       cam,
-      doorSequence
+      doorSequence,
+      playerDefeatSequence
     }
   };
 }

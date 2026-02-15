@@ -279,6 +279,32 @@ function drawDoorTile(ctx, deps) {
     : null;
   const isDojoDoor = building && building.type === "DOJO";
 
+  // Special case: dojo upstairs trapdoor
+  if (deps.currentAreaId === "hanamiDojo" && deps.tileX === 9 && deps.tileY === 3) {
+    // Trapdoor style dungeon door
+    ctx.fillStyle = "#2a2a2a"; // Dark stone
+    ctx.fillRect(deps.x, deps.y, TILE, TILE);
+
+    // Trapdoor frame
+    ctx.fillStyle = "#4a4a4a";
+    ctx.fillRect(deps.x + 2, deps.y + 2, TILE - 4, TILE - 4);
+
+    // Trapdoor itself
+    ctx.fillStyle = "#3a3a3a";
+    ctx.fillRect(deps.x + 4, deps.y + 4, TILE - 8, TILE - 8);
+
+    // Hinges or details
+    ctx.fillStyle = "#1a1a1a";
+    ctx.fillRect(deps.x + 6, deps.y + 6, 2, TILE - 12);
+    ctx.fillRect(deps.x + TILE - 8, deps.y + 6, 2, TILE - 12);
+
+    // Handle
+    ctx.fillStyle = "#666666";
+    ctx.fillRect(deps.x + 14, deps.y + 14, 4, 4);
+
+    return;
+  }
+
   if (isDojoDoor) {
     // Dojo entrance: open/sliding threshold style, not a standard standalone door tile.
     const localX = deps.tileX - building.x;

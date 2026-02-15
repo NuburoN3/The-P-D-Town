@@ -7,7 +7,9 @@ import {
   COLORS,
   UI,
   TRAINING,
+  AREA_KINDS,
   GAME_STATES,
+  TILE_TYPES,
   isFreeExploreState
 } from "../core/constants.js";
 import { InputManager } from "../core/InputManager.js";
@@ -38,12 +40,14 @@ const {
   enemies,
   player,
   cam,
-  doorSequence
+  doorSequence,
+  playerDefeatSequence
 } = state;
 
 let { currentTownId, currentAreaId, currentMap, currentMapW, currentMapH, gameState, previousWorldState } = state;
 
 let previousGameState = GAME_STATES.OVERWORLD;
+let gameController = null;
 
 let interactionSystem = null;
 const input = new InputManager({
@@ -57,7 +61,8 @@ const input = new InputManager({
     gameState === GAME_STATES.PAUSE_MENU ||
     gameState === GAME_STATES.INVENTORY ||
     gameState === GAME_STATES.ATTRIBUTES ||
-    gameState === GAME_STATES.SETTINGS
+    gameState === GAME_STATES.SETTINGS ||
+    gameState === GAME_STATES.PLAYER_DEFEATED
   )
 });
 
@@ -92,6 +97,169 @@ const gamepadMenuState = {
 };
 const trainingContent = worldService.getTrainingContent();
 const vfxSystem = createVfxSystem();
+const HANAMI_DOJO_UPSTAIRS_DOOR_TILE = Object.freeze({
+  areaId: "hanamiDojo",
+  x: 9,
+  y: 3
+});
+
+function isHanamiDojoUpstairsDoorTile(tileX, tileY) {
+  return (
+    currentAreaId === HANAMI_DOJO_UPSTAIRS_DOOR_TILE.areaId &&
+    tileX === HANAMI_DOJO_UPSTAIRS_DOOR_TILE.x &&
+    tileY === HANAMI_DOJO_UPSTAIRS_DOOR_TILE.y
+  );
+}
+
+function shouldHideHanamiDojoUpstairsDoor(tileX, tileY) {
+  return !gameFlags.acceptedTraining && isHanamiDojoUpstairsDoorTile(tileX, tileY);
+}
+
+function getMrHanamiRespawnDestination() {
+  const fallbackSpawn = worldService.resolveSpawn("hanamiTown", "dojoInteriorDoor");
+  const fallback = {
+    townId: fallbackSpawn?.townId || "hanamiTown",
+    areaId: fallbackSpawn?.areaId || "hanamiDojo",
+    x: Number.isFinite(fallbackSpawn?.x) ? fallbackSpawn.x : 6 * TILE,
+    y: Number.isFinite(fallbackSpawn?.y) ? fallbackSpawn.y : 8 * TILE,
+    dir: "up"
+  };
+
+  const hanamiTown = worldService.getTown("hanamiTown");
+  const dojoArea = worldService.getArea("hanamiTown", "hanamiDojo");
+  if (!hanamiTown || !dojoArea) return fallback;
+
+  const mrHanamiDef = Array.isArray(hanamiTown.npcs)
+    ? hanamiTown.npcs.find((npc) => npc && npc.id === "mrHanami")
+    : null;
+  if (!mrHanamiDef) return fallback;
+
+  const facingOffsets = {
+    up: { x: 0, y: -1, dir: "down" },
+    down: { x: 0, y: 1, dir: "up" },
+    left: { x: -1, y: 0, dir: "right" },
+    right: { x: 1, y: 0, dir: "left" }
+  };
+  const facing = facingOffsets[mrHanamiDef.dir || "down"] || facingOffsets.down;
+  const targetTx = mrHanamiDef.x + facing.x;
+  const targetTy = mrHanamiDef.y + facing.y;
+
+  const inBounds =
+    targetTx >= 0 &&
+    targetTy >= 0 &&
+    targetTx < dojoArea.width &&
+    targetTy < dojoArea.height;
+  if (!inBounds) return fallback;
+
+  const tile = dojoArea.map[targetTy]?.[targetTx];
+  if (
+    tile === TILE_TYPES.WALL ||
+    tile === TILE_TYPES.TREE ||
+    tile === TILE_TYPES.SIGNPOST
+  ) {
+    return fallback;
+  }
+
+  return {
+    townId: "hanamiTown",
+    areaId: "hanamiDojo",
+    x: targetTx * TILE,
+    y: targetTy * TILE,
+    dir: facing.dir
+  };
+}
+
+function finishPlayerDefeatSequence(now) {
+  const destination = playerDefeatSequence.destination || getMrHanamiRespawnDestination();
+
+  if (gameController && typeof gameController.setArea === "function") {
+    gameController.setArea(destination.townId, destination.areaId);
+  }
+
+  player.x = destination.x;
+  player.y = destination.y;
+  player.dir = destination.dir || "up";
+  player.hp = player.maxHp;
+  player.walking = false;
+  player.isTraining = false;
+  player.attackState = "idle";
+  player.activeAttackId = null;
+  player.requestedAttackId = null;
+  player.invulnerableUntil = now + 1200;
+
+  vfxSystem.spawn("doorSwirl", {
+    x: player.x + TILE / 2,
+    y: player.y + TILE / 2,
+    size: 30,
+    durationMs: 500
+  });
+}
+
+function updatePlayerDefeatSequence(now) {
+  if (!playerDefeatSequence.active) return;
+
+  const elapsed = now - playerDefeatSequence.phaseStartedAt;
+
+  if (playerDefeatSequence.phase === "fall") {
+    playerDefeatSequence.fallProgress = Math.max(
+      0,
+      Math.min(1, elapsed / Math.max(1, playerDefeatSequence.fallDurationMs))
+    );
+    playerDefeatSequence.overlayAlpha = 0;
+
+    if (elapsed >= playerDefeatSequence.fallDurationMs) {
+      playerDefeatSequence.phase = "fadeOut";
+      playerDefeatSequence.phaseStartedAt = now;
+      playerDefeatSequence.fallProgress = 1;
+    }
+    return;
+  }
+
+  if (playerDefeatSequence.phase === "fadeOut") {
+    playerDefeatSequence.overlayAlpha = Math.max(
+      0,
+      Math.min(1, elapsed / Math.max(1, playerDefeatSequence.fadeOutDurationMs))
+    );
+
+    if (elapsed >= playerDefeatSequence.fadeOutDurationMs) {
+      finishPlayerDefeatSequence(now);
+      playerDefeatSequence.phase = "hold";
+      playerDefeatSequence.phaseStartedAt = now;
+      playerDefeatSequence.overlayAlpha = 1;
+    }
+    return;
+  }
+
+  if (playerDefeatSequence.phase === "hold") {
+    playerDefeatSequence.overlayAlpha = 1;
+    if (elapsed >= playerDefeatSequence.blackoutHoldMs) {
+      playerDefeatSequence.phase = "fadeIn";
+      playerDefeatSequence.phaseStartedAt = now;
+    }
+    return;
+  }
+
+  if (playerDefeatSequence.phase === "fadeIn") {
+    const fadeInRatio = Math.max(
+      0,
+      Math.min(1, elapsed / Math.max(1, playerDefeatSequence.fadeInDurationMs))
+    );
+    playerDefeatSequence.overlayAlpha = 1 - fadeInRatio;
+
+    if (elapsed >= playerDefeatSequence.fadeInDurationMs) {
+      playerDefeatSequence.active = false;
+      playerDefeatSequence.phase = "idle";
+      playerDefeatSequence.fallProgress = 0;
+      playerDefeatSequence.overlayAlpha = 0;
+      playerDefeatSequence.destination = null;
+      gameState = worldService.getAreaKind(currentTownId, currentAreaId) === AREA_KINDS.OVERWORLD
+        ? GAME_STATES.OVERWORLD
+        : GAME_STATES.INTERIOR;
+      previousWorldState = gameState;
+      previousGameState = gameState;
+    }
+  }
+}
 
 function handleChallengeEnemyDefeat(enemy, now) {
   if (!enemy || !enemy.countsForChallenge) return;
@@ -137,15 +305,25 @@ function handleChallengeEnemyDefeat(enemy, now) {
 }
 
 function handlePlayerDefeated({ player: defeatedPlayer }) {
-  defeatedPlayer.hp = defeatedPlayer.maxHp;
-  defeatedPlayer.x = defeatedPlayer.spawnX;
-  defeatedPlayer.y = defeatedPlayer.spawnY;
-  vfxSystem.spawn("doorSwirl", {
-    x: defeatedPlayer.x + TILE / 2,
-    y: defeatedPlayer.y + TILE / 2,
-    size: 30,
-    durationMs: 500
-  });
+  if (playerDefeatSequence.active) return;
+
+  dialogue.close();
+  input.clearAttackPressed();
+  input.clearInteractPressed();
+
+  defeatedPlayer.walking = false;
+  defeatedPlayer.isTraining = false;
+  defeatedPlayer.attackState = "idle";
+  defeatedPlayer.activeAttackId = null;
+  defeatedPlayer.requestedAttackId = null;
+
+  gameState = GAME_STATES.PLAYER_DEFEATED;
+  playerDefeatSequence.active = true;
+  playerDefeatSequence.phase = "fall";
+  playerDefeatSequence.phaseStartedAt = performance.now();
+  playerDefeatSequence.fallProgress = 0;
+  playerDefeatSequence.overlayAlpha = 0;
+  playerDefeatSequence.destination = getMrHanamiRespawnDestination();
 }
 
 const combatSystem = createCombatSystem({
@@ -348,12 +526,30 @@ interactionSystem = createInteractionSystem({
   }
 });
 
-const gameController = createGameController({
+gameController = createGameController({
   movementSystem,
   collision: {
-    collidesAt: (...args) => collisionService.collides(...args),
+    collidesAt: (...args) => {
+      const collides = collisionService.collides(...args);
+      if (!collides) return false;
+
+      // Keep dojo upstairs trapdoor fully passable until training is accepted.
+      const doorTile = collisionService.doorFromCollision(...args);
+      if (doorTile && shouldHideHanamiDojoUpstairsDoor(doorTile.tx, doorTile.ty)) {
+        return false;
+      }
+
+      return true;
+    },
     collidesWithNPCAt: (...args) => collisionService.collidesWithNPC(...args),
-    detectDoorCollision: (...args) => collisionService.doorFromCollision(...args)
+    detectDoorCollision: (...args) => {
+      const doorTile = collisionService.doorFromCollision(...args);
+      if (!doorTile) return null;
+      if (shouldHideHanamiDojoUpstairsDoor(doorTile.tx, doorTile.ty)) {
+        return null;
+      }
+      return doorTile;
+    }
   },
   musicManager,
   worldService,
@@ -363,6 +559,7 @@ const gameController = createGameController({
     npcs,
     enemies,
     doorSequence,
+    playerDefeatSequence,
     trainingPopup,
     itemAlert,
     inventoryHint,
@@ -671,13 +868,19 @@ function drawTile(type, x, y, tileX, tileY) {
     return row ? row[tx] : null;
   };
 
+  // Special case: dojo upstairs trapdoor only appears after accepting training.
+  let actualType = type;
+  if (type === TILE_TYPES.DOOR && shouldHideHanamiDojoUpstairsDoor(tileX, tileY)) {
+    actualType = TILE_TYPES.INTERIOR_FLOOR;
+  }
+
   drawTileSystem(
     ctx,
     currentTownId,
     currentAreaId,
     gameState,
     doorSequence,
-    type,
+    actualType,
     x,
     y,
     tileX,
@@ -720,6 +923,7 @@ function render() {
       gameState,
       titleState,
       doorSequence,
+      playerDefeatSequence,
       player,
       npcs,
       enemies,
@@ -746,6 +950,7 @@ function loop() {
   if (gameState === GAME_STATES.TITLE_SCREEN) {
     updateTitleScreen(now);
   } else {
+    updatePlayerDefeatSequence(now);
     gameController.update();
     prepareHanamiChallengeEnemies();
 
