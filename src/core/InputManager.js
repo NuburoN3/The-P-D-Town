@@ -253,7 +253,6 @@ export class InputManager {
     }
 
     if (this.matchesActionKey("inventory", key) && !e.repeat) {
-      if (!this.shouldHandleInput()) return;
       if (this.onToggleInventory) {
         this.onToggleInventory();
       }

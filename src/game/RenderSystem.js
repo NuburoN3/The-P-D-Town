@@ -29,6 +29,27 @@ function getPrimaryBindingLabel(state, action) {
   return keyToDisplayName(keys[0]);
 }
 
+function getItemDisplayName(itemName) {
+  return itemName;
+}
+
+function getItemSpriteName(itemName) {
+  const spriteMap = {
+    "Training Headband": "trainingHeadband",
+    "Dojo Membership Card": "dojoMembership"
+  };
+  return spriteMap[itemName] || null;
+}
+
+function getItemSpriteScale(spriteName) {
+  const DEFAULT_SCALE = 1.2; // Default for new items
+  const scaleOverrides = {
+    trainingHeadband: 1.5,
+    dojoMembership: 1.0 // Membership card needs smaller scale since it's larger
+  };
+  return scaleOverrides[spriteName] ?? DEFAULT_SCALE;
+}
+
 const MOOD_PRESETS = Object.freeze({
   goldenDawn: {
     topTint: "rgba(255, 223, 159, 0.13)",
@@ -585,15 +606,15 @@ function drawPlayerDefeatOverlay(ctx, state, canvas) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
-function drawInventoryOverlay(ctx, state, canvas, ui, colors) {
-  const { gameState, playerInventory, playerStats } = state;
+function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSprite) {
+  const { gameState, playerInventory, mouseUiState } = state;
   if (gameState !== GAME_STATES.INVENTORY) return;
 
   ctx.fillStyle = colors.INVENTORY_OVERLAY;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const boxW = ui.INVENTORY_BOX_WIDTH;
-  const boxH = ui.INVENTORY_BOX_HEIGHT;
+  const boxH = Math.min(ui.INVENTORY_BOX_HEIGHT, 248);
   const boxX = (canvas.width - boxW) / 2;
   const boxY = (canvas.height - boxH) / 2;
 
@@ -602,54 +623,113 @@ function drawInventoryOverlay(ctx, state, canvas, ui, colors) {
   ctx.font = FONT_28;
   drawUiText(ctx, "Inventory", boxX + 24, boxY + 42, colors);
 
-  const entries = Object.entries(playerInventory);
-  ctx.font = FONT_20;
+  // Draw item grid
+  const slotSize = 36;
+  const margin = 2;
+  const cols = 10;
+  const rows = 4;
+  const totalSlots = cols * rows;
+  const gridWidth = cols * (slotSize + margin) - margin;
+  const gridHeight = rows * (slotSize + margin) - margin;
+  const gridX = boxX + (boxW - gridWidth) / 2;
+  const gridY = boxY + 60;
 
-  let row = 0;
-  if (entries.length === 0) {
-    drawUiText(ctx, "(No items)", boxX + 24, boxY + 90, colors);
-    row = 1;
-  } else {
-    for (const [itemName, quantity] of entries) {
-      drawUiText(ctx, `${itemName} x${quantity}`, boxX + 24, boxY + 90 + row * 28, colors);
-      row++;
+  const allItems = Object.entries(playerInventory);
+  let hoveredItemName = "";
+  let hoveredItemIndex = -1;
+  if (mouseUiState?.insideCanvas) {
+    const mx = mouseUiState.x;
+    const my = mouseUiState.y;
+    if (
+      mx >= gridX &&
+      mx <= gridX + gridWidth &&
+      my >= gridY &&
+      my <= gridY + gridHeight
+    ) {
+      const col = Math.floor((mx - gridX) / (slotSize + margin));
+      const row = Math.floor((my - gridY) / (slotSize + margin));
+      const localX = (mx - gridX) % (slotSize + margin);
+      const localY = (my - gridY) % (slotSize + margin);
+      if (localX < slotSize && localY < slotSize) {
+        const slotIndex = row * cols + col;
+        if (slotIndex >= 0 && slotIndex < allItems.length) {
+          hoveredItemIndex = slotIndex;
+          hoveredItemName = allItems[slotIndex][0];
+        }
+      }
     }
   }
 
-  const statsY = boxY + 90 + row * 28 + 18;
-  ctx.font = FONT_22;
-  drawUiText(ctx, "Stats", boxX + 24, statsY, colors);
+  for (let i = 0; i < totalSlots; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = gridX + col * (slotSize + margin);
+    const y = gridY + row * (slotSize + margin);
 
-  ctx.font = FONT_20;
-  const levelY = statsY + 30;
-  drawUiText(ctx, `Discipline Lv. ${playerStats.disciplineLevel}`, boxX + 24, levelY, colors);
+    // Draw slot background
+    ctx.fillStyle = colors.INVENTORY_SLOT_BG;
+    ctx.fillRect(x, y, slotSize, slotSize);
 
-  const barX = boxX + 24;
-  const barY = levelY + 18;
-  const barW = boxW - 48;
-  const barH = 20;
-  const progressRatio = Math.min(1, playerStats.disciplineXP / playerStats.disciplineXPNeeded);
+    // Draw border
+    ctx.strokeStyle = colors.INVENTORY_SLOT_BORDER;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, slotSize, slotSize);
 
-  ctx.fillStyle = colors.POPUP_BAR_BG;
-  ctx.fillRect(barX, barY, barW, barH);
+    if (i < allItems.length) {
+      const [itemName, count] = allItems[i];
+      const spriteName = getItemSpriteName(itemName);
+      const sprite = spriteName ? getItemSprite(spriteName) : null;
 
-  ctx.fillStyle = colors.INVENTORY_BAR_FILL;
-  ctx.fillRect(barX, barY, barW * progressRatio, barH);
+      if (sprite && sprite.naturalWidth > 0 && sprite.naturalHeight > 0) {
+        // Draw sprite centered in slot with scaling (clipped to slot bounds)
+        const scale = getItemSpriteScale(spriteName);
+        const spriteSize = slotSize * scale;
+        const spriteX = x + (slotSize - spriteSize) / 2;
+        const spriteY = y + (slotSize - spriteSize) / 2;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, slotSize, slotSize);
+        ctx.clip();
+        ctx.drawImage(sprite, spriteX, spriteY, spriteSize, spriteSize);
+        ctx.restore();
+      } else {
+        // Fallback to text if sprite not loaded
+        ctx.font = FONT_12;
+        const textWidth = ctx.measureText(itemName).width;
+        drawUiText(ctx, itemName, x + (slotSize - textWidth) / 2, y + slotSize / 2 + 4, colors);
+      }
 
-  ctx.strokeStyle = colors.DIALOGUE_BORDER;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(barX, barY, barW, barH);
+      if (count > 1) {
+        ctx.font = FONT_12;
+        const countText = `x${count}`;
+        const countWidth = ctx.measureText(countText).width;
+        drawUiText(ctx, countText, x + slotSize - countWidth - 2, y + slotSize - 12, colors);
+      }
 
-  ctx.font = FONT_16;
-  const progressText = `${playerStats.disciplineXP} / ${playerStats.disciplineXPNeeded}`;
-  const textWidth = ctx.measureText(progressText).width;
-  drawUiText(ctx, progressText, barX + (barW - textWidth) / 2, barY + 15, colors);
+      if (i === hoveredItemIndex) {
+        ctx.fillStyle = "rgba(255, 236, 194, 0.16)";
+        ctx.fillRect(x, y, slotSize, slotSize);
+        ctx.strokeStyle = "rgba(255, 231, 167, 0.85)";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 1, y + 1, slotSize - 2, slotSize - 2);
+      }
+    }
+  }
+
+  if (hoveredItemName) {
+    ctx.font = FONT_16;
+    const nameWidth = ctx.measureText(hoveredItemName).width;
+    drawUiText(ctx, hoveredItemName, boxX + (boxW - nameWidth) / 2, gridY + gridHeight + 18, colors);
+  }
+
 }
 
 const PAUSE_OPTION_SUBTITLES = Object.freeze({
   Inventory: "Check your satchel and gathered goods",
   Attributes: "Inspect your discipline and growth",
   Settings: "Tune controls and visual comfort",
+  Save: "Save your current game",
+  Load: "Restore your last manual save",
   Quit: "Leave P-D Town for now"
 });
 
@@ -710,13 +790,18 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
   if (visibility <= 0.01) return;
 
   const highContrast = Boolean(pauseMenuState?.highContrast);
+  const options = pauseMenuState?.options || ["Inventory", "Attributes", "Settings", "Save", "Load", "Quit"];
+  const optionStartY = 106;
+  const optionStep = 46;
+  const minMenuH = 392;
+  const requiredMenuH = optionStartY + Math.max(0, options.length - 1) * optionStep + 120;
   const baseDim = state.currentAreaKind === AREA_KINDS.OVERWORLD ? 0.22 : 0.42;
   const dimAlpha = Math.min(0.72, baseDim + (highContrast ? 0.15 : 0));
   ctx.fillStyle = `rgba(18, 14, 24, ${dimAlpha * visibility})`;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const menuW = 340;
-  const menuH = 392;
+  const menuH = Math.max(minMenuH, requiredMenuH);
   const slideOffset = (1 - visibility) * 34;
   const menuX = canvas.width - menuW - 24 + slideOffset;
   const menuY = (canvas.height - menuH) / 2;
@@ -783,14 +868,13 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
   ctx.fillStyle = highContrast ? "#f7fdff" : "#fff2ca";
   ctx.fillText("Menu", menuX + 24, menuY + 41);
 
-  const options = pauseMenuState?.options || ['Inventory', 'Attributes', 'Settings', 'Quit'];
   const selected = pauseMenuState ? pauseMenuState.selected : 0;
   const shimmerPhase = (performance.now() % 1500) / 1500;
 
   ctx.font = FONT_20;
   for (let i = 0; i < options.length; i++) {
     const option = options[i];
-    const y = menuY + 106 + i * 64;
+    const y = menuY + optionStartY + i * optionStep;
     if (i === selected) {
       const rowGradient = ctx.createLinearGradient(menuX + 24, y - 23, menuX + menuW - 22, y + 21);
       if (highContrast) {
@@ -827,12 +911,12 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
     const subtitle = PAUSE_OPTION_SUBTITLES[option] || "";
     ctx.font = FONT_12;
     ctx.fillStyle = highContrast ? "rgba(207,232,245,0.92)" : "rgba(88, 56, 26, 0.84)";
-    ctx.fillText(subtitle, menuX + 44, y + 16);
+    ctx.fillText(subtitle, menuX + 44, y + 14);
     ctx.font = FONT_20;
 
     // Rune-style separator marks between options.
     if (i < options.length - 1) {
-      const sepY = y + 32;
+      const sepY = y + 30;
       ctx.strokeStyle = highContrast ? "rgba(140, 194, 225, 0.52)" : "rgba(122, 80, 36, 0.55)";
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -855,9 +939,10 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
 
   ctx.font = FONT_12;
   ctx.fillStyle = highContrast ? "#d9f2ff" : "#5f3b19";
-  ctx.fillText("W/S or Arrows: Move", menuX + 16, menuY + menuH - 52);
-  ctx.fillText(`Space: Select   ${getPrimaryBindingLabel(state, "pause")}: Resume`, menuX + 16, menuY + menuH - 32);
-  ctx.fillText("Pad: D-Pad/Stick Move   A Select   B/Start Resume", menuX + 16, menuY + menuH - 12);
+  const instructionX = menuX + 28;
+  ctx.fillText("W/S or Arrows: Move", instructionX, menuY + menuH - 60);
+  ctx.fillText(`Space: Select   ${getPrimaryBindingLabel(state, "pause")}: Resume`, instructionX, menuY + menuH - 40);
+  ctx.fillText("Pad: D-Pad/Stick Move   A Select   B/Start Resume", instructionX, menuY + menuH - 20);
 }
 
 function drawAttributesOverlay(ctx, state, canvas, ui, colors) {
@@ -1154,7 +1239,7 @@ function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
     const textW = ctx.measureText(hintText).width;
     const boxW = textW + padding * 2;
     const boxH = 28;
-    const boxX = 12;
+    const boxX = Math.round((ctx.canvas.width - boxW) / 2);
     const boxY = 12;
 
     drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors);
@@ -1405,9 +1490,10 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
   ctx.fillText("Way of the Cherry Blossom", 84, 148);
 
   const panelX = 72;
-  const panelY = canvas.height - 234;
+  const optionCount = Array.isArray(titleState.options) ? titleState.options.length : 0;
+  const panelH = Math.max(188, 144 + Math.max(0, optionCount - 1) * 38);
+  const panelY = canvas.height - (panelH + 70);
   const panelW = 372;
-  const panelH = 164;
   drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors, { titleBand: true });
 
   ctx.font = FONT_16;
@@ -1500,6 +1586,7 @@ export function renderGameFrame({
   ui,
   drawTile,
   getHandstandSprite,
+  getItemSprite = () => null,
   drawCustomOverlays = null,
   state,
   dialogue
@@ -1548,7 +1635,7 @@ export function renderGameFrame({
   if (typeof drawCustomOverlays === "function") {
     drawCustomOverlays({ ctx, canvas, colors, ui, state });
   }
-  drawInventoryOverlay(ctx, state, canvas, ui, colors);
+  drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSprite);
   drawPauseMenuOverlay(ctx, state, canvas, ui, colors);
   drawAttributesOverlay(ctx, state, canvas, ui, colors);
   drawSettingsOverlay(ctx, state, canvas, ui, colors);

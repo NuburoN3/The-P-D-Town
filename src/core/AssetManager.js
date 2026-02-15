@@ -28,7 +28,9 @@ export class AssetManager {
 export const DEFAULT_SPRITE_MANIFEST = {
   mr_hanami: "assets/sprites/mr_hanami.png",
   protagonist: "assets/sprites/protagonist.png",
-  protagonist_handstand: "assets/sprites/protagonist_handstand.png"
+  protagonist_handstand: "assets/sprites/protagonist_handstand.png",
+  trainingHeadband: "assets/sprites/TrainingHeadband.png",
+  dojoMembership: "assets/sprites/DojoMembership.png"
 };
 
 function createBartenderSpriteDataUrl() {

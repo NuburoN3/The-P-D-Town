@@ -65,6 +65,8 @@ export function createGameRuntime() {
   const gameFlags = {
     acceptedTraining: false,
     completedTraining: false,
+    hanamiEnduranceUnlocked: false,
+    hanamiMembershipAwarded: false,
     hanamiChallengeKills: 0,
     hanamiChallengeTarget: 3,
     hanamiChallengeCompleteAnnounced: false,

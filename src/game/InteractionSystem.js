@@ -68,6 +68,13 @@ export function createInteractionSystem({
       return;
     }
 
+    if (gameFlags.completedTraining && !gameFlags.hanamiEnduranceUnlocked) {
+      if (!isDialogueActive()) {
+        showDialogue("", trainingContent.enduranceLockedPrompt);
+      }
+      return;
+    }
+
     if (playerStats.disciplineLevel >= 2) {
       if (!isDialogueActive()) {
         showDialogue("", trainingContent.completedPrompt);
@@ -147,7 +154,56 @@ export function createInteractionSystem({
     }
 
     if (gameFlags.completedTraining) {
-      showDialogue(npc.name, trainingContent.postCompleteDialogue);
+      const enduranceChallengeComplete = gameFlags.hanamiEnduranceUnlocked && playerStats.disciplineLevel >= 2;
+      if (enduranceChallengeComplete) {
+        if (!gameFlags.hanamiMembershipAwarded) {
+          showDialogue(npc.name, [
+            trainingContent.enduranceCompleteDialogue,
+            trainingContent.membershipCardGiveDialogue
+          ], () => {
+            gameFlags.hanamiMembershipAwarded = true;
+            if (!playerInventory[trainingContent.membershipCardItemName]) {
+              playerInventory[trainingContent.membershipCardItemName] = 1;
+            }
+
+            itemAlert.active = true;
+            itemAlert.text = trainingContent.membershipCardUnlockMessage;
+            itemAlert.startedAt = performance.now();
+            inventoryHint.active = true;
+            inventoryHint.startedAt = performance.now();
+            spawnVisualEffect("pickupGlow", {
+              x: player.x + tileSize / 2,
+              y: player.y + tileSize * 0.4,
+              size: 32
+            });
+            try {
+              musicManager.playSfx("itemUnlock");
+            } catch (_) {}
+          });
+          return;
+        }
+
+        showDialogue(npc.name, trainingContent.enduranceCompleteDialogue);
+        return;
+      }
+
+      if (gameFlags.hanamiEnduranceUnlocked) {
+        showDialogue(npc.name, trainingContent.enduranceInProgressDialogue);
+        return;
+      }
+
+      showDialogue(npc.name, trainingContent.postCompleteDialogue, () => {
+        showDialogue(npc.name, trainingContent.nextChallengeQuestion, () => {
+          openYesNoChoice((selectedOption) => {
+            if (selectedOption === "Yes") {
+              gameFlags.hanamiEnduranceUnlocked = true;
+              showDialogue(npc.name, trainingContent.enduranceAcceptedDialogue);
+            } else {
+              showDialogue(npc.name, trainingContent.declineDialogue);
+            }
+          });
+        });
+      });
       return;
     }
 
@@ -294,8 +350,11 @@ export function createInteractionSystem({
       const npcCenterY = npc.y + npc.height / 2;
       const dx = Math.abs(playerCenterX - npcCenterX);
       const dy = Math.abs(playerCenterY - npcCenterY);
+      const bartenderReachBonus = npc.id === "mikaBartender" ? ui.INTERACT_REACH : 0;
+      const reachX = ui.INTERACT_REACH;
+      const reachY = ui.INTERACT_REACH + bartenderReachBonus;
 
-      if (dx <= ui.INTERACT_REACH && dy <= ui.INTERACT_REACH) {
+      if (dx <= reachX && dy <= reachY) {
         const distance = Math.hypot(playerCenterX - npcCenterX, playerCenterY - npcCenterY);
         if (distance < closestNpcDistance) {
           closestNpc = npc;
