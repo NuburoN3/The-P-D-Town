@@ -31,12 +31,11 @@ export function createInteractionSystem({
   choiceState,
   showDialogue,
   openYesNoChoice,
-  closeDialogue = () => {},
   advanceDialogue,
   getInteractPressed,
   clearInteractPressed,
-  startBarMinigame = () => {},
-  handleBarMinigameInteract = () => {}
+  handleFeatureNPCInteraction = () => false,
+  handleFeatureStateInteraction = () => false
 }) {
   function playerTilePosition() {
     return {
@@ -117,31 +116,7 @@ export function createInteractionSystem({
   }
 
   function handleNPCInteraction(npc) {
-    if (npc.minigameId) {
-      const introLines = Array.isArray(npc.dialogue) ? [...npc.dialogue] : [String(npc.dialogue ?? "")];
-      const prompt = String(npc.minigamePrompt || "").trim();
-      if (prompt.length > 0 && introLines[introLines.length - 1] !== prompt) {
-        introLines.push(prompt);
-      }
-
-      showDialogue(npc.name, introLines, () => {
-        openYesNoChoice((selectedOption) => {
-          if (selectedOption === "Yes") {
-            closeDialogue();
-            startBarMinigame({
-              hostName: npc.name,
-              winDialogue: npc.minigameWinDialogue,
-              loseDialogue: npc.minigameLoseDialogue
-            });
-            return;
-          }
-
-          showDialogue(
-            npc.name,
-            npc.minigameDeclineDialogue || "No problem. Come back when you're ready."
-          );
-        });
-      });
+    if (handleFeatureNPCInteraction(npc)) {
       return;
     }
 
@@ -233,11 +208,7 @@ export function createInteractionSystem({
   function handleInteraction() {
     const gameState = getGameState();
 
-    if (gameState === GAME_STATES.BAR_MINIGAME) {
-      if (getInteractPressed()) {
-        handleBarMinigameInteract();
-        clearInteractPressed();
-      }
+    if (handleFeatureStateInteraction(gameState)) {
       return;
     }
 

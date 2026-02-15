@@ -192,25 +192,37 @@ export class WorldService {
     if (!town) return [];
     const npcDefinitions = Array.isArray(town.npcs) ? town.npcs : [];
 
-    return npcDefinitions.map((npc) => ({
-      id: npc.id,
-      world: npc.areaId,
-      x: npc.x * this.tileSize,
-      y: npc.y * this.tileSize,
-      width: this.tileSize,
-      height: this.tileSize,
-      desiredHeightTiles: npc.desiredHeightTiles,
-      name: npc.name,
-      sprite: this.getSprite(npc.spriteName),
-      dialogue: Array.isArray(npc.dialogue) ? [...npc.dialogue] : [String(npc.dialogue ?? "")],
-      hasTrainingChoice: Boolean(npc.hasTrainingChoice),
-      minigameId: npc.minigameId || null,
-      minigamePrompt: npc.minigamePrompt || "",
-      minigameDeclineDialogue: npc.minigameDeclineDialogue || "",
-      minigameWinDialogue: npc.minigameWinDialogue || "",
-      minigameLoseDialogue: npc.minigameLoseDialogue || "",
-      dir: npc.dir || "down"
-    }));
+    return npcDefinitions.map((npc) => {
+      const {
+        id,
+        areaId,
+        x,
+        y,
+        desiredHeightTiles,
+        name,
+        spriteName,
+        dialogue,
+        hasTrainingChoice,
+        dir,
+        ...customFields
+      } = npc;
+
+      return {
+        ...customFields,
+        id,
+        world: areaId,
+        x: x * this.tileSize,
+        y: y * this.tileSize,
+        width: this.tileSize,
+        height: this.tileSize,
+        desiredHeightTiles,
+        name,
+        sprite: this.getSprite(spriteName),
+        dialogue: Array.isArray(dialogue) ? [...dialogue] : [String(dialogue ?? "")],
+        hasTrainingChoice: Boolean(hasTrainingChoice),
+        dir: dir || "down"
+      };
+    });
   }
 
   getTrainingContent() {
