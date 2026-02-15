@@ -24,8 +24,7 @@ export class AudioManager {
   playMusicForArea(areaName) {
     const src = this.areaTracks.get(areaName);
     if (!src) {
-      // No music defined for this area -> stop any current music
-      this.stopCurrentMusic();
+      // No music defined for this area -> continue current music
       this.currentArea = areaName ?? null;
       return;
     }

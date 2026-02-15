@@ -112,9 +112,9 @@ export function createMovementSystem({
     player.walking = false;
 
     if (doorSequence.transitionPhase === "out") {
-      doorSequence.fadeRadius -= 20;
-      if (doorSequence.fadeRadius <= 0) {
-        doorSequence.fadeRadius = 0;
+      doorSequence.fadeRadius += 20;
+      if (doorSequence.fadeRadius >= doorSequence.maxFadeRadius) {
+        doorSequence.fadeRadius = doorSequence.maxFadeRadius;
         setArea(doorSequence.targetTownId, doorSequence.targetAreaId);
         player.x = doorSequence.targetX;
         player.y = doorSequence.targetY;
@@ -124,9 +124,9 @@ export function createMovementSystem({
       return;
     }
 
-    doorSequence.fadeRadius += 20;
-    if (doorSequence.fadeRadius >= doorSequence.maxFadeRadius) {
-      doorSequence.fadeRadius = doorSequence.maxFadeRadius;
+    doorSequence.fadeRadius -= 20;
+    if (doorSequence.fadeRadius <= 0) {
+      doorSequence.fadeRadius = 0;
       doorSequence.active = false;
       setGameState(
         getCurrentAreaKind() === AREA_KINDS.OVERWORLD

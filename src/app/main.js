@@ -6,7 +6,9 @@ import {
   SPRITE_FRAMES_PER_ROW,
   COLORS,
   UI,
-  TRAINING
+  TRAINING,
+  GAME_STATES,
+  isFreeExploreState
 } from "../core/constants.js";
 import { InputManager } from "../core/InputManager.js";
 import { CollisionService } from "../core/CollisionSystem.js";
@@ -37,13 +39,16 @@ const {
 
 let { currentTownId, currentAreaId, currentMap, currentMapW, currentMapH, gameState, previousWorldState } = state;
 
+let previousGameState = GAME_STATES.OVERWORLD;
+
 let interactionSystem = null;
 const input = new InputManager({
   onToggleInventory: () => {
     if (interactionSystem) {
       interactionSystem.toggleInventory();
     }
-  }
+  },
+  shouldHandleInput: () => !(gameState === GAME_STATES.PAUSE_MENU || gameState === GAME_STATES.INVENTORY || gameState === GAME_STATES.ATTRIBUTES || gameState === GAME_STATES.SETTINGS)
 });
 
 const collisionService = new CollisionService({ tileSize: TILE });
@@ -58,6 +63,7 @@ const movementSystem = createMovementSystem({
 
 const dialogue = new DialogueSystem({ ctx, canvas, ui: UI });
 const choiceState = dialogue.choiceState;
+const pauseMenuState = { active: false, selected: 0, options: ['Inventory', 'Attributes', 'Settings', 'Quit'] };
 const trainingContent = worldService.getTrainingContent();
 
 function isDialogueActive() {
@@ -125,6 +131,7 @@ interactionSystem = createInteractionSystem({
   },
   isDialogueActive,
   choiceState,
+  pauseMenuState,
   showDialogue,
   openYesNoChoice,
   advanceDialogue,
@@ -202,15 +209,58 @@ input.initialize();
 addEventListener("keydown", (e) => {
   if (!choiceState.active) return;
 
-  if (!e.repeat && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-    const direction = e.key === "ArrowUp" ? -1 : 1;
+  if (!e.repeat && (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "w" || e.key === "s")) {
+    const direction = (e.key === "ArrowUp" || e.key === "w") ? -1 : 1;
     const total = choiceState.options.length;
     choiceState.selected = (choiceState.selected + direction + total) % total;
   }
 
-  if (e.key === "Enter" && !e.repeat) {
+  if (e.key === " " && !e.repeat) {
     confirmChoice();
     input.clearInteractPressed();
+  }
+});
+
+addEventListener("keydown", (e) => {
+  if (choiceState.active) return;
+  if (gameState === GAME_STATES.PAUSE_MENU) {
+    e.preventDefault();
+    if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "w" || e.key === "s") {
+      const direction = (e.key === "ArrowUp" || e.key === "w") ? -1 : 1;
+      const total = 4; // options length
+      pauseMenuState.selected = (pauseMenuState.selected + direction + total) % total;
+    }
+    if (e.key === " " && !e.repeat) {
+      const options = ['Inventory', 'Attributes', 'Settings', 'Quit'];
+      const selected = options[pauseMenuState.selected];
+      if (selected === 'Inventory') {
+        gameState = GAME_STATES.INVENTORY;
+      } else if (selected === 'Attributes') {
+        gameState = GAME_STATES.ATTRIBUTES;
+      } else if (selected === 'Settings') {
+        gameState = GAME_STATES.SETTINGS;
+      } else if (selected === 'Quit') {
+        if (confirm('Quit game?')) {
+          window.location.reload();
+        }
+      }
+    }
+    return;
+  }
+  if (gameState === GAME_STATES.INVENTORY || gameState === GAME_STATES.ATTRIBUTES || gameState === GAME_STATES.SETTINGS) {
+    if (e.key === "Enter" && !e.repeat) {
+      gameState = GAME_STATES.PAUSE_MENU;
+      e.preventDefault();
+    }
+    return;
+  }
+  if (e.key === "Enter" && !e.repeat) {
+    if (gameState === GAME_STATES.PAUSE_MENU) {
+      gameState = previousGameState;
+    } else if (isFreeExploreState(gameState)) {
+      previousGameState = gameState;
+      gameState = GAME_STATES.PAUSE_MENU;
+    }
   }
 });
 

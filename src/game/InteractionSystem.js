@@ -198,7 +198,7 @@ export function createInteractionSystem({
     doorSequence.targetY = destination.y;
     doorSequence.targetDir = destination.dir || "down";
     doorSequence.maxFadeRadius = Math.hypot(canvas.width, canvas.height);
-    doorSequence.fadeRadius = doorSequence.maxFadeRadius;
+    doorSequence.fadeRadius = 0;
     doorSequence.transitionPhase = "out";
 
     setGameState(GAME_STATES.ENTERING_DOOR);
