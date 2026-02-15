@@ -326,8 +326,6 @@ function drawDoorTransition(ctx, state, canvas, tileSize) {
 
   ctx.save();
   ctx.fillStyle = "black";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.globalCompositeOperation = "destination-out";
   ctx.beginPath();
   ctx.arc(px, py, doorSequence.fadeRadius, 0, Math.PI * 2);
   ctx.fill();
@@ -393,6 +391,111 @@ function drawInventoryOverlay(ctx, state, canvas, ui, colors) {
   const progressText = `${playerStats.disciplineXP} / ${playerStats.disciplineXPNeeded}`;
   const textWidth = ctx.measureText(progressText).width;
   drawUiText(ctx, progressText, barX + (barW - textWidth) / 2, barY + 15, colors);
+}
+
+function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
+  const { gameState, pauseMenuState } = state;
+  if (gameState !== GAME_STATES.PAUSE_MENU) return;
+
+  // Semi-transparent overlay
+  ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Menu panel on the right
+  const menuW = 200;
+  const menuH = 300;
+  const menuX = canvas.width - menuW - 20;
+  const menuY = (canvas.height - menuH) / 2;
+
+  drawSkinnedPanel(ctx, menuX, menuY, menuW, menuH, colors, { titleBand: true });
+
+  ctx.font = FONT_28;
+  ctx.fillStyle = "black";
+  ctx.fillText("Pause Menu", menuX + 24, menuY + 42);
+
+  const options = ['Inventory', 'Attributes', 'Settings', 'Quit'];
+  const selected = pauseMenuState ? pauseMenuState.selected : 0;
+
+  ctx.font = FONT_20;
+  for (let i = 0; i < options.length; i++) {
+    const option = options[i];
+    const y = menuY + 90 + i * 30;
+    if (i === selected) {
+      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      ctx.fillRect(menuX + 10, y - 18, menuW - 20, 24);
+    }
+    ctx.fillStyle = "black";
+    ctx.fillText(option, menuX + 24, y);
+  }
+}
+
+function drawAttributesOverlay(ctx, state, canvas, ui, colors) {
+  const { gameState, playerStats } = state;
+  if (gameState !== GAME_STATES.ATTRIBUTES) return;
+
+  ctx.fillStyle = colors.INVENTORY_OVERLAY;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const boxW = ui.INVENTORY_BOX_WIDTH;
+  const boxH = ui.INVENTORY_BOX_HEIGHT;
+  const boxX = (canvas.width - boxW) / 2;
+  const boxY = (canvas.height - boxH) / 2;
+
+  drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors, { titleBand: true });
+
+  ctx.font = FONT_28;
+  ctx.fillStyle = "black";
+  ctx.fillText("Attributes", boxX + 24, boxY + 42);
+
+  ctx.font = FONT_20;
+  ctx.fillStyle = "black";
+  const levelY = boxY + 90;
+  ctx.fillText(`Discipline Lv. ${playerStats.disciplineLevel}`, boxX + 24, levelY);
+
+  const barX = boxX + 24;
+  const barY = levelY + 18;
+  const barW = boxW - 48;
+  const barH = 20;
+  const progressRatio = Math.min(1, playerStats.disciplineXP / playerStats.disciplineXPNeeded);
+
+  ctx.fillStyle = colors.POPUP_BAR_BG;
+  ctx.fillRect(barX, barY, barW, barH);
+
+  ctx.fillStyle = colors.INVENTORY_BAR_FILL;
+  ctx.fillRect(barX, barY, barW * progressRatio, barH);
+
+  ctx.strokeStyle = colors.DIALOGUE_BORDER;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(barX, barY, barW, barH);
+
+  ctx.font = FONT_16;
+  const progressText = `${playerStats.disciplineXP} / ${playerStats.disciplineXPNeeded}`;
+  const textWidth = ctx.measureText(progressText).width;
+  ctx.fillStyle = "black";
+  ctx.fillText(progressText, barX + (barW - textWidth) / 2, barY + 15);
+}
+
+function drawSettingsOverlay(ctx, state, canvas, ui, colors) {
+  const { gameState } = state;
+  if (gameState !== GAME_STATES.SETTINGS) return;
+
+  ctx.fillStyle = colors.INVENTORY_OVERLAY;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const boxW = ui.INVENTORY_BOX_WIDTH;
+  const boxH = ui.INVENTORY_BOX_HEIGHT;
+  const boxX = (canvas.width - boxW) / 2;
+  const boxY = (canvas.height - boxH) / 2;
+
+  drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors, { titleBand: true });
+
+  ctx.font = FONT_28;
+  ctx.fillStyle = "black";
+  ctx.fillText("Settings", boxX + 24, boxY + 42);
+
+  ctx.font = FONT_20;
+  ctx.fillStyle = "black";
+  ctx.fillText("Settings menu placeholder", boxX + 24, boxY + 90);
 }
 
 function drawBarMinigameOverlay(ctx, state, canvas, colors) {
@@ -589,5 +692,8 @@ export function renderGameFrame({
   drawAtmosphere(ctx, canvas, colors, state);
   drawBarMinigameOverlay(ctx, state, canvas, colors);
   drawInventoryOverlay(ctx, state, canvas, ui, colors);
+  drawPauseMenuOverlay(ctx, state, canvas, ui, colors);
+  drawAttributesOverlay(ctx, state, canvas, ui, colors);
+  drawSettingsOverlay(ctx, state, canvas, ui, colors);
   drawTextbox(ctx, state, canvas, ui, colors, dialogue);
 }

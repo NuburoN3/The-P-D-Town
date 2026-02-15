@@ -8,9 +8,10 @@ const MOVEMENT_KEYS = [
 ];
 
 export class InputManager {
-  constructor({ target = window, onToggleInventory = null } = {}) {
+  constructor({ target = window, onToggleInventory = null, shouldHandleInput = null } = {}) {
     this.target = target;
     this.onToggleInventory = onToggleInventory;
+    this.shouldHandleInput = shouldHandleInput || (() => true);
     this.keys = {};
     this.interactPressed = false;
     this.initialized = false;
@@ -49,12 +50,14 @@ export class InputManager {
     const key = e.key.toLowerCase();
 
     if (MOVEMENT_KEYS.includes(key)) {
+      if (!this.shouldHandleInput()) return;
       this.keys[key] = true;
       e.preventDefault();
       return;
     }
 
-    if (key === "enter" || key === " ") {
+    if (key === " ") {
+      if (!this.shouldHandleInput()) return;
       this.interactPressed = true;
       e.preventDefault();
       return;

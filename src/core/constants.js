@@ -20,7 +20,10 @@ export const GAME_STATES = Object.freeze({
   INVENTORY: "inventory",
   ENTERING_DOOR: "enteringDoor",
   TRANSITION: "transition",
-  BAR_MINIGAME: "barMinigame"
+  BAR_MINIGAME: "barMinigame",
+  PAUSE_MENU: "pauseMenu",
+  ATTRIBUTES: "attributes",
+  SETTINGS: "settings"
 });
 
 export function isFreeExploreState(gameState) {
