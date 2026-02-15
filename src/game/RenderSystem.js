@@ -395,73 +395,6 @@ function drawInventoryOverlay(ctx, state, canvas, ui, colors) {
   drawUiText(ctx, progressText, barX + (barW - textWidth) / 2, barY + 15, colors);
 }
 
-function drawBarMinigameOverlay(ctx, state, canvas, colors) {
-  if (state.gameState !== GAME_STATES.BAR_MINIGAME) return;
-  const minigame = state.barMinigame;
-  if (!minigame?.active) return;
-
-  const panelW = Math.min(canvas.width - 40, 520);
-  const panelH = 210;
-  const panelX = Math.round((canvas.width - panelW) / 2);
-  const panelY = Math.round((canvas.height - panelH) / 2);
-
-  ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.52)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors, { titleBand: true });
-
-  ctx.font = FONT_28;
-  drawUiText(ctx, "House Pour Challenge", panelX + 22, panelY + 40, colors);
-
-  ctx.font = FONT_16;
-  drawUiText(
-    ctx,
-    `Round ${minigame.round}/${minigame.totalRounds}   Wins ${minigame.wins}/${minigame.requiredWins}`,
-    panelX + 22,
-    panelY + 66,
-    colors
-  );
-
-  const meterX = panelX + 28;
-  const meterY = panelY + 96;
-  const meterW = panelW - 56;
-  const meterH = 34;
-
-  ctx.fillStyle = "rgba(15,18,24,0.95)";
-  ctx.fillRect(meterX, meterY, meterW, meterH);
-  ctx.strokeStyle = colors.PANEL_BORDER_DARK || colors.DIALOGUE_BORDER;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(meterX, meterY, meterW, meterH);
-
-  const targetMin = Math.max(0, minigame.targetCenter - minigame.targetHalfWidth);
-  const targetMax = Math.min(100, minigame.targetCenter + minigame.targetHalfWidth);
-  const targetX = meterX + (targetMin / 100) * meterW;
-  const targetW = ((targetMax - targetMin) / 100) * meterW;
-
-  const targetGradient = ctx.createLinearGradient(0, meterY, 0, meterY + meterH);
-  targetGradient.addColorStop(0, "#ffe28f");
-  targetGradient.addColorStop(1, "#d6a43a");
-  ctx.fillStyle = targetGradient;
-  ctx.fillRect(targetX, meterY + 3, targetW, meterH - 6);
-
-  const cursorX = meterX + (Math.max(0, Math.min(100, minigame.cursor)) / 100) * meterW;
-  ctx.strokeStyle = "#f5f9ff";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(cursorX, meterY - 4);
-  ctx.lineTo(cursorX, meterY + meterH + 4);
-  ctx.stroke();
-
-  ctx.font = FONT_20;
-  drawUiText(ctx, minigame.feedbackText || "Press ENTER to pour", panelX + 22, panelY + 156, colors);
-
-  ctx.font = FONT_16;
-  drawUiText(ctx, "Press ENTER to pour", panelX + 22, panelY + 182, colors);
-
-  ctx.restore();
-}
-
 function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
   const { itemAlert, inventoryHint, player, cam } = state;
 
@@ -552,6 +485,7 @@ export function renderGameFrame({
   ui,
   drawTile,
   getHandstandSprite,
+  drawCustomOverlays = null,
   state,
   dialogue
 }) {
@@ -587,7 +521,9 @@ export function renderGameFrame({
 
   drawItemNotifications(ctx, state, cameraZoom, tileSize, colors);
   drawAtmosphere(ctx, canvas, colors, state);
-  drawBarMinigameOverlay(ctx, state, canvas, colors);
+  if (typeof drawCustomOverlays === "function") {
+    drawCustomOverlays({ ctx, canvas, colors, ui, state });
+  }
   drawInventoryOverlay(ctx, state, canvas, ui, colors);
   drawTextbox(ctx, state, canvas, ui, colors, dialogue);
 }

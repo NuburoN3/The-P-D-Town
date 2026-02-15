@@ -14,11 +14,17 @@
   - `AssetManager.js`
 - `src/game/`: Runtime gameplay systems.
   - `bootstrap.js`
+  - `BarMinigameSystem.js`
   - `DialogueSystem.js`
   - `GameController.js`
   - `InteractionSystem.js`
   - `MovementSystem.js`
   - `RenderSystem.js`
+  - `features/`
+    - `FeatureCoordinator.js`
+    - `HousePourFeature.js`
+    - `index.js`
+    - `README.md`
 - `src/rendering/TileSystem.js`: Tile drawing strategies.
 - `src/world/`: World content and world graph services.
   - `content.js`
@@ -34,6 +40,8 @@
 
 ## Tests
 - `tests/content-validation.test.mjs`: Content validation tests.
+- `tests/feature-coordinator.test.mjs`: Feature plugin coordinator tests.
+- `tests/world-service-npc-fields.test.mjs`: NPC custom-field passthrough tests.
 
 ## Backups
 - `backups/main.js.bak`

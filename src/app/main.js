@@ -16,8 +16,9 @@ import { renderGameFrame } from "../game/RenderSystem.js";
 import { createMovementSystem } from "../game/MovementSystem.js";
 import { createInteractionSystem } from "../game/InteractionSystem.js";
 import { createGameController } from "../game/GameController.js";
-import { createBarMinigameSystem } from "../game/BarMinigameSystem.js";
 import { createGameRuntime } from "../game/bootstrap.js";
+import { createGameFeatures } from "../game/features/index.js";
+import { createFeatureCoordinator } from "../game/features/FeatureCoordinator.js";
 
 const { canvas, ctx, assets, worldService, musicManager, state } = createGameRuntime();
 
@@ -28,7 +29,6 @@ const {
   trainingPopup,
   itemAlert,
   inventoryHint,
-  barMinigame,
   npcs,
   player,
   cam,
@@ -80,14 +80,17 @@ function advanceDialogue() {
   dialogue.advance();
 }
 
-const barMinigameSystem = createBarMinigameSystem({
-  state: barMinigame,
+const gameFeatures = createGameFeatures({
   getCurrentAreaKind: () => worldService.getAreaKind(currentTownId, currentAreaId),
   setGameState: (nextState) => {
     gameState = nextState;
   },
-  showDialogue
+  showDialogue,
+  openYesNoChoice,
+  closeDialogue: () => dialogue.close()
 });
+
+const featureCoordinator = createFeatureCoordinator({ features: gameFeatures });
 
 interactionSystem = createInteractionSystem({
   tileSize: TILE,
@@ -124,12 +127,18 @@ interactionSystem = createInteractionSystem({
   choiceState,
   showDialogue,
   openYesNoChoice,
-  closeDialogue: () => dialogue.close(),
   advanceDialogue,
   getInteractPressed: () => input.getInteractPressed(),
   clearInteractPressed: () => input.clearInteractPressed(),
-  startBarMinigame: (options) => barMinigameSystem.start(options),
-  handleBarMinigameInteract: () => barMinigameSystem.handleInteract()
+  handleFeatureNPCInteraction: (npc) => featureCoordinator.tryHandleNPCInteraction(npc),
+  handleFeatureStateInteraction: (activeGameState) => {
+    if (!featureCoordinator.handlesGameState(activeGameState)) return false;
+    if (input.getInteractPressed()) {
+      featureCoordinator.handleStateInteract(activeGameState);
+      input.clearInteractPressed();
+    }
+    return true;
+  }
 });
 
 const gameController = createGameController({
@@ -184,7 +193,7 @@ const gameController = createGameController({
   actions: {
     beginDoorSequence: (doorTile) => interactionSystem.beginDoorSequence(doorTile),
     handleInteraction: () => interactionSystem.handleInteraction(),
-    updateBarMinigame: () => barMinigameSystem.update()
+    updateFeatureState: (activeGameState) => featureCoordinator.updateForState(activeGameState)
   }
 });
 
@@ -241,6 +250,15 @@ function render() {
     ui: UI,
     drawTile,
     getHandstandSprite: () => assets.getSprite("protagonist_handstand"),
+    drawCustomOverlays: ({ ctx: frameCtx, canvas: frameCanvas, colors: frameColors, ui: frameUi, state: frameState }) => {
+      featureCoordinator.renderOverlays({
+        ctx: frameCtx,
+        canvas: frameCanvas,
+        colors: frameColors,
+        ui: frameUi,
+        state: frameState
+      });
+    },
     state: {
       currentMap,
       currentMapW,
@@ -256,8 +274,7 @@ function render() {
       playerStats,
       playerInventory,
       itemAlert,
-      inventoryHint,
-      barMinigame
+      inventoryHint
     },
     dialogue
   });
