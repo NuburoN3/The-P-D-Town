@@ -21,6 +21,39 @@ function drawEntityShadow(ctx, x, y, width, height, color) {
   ctx.fill();
 }
 
+function drawSkinnedPanel(ctx, x, y, width, height, colors, { titleBand = false } = {}) {
+  const gradient = ctx.createLinearGradient(x, y, x, y + height);
+  gradient.addColorStop(0, colors.PANEL_SURFACE_TOP || colors.POPUP_BG);
+  gradient.addColorStop(1, colors.PANEL_SURFACE_BOTTOM || colors.DIALOGUE_BG);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(x, y, width, height);
+
+  ctx.fillStyle = colors.PANEL_INNER || "rgba(255,255,255,0.04)";
+  ctx.fillRect(x + 2, y + 2, width - 4, height - 4);
+
+  if (titleBand) {
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillRect(x + 2, y + 2, width - 4, 28);
+    ctx.fillStyle = "rgba(0,0,0,0.2)";
+    ctx.fillRect(x + 2, y + 29, width - 4, 1);
+  }
+
+  ctx.strokeStyle = colors.PANEL_BORDER_DARK || colors.DIALOGUE_BORDER;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x + 1.5, y + 1.5, width - 3, height - 3);
+
+  ctx.strokeStyle = colors.PANEL_BORDER_LIGHT || "rgba(255,255,255,0.7)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 4.5, y + 4.5, width - 9, height - 9);
+}
+
+function drawUiText(ctx, text, x, y, colors) {
+  ctx.fillStyle = colors.TEXT_SHADOW || "rgba(0,0,0,0.4)";
+  ctx.fillText(text, x + 1, y + 1);
+  ctx.fillStyle = colors.TEXT;
+  ctx.fillText(text, x, y);
+}
+
 function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, spriteFrameHeight, spriteFramesPerRow) {
   const { player, cam } = state;
   if (!player.sprite || !player.sprite.width || !player.sprite.height) return;
@@ -179,17 +212,11 @@ function drawTrainingPopup(ctx, state, canvas, ui, colors, tileSize) {
   ctx.save();
   ctx.globalAlpha = fadeRatio;
 
-  ctx.fillStyle = colors.POPUP_BG;
-  ctx.fillRect(boxX, boxY, boxW, boxH);
+  drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors);
 
-  ctx.strokeStyle = colors.POPUP_BORDER;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(boxX, boxY, boxW, boxH);
-
-  ctx.fillStyle = colors.TEXT;
   ctx.font = FONT_12;
-  ctx.fillText(`Lv. ${playerStats.disciplineLevel}`, boxX + 8, boxY + 13);
-  ctx.fillText(`+${trainingPopup.xpGained} XP`, boxX + 78, boxY + 13);
+  drawUiText(ctx, `Lv. ${playerStats.disciplineLevel}`, boxX + 8, boxY + 13, colors);
+  drawUiText(ctx, `+${trainingPopup.xpGained} XP`, boxX + 78, boxY + 13, colors);
 
   const barX = boxX + 8;
   const barY = boxY + 21;
@@ -211,14 +238,10 @@ function drawTextbox(ctx, state, canvas, ui, colors, dialogue) {
   const boxHeight = ui.TEXT_BOX_HEIGHT;
   const boxY = canvas.height - boxHeight - 20;
 
-  ctx.fillStyle = colors.DIALOGUE_BG;
-  ctx.fillRect(20, boxY, canvas.width - 40, boxHeight);
+  const boxX = 20;
+  const boxW = canvas.width - 40;
+  drawSkinnedPanel(ctx, boxX, boxY, boxW, boxHeight, colors, { titleBand: true });
 
-  ctx.strokeStyle = colors.DIALOGUE_BORDER;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(20, boxY, canvas.width - 40, boxHeight);
-
-  ctx.fillStyle = colors.TEXT;
   ctx.font = FONT_20;
 
   const textStartX = 40;
@@ -241,11 +264,11 @@ function drawTextbox(ctx, state, canvas, ui, colors, dialogue) {
   const textStartY = boxY + (boxHeight - textHeight) / 2 + lineSpacing - 6;
 
   if (dialogue.name) {
-    ctx.fillText(dialogue.name, 40, boxY + 28);
+    drawUiText(ctx, dialogue.name, 40, boxY + 28, colors);
   }
 
   for (let i = 0; i < wrappedLines.length; i++) {
-    ctx.fillText(wrappedLines[i], textStartX, textStartY + i * lineSpacing);
+    drawUiText(ctx, wrappedLines[i], textStartX, textStartY + i * lineSpacing, colors);
   }
 
   if (dialogue.choiceState.active) {
@@ -261,11 +284,7 @@ function drawTextbox(ctx, state, canvas, ui, colors, dialogue) {
     const optionsX = 40;
     const optionsY = boxY - optionsH - 12;
 
-    ctx.fillStyle = colors.POPUP_BG;
-    ctx.fillRect(optionsX, optionsY, optionsW, optionsH);
-    ctx.strokeStyle = colors.DIALOGUE_BORDER;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(optionsX, optionsY, optionsW, optionsH);
+    drawSkinnedPanel(ctx, optionsX, optionsY, optionsW, optionsH, colors);
 
     for (let i = 0; i < dialogue.choiceState.options.length; i++) {
       const optY = optionsY + optPadding + (i + 0.8) * ui.LINE_SPACING;
@@ -276,11 +295,10 @@ function drawTextbox(ctx, state, canvas, ui, colors, dialogue) {
         ctx.lineTo(textX - 12, optY - 10);
         ctx.lineTo(textX - 12, optY - 2);
         ctx.closePath();
-        ctx.fillStyle = colors.TEXT;
+        ctx.fillStyle = colors.PANEL_ACCENT || colors.TEXT;
         ctx.fill();
       }
-      ctx.fillStyle = colors.TEXT;
-      ctx.fillText(dialogue.choiceState.options[i], textX, optY);
+      drawUiText(ctx, dialogue.choiceState.options[i], textX, optY, colors);
     }
   }
 
@@ -328,38 +346,32 @@ function drawInventoryOverlay(ctx, state, canvas, ui, colors) {
   const boxX = (canvas.width - boxW) / 2;
   const boxY = (canvas.height - boxH) / 2;
 
-  ctx.fillStyle = colors.INVENTORY_BG;
-  ctx.fillRect(boxX, boxY, boxW, boxH);
+  drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors, { titleBand: true });
 
-  ctx.strokeStyle = colors.DIALOGUE_BORDER;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(boxX, boxY, boxW, boxH);
-
-  ctx.fillStyle = colors.TEXT;
   ctx.font = FONT_28;
-  ctx.fillText("Inventory", boxX + 24, boxY + 42);
+  drawUiText(ctx, "Inventory", boxX + 24, boxY + 42, colors);
 
   const entries = Object.entries(playerInventory);
   ctx.font = FONT_20;
 
   let row = 0;
   if (entries.length === 0) {
-    ctx.fillText("(No items)", boxX + 24, boxY + 90);
+    drawUiText(ctx, "(No items)", boxX + 24, boxY + 90, colors);
     row = 1;
   } else {
     for (const [itemName, quantity] of entries) {
-      ctx.fillText(`${itemName} x${quantity}`, boxX + 24, boxY + 90 + row * 28);
+      drawUiText(ctx, `${itemName} x${quantity}`, boxX + 24, boxY + 90 + row * 28, colors);
       row++;
     }
   }
 
   const statsY = boxY + 90 + row * 28 + 18;
   ctx.font = FONT_22;
-  ctx.fillText("Stats", boxX + 24, statsY);
+  drawUiText(ctx, "Stats", boxX + 24, statsY, colors);
 
   ctx.font = FONT_20;
   const levelY = statsY + 30;
-  ctx.fillText(`Discipline Lv. ${playerStats.disciplineLevel}`, boxX + 24, levelY);
+  drawUiText(ctx, `Discipline Lv. ${playerStats.disciplineLevel}`, boxX + 24, levelY, colors);
 
   const barX = boxX + 24;
   const barY = levelY + 18;
@@ -377,11 +389,77 @@ function drawInventoryOverlay(ctx, state, canvas, ui, colors) {
   ctx.lineWidth = 2;
   ctx.strokeRect(barX, barY, barW, barH);
 
-  ctx.fillStyle = colors.TEXT;
   ctx.font = FONT_16;
   const progressText = `${playerStats.disciplineXP} / ${playerStats.disciplineXPNeeded}`;
   const textWidth = ctx.measureText(progressText).width;
-  ctx.fillText(progressText, barX + (barW - textWidth) / 2, barY + 15);
+  drawUiText(ctx, progressText, barX + (barW - textWidth) / 2, barY + 15, colors);
+}
+
+function drawBarMinigameOverlay(ctx, state, canvas, colors) {
+  if (state.gameState !== GAME_STATES.BAR_MINIGAME) return;
+  const minigame = state.barMinigame;
+  if (!minigame?.active) return;
+
+  const panelW = Math.min(canvas.width - 40, 520);
+  const panelH = 210;
+  const panelX = Math.round((canvas.width - panelW) / 2);
+  const panelY = Math.round((canvas.height - panelH) / 2);
+
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.52)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors, { titleBand: true });
+
+  ctx.font = FONT_28;
+  drawUiText(ctx, "House Pour Challenge", panelX + 22, panelY + 40, colors);
+
+  ctx.font = FONT_16;
+  drawUiText(
+    ctx,
+    `Round ${minigame.round}/${minigame.totalRounds}   Wins ${minigame.wins}/${minigame.requiredWins}`,
+    panelX + 22,
+    panelY + 66,
+    colors
+  );
+
+  const meterX = panelX + 28;
+  const meterY = panelY + 96;
+  const meterW = panelW - 56;
+  const meterH = 34;
+
+  ctx.fillStyle = "rgba(15,18,24,0.95)";
+  ctx.fillRect(meterX, meterY, meterW, meterH);
+  ctx.strokeStyle = colors.PANEL_BORDER_DARK || colors.DIALOGUE_BORDER;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(meterX, meterY, meterW, meterH);
+
+  const targetMin = Math.max(0, minigame.targetCenter - minigame.targetHalfWidth);
+  const targetMax = Math.min(100, minigame.targetCenter + minigame.targetHalfWidth);
+  const targetX = meterX + (targetMin / 100) * meterW;
+  const targetW = ((targetMax - targetMin) / 100) * meterW;
+
+  const targetGradient = ctx.createLinearGradient(0, meterY, 0, meterY + meterH);
+  targetGradient.addColorStop(0, "#ffe28f");
+  targetGradient.addColorStop(1, "#d6a43a");
+  ctx.fillStyle = targetGradient;
+  ctx.fillRect(targetX, meterY + 3, targetW, meterH - 6);
+
+  const cursorX = meterX + (Math.max(0, Math.min(100, minigame.cursor)) / 100) * meterW;
+  ctx.strokeStyle = "#f5f9ff";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cursorX, meterY - 4);
+  ctx.lineTo(cursorX, meterY + meterH + 4);
+  ctx.stroke();
+
+  ctx.font = FONT_20;
+  drawUiText(ctx, minigame.feedbackText || "Press ENTER to pour", panelX + 22, panelY + 156, colors);
+
+  ctx.font = FONT_16;
+  drawUiText(ctx, "Press ENTER to pour", panelX + 22, panelY + 182, colors);
+
+  ctx.restore();
 }
 
 function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
@@ -406,14 +484,8 @@ function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
     const boxX = Math.round(screenX - boxW / 2);
     const boxY = Math.round(screenY - boxH);
 
-    ctx.fillStyle = colors.POPUP_BG;
-    ctx.fillRect(boxX, boxY, boxW, boxH);
-    ctx.strokeStyle = colors.POPUP_BORDER;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(boxX, boxY, boxW, boxH);
-
-    ctx.fillStyle = colors.TEXT;
-    ctx.fillText(text, boxX + padding, boxY + 19);
+    drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors);
+    drawUiText(ctx, text, boxX + padding, boxY + 19, colors);
     ctx.restore();
   }
 
@@ -433,14 +505,8 @@ function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
     const boxX = 12;
     const boxY = 12;
 
-    ctx.fillStyle = colors.POPUP_BG;
-    ctx.fillRect(boxX, boxY, boxW, boxH);
-    ctx.strokeStyle = colors.POPUP_BORDER;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(boxX, boxY, boxW, boxH);
-
-    ctx.fillStyle = colors.TEXT;
-    ctx.fillText(hintText, boxX + padding, boxY + 19);
+    drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors);
+    drawUiText(ctx, hintText, boxX + padding, boxY + 19, colors);
     ctx.restore();
   }
 }
@@ -521,6 +587,7 @@ export function renderGameFrame({
 
   drawItemNotifications(ctx, state, cameraZoom, tileSize, colors);
   drawAtmosphere(ctx, canvas, colors, state);
+  drawBarMinigameOverlay(ctx, state, canvas, colors);
   drawInventoryOverlay(ctx, state, canvas, ui, colors);
   drawTextbox(ctx, state, canvas, ui, colors, dialogue);
 }

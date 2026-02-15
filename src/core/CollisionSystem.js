@@ -33,7 +33,11 @@ export class CollisionService {
       tile === TILE_TYPES.TREE ||
       tile === TILE_TYPES.WALL ||
       tile === TILE_TYPES.SIGNPOST ||
-      tile === TILE_TYPES.DOOR
+      tile === TILE_TYPES.DOOR ||
+      tile === TILE_TYPES.BAR_COUNTER ||
+      tile === TILE_TYPES.BAR_STOOL ||
+      tile === TILE_TYPES.BAR_TABLE ||
+      tile === TILE_TYPES.BAR_DECOR
     );
   }
 

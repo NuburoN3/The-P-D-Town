@@ -204,6 +204,11 @@ export class WorldService {
       sprite: this.getSprite(npc.spriteName),
       dialogue: Array.isArray(npc.dialogue) ? [...npc.dialogue] : [String(npc.dialogue ?? "")],
       hasTrainingChoice: Boolean(npc.hasTrainingChoice),
+      minigameId: npc.minigameId || null,
+      minigamePrompt: npc.minigamePrompt || "",
+      minigameDeclineDialogue: npc.minigameDeclineDialogue || "",
+      minigameWinDialogue: npc.minigameWinDialogue || "",
+      minigameLoseDialogue: npc.minigameLoseDialogue || "",
       dir: npc.dir || "down"
     }));
   }

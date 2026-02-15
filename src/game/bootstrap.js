@@ -91,6 +91,25 @@ export function createGameRuntime() {
     durationMs: 4500
   };
 
+  const barMinigame = {
+    active: false,
+    round: 1,
+    totalRounds: 5,
+    requiredWins: 3,
+    wins: 0,
+    cursor: 50,
+    cursorDir: 1,
+    cursorSpeed: 85,
+    targetCenter: 50,
+    targetHalfWidth: 8,
+    lockUntil: 0,
+    feedbackText: "",
+    hostName: "",
+    winDialogue: "",
+    loseDialogue: "",
+    lastUpdateAt: 0
+  };
+
   const currentTownId = initialTownId;
   const currentAreaId = initialSpawn.areaId;
   const currentMap = initialArea.map;
@@ -153,6 +172,7 @@ export function createGameRuntime() {
       trainingPopup,
       itemAlert,
       inventoryHint,
+      barMinigame,
       currentTownId,
       currentAreaId,
       currentMap,

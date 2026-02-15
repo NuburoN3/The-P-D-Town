@@ -148,40 +148,52 @@ function drawTreeTile(ctx, deps) {
 
   ctx.fillStyle = COLORS.TREE_DEEP;
   ctx.beginPath();
-  ctx.arc(x + 16, y + 13, 12, 0, Math.PI * 2);
+  ctx.arc(x + 16, y + 13, 12.5, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = COLORS.TREE_DARK;
   ctx.beginPath();
-  ctx.arc(x + 9, y + 12, 8, 0, Math.PI * 2);
+  ctx.arc(x + 8, y + 12, 8, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(x + 23, y + 12, 8, 0, Math.PI * 2);
+  ctx.arc(x + 24, y + 12, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 16, y + 17, 7.5, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = COLORS.TREE_MID;
   ctx.beginPath();
-  ctx.arc(x + 16, y + 8, 9, 0, Math.PI * 2);
+  ctx.arc(x + 16, y + 8.5, 9, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(x + 10, y + 7, 6, 0, Math.PI * 2);
+  ctx.arc(x + 10, y + 7, 6.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(x + 22, y + 7, 6, 0, Math.PI * 2);
+  ctx.arc(x + 22, y + 7, 6.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 13, y + 16, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 19, y + 16, 4, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = COLORS.TREE_LIGHT;
   ctx.beginPath();
-  ctx.arc(x + 13, y + 6, 4, 0, Math.PI * 2);
+  ctx.arc(x + 13, y + 5.8, 4.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(x + 20, y + 5, 3.5, 0, Math.PI * 2);
+  ctx.arc(x + 20, y + 5.2, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 16, y + 6, 3, 0, Math.PI * 2);
   ctx.fill();
 
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
     const sx = 7 + ((n >> (i * 3 + 2)) % 18);
     const sy = 3 + ((n >> (i * 4 + 1)) % 10);
-    ctx.fillStyle = i % 2 === 0 ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.12)";
+    ctx.fillStyle = i % 3 === 0 ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.1)";
     ctx.fillRect(x + sx, y + sy, 1, 1);
   }
 }
@@ -206,25 +218,39 @@ function drawCherryBlossomTile(ctx, deps) {
 
   ctx.fillStyle = COLORS.CHERRY_DARK;
   ctx.beginPath();
-  ctx.arc(x + 16, y + 12, 11, 0, Math.PI * 2);
+  ctx.arc(x + 16, y + 12, 11.5, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = COLORS.CHERRY_MID;
   ctx.beginPath();
-  ctx.arc(x + 9, y + 11, 7, 0, Math.PI * 2);
+  ctx.arc(x + 9, y + 11, 7.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(x + 23, y + 11, 7, 0, Math.PI * 2);
+  ctx.arc(x + 23, y + 11, 7.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(x + 16, y + 7, 8, 0, Math.PI * 2);
+  ctx.arc(x + 16, y + 7, 8.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 13, y + 15, 4.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 19, y + 15, 4.2, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = COLORS.CHERRY_LIGHT;
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 10; i++) {
     const sx = 7 + ((n >> (i * 3 + 1)) % 18);
     const sy = 2 + ((n >> (i * 4 + 2)) % 12);
-    ctx.fillRect(x + sx, y + sy, 2, 2);
+    const size = i % 3 === 0 ? 2 : 1;
+    ctx.fillRect(x + sx, y + sy, size, size);
+  }
+
+  // Falling petal accents
+  if ((n & 7) === 2) {
+    ctx.fillStyle = "rgba(255, 215, 230, 0.9)";
+    ctx.fillRect(x + 9, y + 23, 1, 1);
+    ctx.fillRect(x + 22, y + 25, 1, 1);
   }
 }
 
@@ -276,6 +302,73 @@ function drawInteriorFloorTile(ctx, deps) {
   ctx.strokeRect(deps.x + 4.5, deps.y + 4.5, TILE - 9, TILE - 9);
 }
 
+function drawBarFloorTile(ctx, deps) {
+  const alt = (deps.tileX + deps.tileY) % 2 === 0;
+  ctx.fillStyle = alt ? COLORS.BAR_FLOOR_LIGHT : COLORS.BAR_FLOOR_DARK;
+  ctx.fillRect(deps.x, deps.y, TILE, TILE);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(deps.x + 4, deps.y);
+  ctx.lineTo(deps.x + 4, deps.y + TILE);
+  ctx.moveTo(deps.x + 16, deps.y);
+  ctx.lineTo(deps.x + 16, deps.y + TILE);
+  ctx.moveTo(deps.x + 28, deps.y);
+  ctx.lineTo(deps.x + 28, deps.y + TILE);
+  ctx.stroke();
+
+  ctx.strokeStyle = COLORS.BAR_FLOOR_TRIM;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(deps.x + 1.5, deps.y + 1.5, TILE - 3, TILE - 3);
+}
+
+function drawBarCounterTile(ctx, deps) {
+  drawBarFloorTile(ctx, deps);
+  ctx.fillStyle = COLORS.BAR_COUNTER_FRONT;
+  ctx.fillRect(deps.x + 2, deps.y + 10, TILE - 4, 20);
+  ctx.fillStyle = COLORS.BAR_COUNTER_TOP;
+  ctx.fillRect(deps.x + 1, deps.y + 6, TILE - 2, 7);
+  ctx.fillStyle = COLORS.BAR_COUNTER_EDGE;
+  ctx.fillRect(deps.x + 2, deps.y + 7, TILE - 4, 2);
+  ctx.fillStyle = "rgba(0,0,0,0.2)";
+  ctx.fillRect(deps.x + 2, deps.y + 26, TILE - 4, 2);
+}
+
+function drawBarStoolTile(ctx, deps) {
+  drawBarFloorTile(ctx, deps);
+  ctx.fillStyle = COLORS.BAR_STOOL_LEG;
+  ctx.fillRect(deps.x + 14, deps.y + 12, 4, 13);
+  ctx.fillStyle = COLORS.BAR_STOOL_SEAT;
+  ctx.fillRect(deps.x + 9, deps.y + 8, 14, 6);
+  ctx.fillStyle = "rgba(255,255,255,0.16)";
+  ctx.fillRect(deps.x + 10, deps.y + 9, 5, 1);
+}
+
+function drawBarTableTile(ctx, deps) {
+  drawBarFloorTile(ctx, deps);
+  ctx.fillStyle = COLORS.BAR_TABLE_LEG;
+  ctx.fillRect(deps.x + 14, deps.y + 13, 4, 14);
+  ctx.fillStyle = COLORS.BAR_TABLE_TOP;
+  ctx.beginPath();
+  ctx.ellipse(deps.x + 16, deps.y + 11, 10, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.15)";
+  ctx.fillRect(deps.x + 11, deps.y + 9, 6, 1);
+}
+
+function drawBarDecorTile(ctx, deps) {
+  drawBarFloorTile(ctx, deps);
+  ctx.fillStyle = "#5b3825";
+  ctx.fillRect(deps.x + 6, deps.y + 7, 20, 18);
+  ctx.fillStyle = COLORS.BAR_DECOR;
+  ctx.fillRect(deps.x + 8, deps.y + 9, 16, 4);
+  ctx.fillRect(deps.x + 8, deps.y + 16, 16, 4);
+  ctx.fillStyle = "#f0d28a";
+  ctx.fillRect(deps.x + 9, deps.y + 10, 3, 2);
+  ctx.fillRect(deps.x + 17, deps.y + 17, 3, 2);
+}
+
 function drawTrainingFloorTile(ctx, deps) {
   ctx.fillStyle = COLORS.TRAINING_FLOOR_DARK;
   ctx.fillRect(deps.x, deps.y, TILE, TILE);
@@ -309,6 +402,11 @@ const tileRenderers = {
   [TILE_TYPES.SIGNPOST]: (ctx, deps) => drawSignpostTile(ctx, deps),
   [TILE_TYPES.DOOR]: (ctx, deps) => drawDoorTile(ctx, deps),
   [TILE_TYPES.INTERIOR_FLOOR]: (ctx, deps) => drawInteriorFloorTile(ctx, deps),
+  [TILE_TYPES.BAR_FLOOR]: (ctx, deps) => drawBarFloorTile(ctx, deps),
+  [TILE_TYPES.BAR_COUNTER]: (ctx, deps) => drawBarCounterTile(ctx, deps),
+  [TILE_TYPES.BAR_STOOL]: (ctx, deps) => drawBarStoolTile(ctx, deps),
+  [TILE_TYPES.BAR_TABLE]: (ctx, deps) => drawBarTableTile(ctx, deps),
+  [TILE_TYPES.BAR_DECOR]: (ctx, deps) => drawBarDecorTile(ctx, deps),
   [TILE_TYPES.TRAINING_FLOOR]: (ctx, deps) => drawTrainingFloorTile(ctx, deps),
   [TILE_TYPES.CHERRY_BLOSSOM]: (ctx, deps) => drawCherryBlossomTile(ctx, deps)
 };

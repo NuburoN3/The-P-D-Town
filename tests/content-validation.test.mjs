@@ -86,3 +86,20 @@ test("id/key mismatch surfaces a warning but not an error", () => {
   assert.equal(errors.length, 0);
   assert.ok(warnings.some((w) => w.includes("differs from area key")));
 });
+
+test("invalid npc minigame config is rejected", () => {
+  const content = createMinimalValidContent();
+  content.towns.alpha.npcs.push({
+    id: "npc-1",
+    areaId: "overworld",
+    x: 2,
+    y: 2,
+    name: "Host",
+    spriteName: "mr_hanami",
+    dialogue: ["Play a game?"],
+    minigameId: "",
+    minigamePrompt: 123
+  });
+
+  assert.throws(() => assertValidGameContent(content), /minigameId must be a non-empty string/i);
+});

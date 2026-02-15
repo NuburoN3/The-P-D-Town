@@ -264,6 +264,23 @@ export function validateGameContent(content) {
         if (!dialogueIsValid) {
           errors.push(`${npcPath}.dialogue must be a string or array of strings.`);
         }
+
+        if (npc.minigameId != null && (typeof npc.minigameId !== "string" || npc.minigameId.length === 0)) {
+          errors.push(`${npcPath}.minigameId must be a non-empty string when provided.`);
+        }
+
+        const minigameTextFields = [
+          "minigamePrompt",
+          "minigameDeclineDialogue",
+          "minigameWinDialogue",
+          "minigameLoseDialogue"
+        ];
+
+        for (const field of minigameTextFields) {
+          if (npc[field] != null && typeof npc[field] !== "string") {
+            errors.push(`${npcPath}.${field} must be a string when provided.`);
+          }
+        }
       }
     }
   }

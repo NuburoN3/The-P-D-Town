@@ -16,6 +16,7 @@ import { renderGameFrame } from "../game/RenderSystem.js";
 import { createMovementSystem } from "../game/MovementSystem.js";
 import { createInteractionSystem } from "../game/InteractionSystem.js";
 import { createGameController } from "../game/GameController.js";
+import { createBarMinigameSystem } from "../game/BarMinigameSystem.js";
 import { createGameRuntime } from "../game/bootstrap.js";
 
 const { canvas, ctx, assets, worldService, musicManager, state } = createGameRuntime();
@@ -27,6 +28,7 @@ const {
   trainingPopup,
   itemAlert,
   inventoryHint,
+  barMinigame,
   npcs,
   player,
   cam,
@@ -78,6 +80,15 @@ function advanceDialogue() {
   dialogue.advance();
 }
 
+const barMinigameSystem = createBarMinigameSystem({
+  state: barMinigame,
+  getCurrentAreaKind: () => worldService.getAreaKind(currentTownId, currentAreaId),
+  setGameState: (nextState) => {
+    gameState = nextState;
+  },
+  showDialogue
+});
+
 interactionSystem = createInteractionSystem({
   tileSize: TILE,
   ui: UI,
@@ -113,9 +124,12 @@ interactionSystem = createInteractionSystem({
   choiceState,
   showDialogue,
   openYesNoChoice,
+  closeDialogue: () => dialogue.close(),
   advanceDialogue,
   getInteractPressed: () => input.getInteractPressed(),
-  clearInteractPressed: () => input.clearInteractPressed()
+  clearInteractPressed: () => input.clearInteractPressed(),
+  startBarMinigame: (options) => barMinigameSystem.start(options),
+  handleBarMinigameInteract: () => barMinigameSystem.handleInteract()
 });
 
 const gameController = createGameController({
@@ -169,7 +183,8 @@ const gameController = createGameController({
   },
   actions: {
     beginDoorSequence: (doorTile) => interactionSystem.beginDoorSequence(doorTile),
-    handleInteraction: () => interactionSystem.handleInteraction()
+    handleInteraction: () => interactionSystem.handleInteraction(),
+    updateBarMinigame: () => barMinigameSystem.update()
   }
 });
 
@@ -241,7 +256,8 @@ function render() {
       playerStats,
       playerInventory,
       itemAlert,
-      inventoryHint
+      inventoryHint,
+      barMinigame
     },
     dialogue
   });

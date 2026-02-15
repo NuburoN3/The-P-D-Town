@@ -19,7 +19,8 @@ export const GAME_STATES = Object.freeze({
   INTERIOR: "interior",
   INVENTORY: "inventory",
   ENTERING_DOOR: "enteringDoor",
-  TRANSITION: "transition"
+  TRANSITION: "transition",
+  BAR_MINIGAME: "barMinigame"
 });
 
 export function isFreeExploreState(gameState) {
@@ -36,7 +37,12 @@ export const TILE_TYPES = {
   DOOR: 5,
   INTERIOR_FLOOR: 6,
   TRAINING_FLOOR: 7,
-  CHERRY_BLOSSOM: 8
+  CHERRY_BLOSSOM: 8,
+  BAR_FLOOR: 9,
+  BAR_COUNTER: 10,
+  BAR_STOOL: 11,
+  BAR_TABLE: 12,
+  BAR_DECOR: 13
 };
 
 // Colors for rendering
@@ -68,6 +74,17 @@ export const COLORS = {
   INTERIOR_FLOOR_LIGHT: "#bfa784",
   INTERIOR_FLOOR_DARK: "#9e8768",
   INTERIOR_FLOOR_TRIM: "#7f694f",
+  BAR_FLOOR_LIGHT: "#7c4f31",
+  BAR_FLOOR_DARK: "#613a24",
+  BAR_FLOOR_TRIM: "#4b2d1c",
+  BAR_COUNTER_TOP: "#8f5f3a",
+  BAR_COUNTER_FRONT: "#6e432a",
+  BAR_COUNTER_EDGE: "#b38354",
+  BAR_STOOL_SEAT: "#a47042",
+  BAR_STOOL_LEG: "#5f3a24",
+  BAR_TABLE_TOP: "#8c5c38",
+  BAR_TABLE_LEG: "#4f311f",
+  BAR_DECOR: "#d6ab58",
   TRAINING_FLOOR_LIGHT: "#8d7964",
   TRAINING_FLOOR_DARK: "#6d5b4c",
   CHERRY_LIGHT: "#f4bfd5",
@@ -81,10 +98,17 @@ export const COLORS = {
   DIALOGUE_BG: "rgba(0,0,0,0.75)",
   DIALOGUE_BORDER: "#ffffff",
   TEXT: "#ffffff",
+  TEXT_SHADOW: "rgba(0,0,0,0.4)",
   POPUP_BG: "rgba(12,18,28,0.9)",
   POPUP_BORDER: "#ffffff",
   POPUP_BAR_BG: "#263238",
   POPUP_BAR_FILL: "#4caf50",
+  PANEL_SURFACE_TOP: "#2f3f35",
+  PANEL_SURFACE_BOTTOM: "#1f2c25",
+  PANEL_INNER: "#3f5144",
+  PANEL_BORDER_LIGHT: "#d8c590",
+  PANEL_BORDER_DARK: "#665435",
+  PANEL_ACCENT: "#b29b65",
   INVENTORY_BG: "rgba(22,28,38,0.96)",
   INVENTORY_OVERLAY: "rgba(0,0,0,0.6)",
   INVENTORY_BAR_FILL: "#66bb6a",
