@@ -211,6 +211,7 @@ export const GAME_CONTENT = {
           kind: "overworld",
           width: 30,
           height: 30,
+          musicSrc: "assets/audio/Anticipation_Game_Audio_BG.wav",
           generateBaseMap: generateHanamiOverworldBase,
           buildings: [
             {
@@ -249,7 +250,6 @@ export const GAME_CONTENT = {
           kind: "interior",
           width: 12,
           height: 10,
-          musicSrc: "assets/audio/Hanami_Game_Audio_BG.wav",
           generateBaseMap: generateBarInteriorBase
         }
       },
