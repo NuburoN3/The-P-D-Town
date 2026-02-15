@@ -53,6 +53,15 @@ function createDefaultsForType(type) {
     };
   }
 
+  if (type === "warningRing") {
+    return {
+      durationMs: 280,
+      size: 26,
+      color: "rgba(255, 166, 132, 0.95)",
+      glowColor: "rgba(255, 115, 87, 0.24)"
+    };
+  }
+
   return {
     durationMs: 450,
     size: 24,

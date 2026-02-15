@@ -20,7 +20,9 @@ export function createCombatSystem({
     onEntityDamaged: eventHandlers.onEntityDamaged || (() => {}),
     onEntityDefeated: eventHandlers.onEntityDefeated || onEnemyDefeated,
     onPlayerDamaged: eventHandlers.onPlayerDamaged || (() => {}),
-    onPlayerDefeated: eventHandlers.onPlayerDefeated || null
+    onPlayerDefeated: eventHandlers.onPlayerDefeated || null,
+    onPlayerAttackStarted: eventHandlers.onPlayerAttackStarted || (() => {}),
+    onHitConfirmed: eventHandlers.onHitConfirmed || (() => {})
   };
 
   function registerAttackProfile(attackId, profile) {
@@ -72,6 +74,11 @@ export function createCombatSystem({
       size: profile.hitRadius + (profile.vfx?.sizeOffset || 8),
       durationMs: profile.vfx?.durationMs || 190
     });
+    handlers.onPlayerAttackStarted({
+      attacker: player,
+      profile,
+      now
+    });
   }
 
   function updatePlayerAttackState(player, now) {
@@ -110,6 +117,13 @@ export function createCombatSystem({
       durationMs: 560
     });
     handlers.onEntityDamaged({
+      source: player,
+      target: enemy,
+      damage,
+      now
+    });
+    handlers.onHitConfirmed({
+      type: "entityDamaged",
       source: player,
       target: enemy,
       damage,
@@ -187,6 +201,13 @@ export function createCombatSystem({
         durationMs: 560
       });
       handlers.onPlayerDamaged({
+        source: enemy,
+        target: player,
+        damage: enemy.damage,
+        now
+      });
+      handlers.onHitConfirmed({
+        type: "playerDamaged",
         source: enemy,
         target: player,
         damage: enemy.damage,

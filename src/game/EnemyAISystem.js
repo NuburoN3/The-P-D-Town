@@ -47,7 +47,7 @@ function resetEnemy(enemy) {
   enemy.challengeDefeatedCounted = false;
 }
 
-function createMeleeChaserBehavior({ tileSize }) {
+function createMeleeChaserBehavior({ tileSize, onWindupStarted }) {
   return function updateMeleeChaserEnemy({
     now,
     enemy,
@@ -75,10 +75,14 @@ function createMeleeChaserBehavior({ tileSize }) {
       distanceToPlayer <= enemy.attackRange &&
       now - enemy.lastAttackAt >= enemy.attackCooldownMs
     ) {
+      const enteringWindup = enemy.state !== "attackWindup";
       enemy.state = "attackWindup";
       enemy.attackStrikeAt = now + enemy.attackWindupMs;
       enemy.lastAttackAt = now;
       updateEnemyDirection(enemy, toPlayerX, toPlayerY);
+      if (enteringWindup && typeof onWindupStarted === "function") {
+        onWindupStarted({ enemy, now, toPlayerX, toPlayerY });
+      }
       return;
     }
 
@@ -118,9 +122,20 @@ function createMeleeChaserBehavior({ tileSize }) {
   };
 }
 
-export function createEnemyAISystem({ tileSize, behaviors = {} }) {
+export function createEnemyAISystem({
+  tileSize,
+  behaviors = {},
+  eventHandlers = {}
+}) {
+  const handlers = {
+    onEnemyAttackWindupStarted: eventHandlers.onEnemyAttackWindupStarted || (() => {})
+  };
+
   const behaviorRegistry = {
-    meleeChaser: createMeleeChaserBehavior({ tileSize }),
+    meleeChaser: createMeleeChaserBehavior({
+      tileSize,
+      onWindupStarted: handlers.onEnemyAttackWindupStarted
+    }),
     ...behaviors
   };
 

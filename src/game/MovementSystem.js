@@ -2,6 +2,7 @@ import { AREA_KINDS, GAME_STATES } from "../core/constants.js";
 
 export function createMovementSystem({
   keys,
+  getActionPressed = null,
   tileSize,
   spriteFramesPerRow,
   cameraZoom,
@@ -43,22 +44,29 @@ export function createMovementSystem({
     doorFromCollision,
     beginDoorSequence
   }) {
+    const isPressed = (action, legacyKeys = []) => {
+      if (typeof getActionPressed === "function") {
+        return Boolean(getActionPressed(action));
+      }
+      return legacyKeys.some((key) => Boolean(keys[key]));
+    };
+
     let dx = 0;
     let dy = 0;
 
-    if (keys["w"] || keys["arrowup"]) {
+    if (isPressed("moveUp", ["w", "arrowup"])) {
       dy -= player.speed;
       player.dir = "up";
     }
-    if (keys["s"] || keys["arrowdown"]) {
+    if (isPressed("moveDown", ["s", "arrowdown"])) {
       dy += player.speed;
       player.dir = "down";
     }
-    if (keys["a"] || keys["arrowleft"]) {
+    if (isPressed("moveLeft", ["a", "arrowleft"])) {
       dx -= player.speed;
       player.dir = "left";
     }
-    if (keys["d"] || keys["arrowright"]) {
+    if (isPressed("moveRight", ["d", "arrowright"])) {
       dx += player.speed;
       player.dir = "right";
     }

@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { AREA_KINDS } from "../core/constants.js";
+import { ENEMY_ARCHETYPES } from "./enemyArchetypes.js";
 
 function isPositiveInteger(value) {
   return Number.isInteger(value) && value > 0;
@@ -326,6 +327,12 @@ export function validateGameContent(content) {
 
         if (enemy.attackType != null && (typeof enemy.attackType !== "string" || enemy.attackType.length === 0)) {
           errors.push(`${enemyPath}.attackType must be a non-empty string when provided.`);
+        }
+
+        if (enemy.archetypeId != null && (typeof enemy.archetypeId !== "string" || enemy.archetypeId.length === 0)) {
+          errors.push(`${enemyPath}.archetypeId must be a non-empty string when provided.`);
+        } else if (typeof enemy.archetypeId === "string" && !ENEMY_ARCHETYPES[enemy.archetypeId]) {
+          warnings.push(`${enemyPath}.archetypeId '${enemy.archetypeId}' is not defined in ENEMY_ARCHETYPES.`);
         }
       }
     }
