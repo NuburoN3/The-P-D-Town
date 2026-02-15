@@ -45,7 +45,10 @@ export function createGameRuntime() {
       enterDoor: "assets/audio/EnterDoor_Sound.wav",
       itemUnlock: "assets/audio/Item_Unlock.wav",
       walking: "assets/audio/walking_sound.wav",
-      collision: "assets/audio/collision_sound.wav"
+      collision: "assets/audio/collision_sound.wav",
+      menuOpen: "assets/audio/Item_Unlock.wav",
+      menuMove: "assets/audio/collision_sound.wav",
+      menuConfirm: "assets/audio/EnterDoor_Sound.wav"
     },
     fadeDurationMs: 800
   });

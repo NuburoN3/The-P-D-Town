@@ -63,7 +63,22 @@ const movementSystem = createMovementSystem({
 
 const dialogue = new DialogueSystem({ ctx, canvas, ui: UI });
 const choiceState = dialogue.choiceState;
-const pauseMenuState = { active: false, selected: 0, options: ['Inventory', 'Attributes', 'Settings', 'Quit'] };
+const pauseMenuState = {
+  active: false,
+  selected: 0,
+  options: ["Inventory", "Attributes", "Settings", "Quit"],
+  highContrast: false,
+  animationMode: "idle",
+  animationStartedAt: 0,
+  animationDurationMs: 170
+};
+const gamepadMenuState = {
+  nextMoveAt: 0,
+  heldDirection: 0,
+  confirmHeld: false,
+  backHeld: false,
+  startHeld: false
+};
 const trainingContent = worldService.getTrainingContent();
 
 function isDialogueActive() {
@@ -197,6 +212,140 @@ const gameController = createGameController({
 
 input.initialize();
 
+function setPauseMenuAnimation(mode, durationMs = 170) {
+  pauseMenuState.animationMode = mode;
+  pauseMenuState.animationStartedAt = performance.now();
+  pauseMenuState.animationDurationMs = durationMs;
+}
+
+function openPauseMenu() {
+  if (!isFreeExploreState(gameState)) return;
+  previousGameState = gameState;
+  gameState = GAME_STATES.PAUSE_MENU;
+  setPauseMenuAnimation("in", 170);
+  musicManager.playSfx("menuOpen");
+}
+
+function resumeFromPauseMenu() {
+  setPauseMenuAnimation("out", 140);
+  gameState = previousGameState;
+  musicManager.playSfx("menuConfirm");
+}
+
+function returnToPauseMenu() {
+  gameState = GAME_STATES.PAUSE_MENU;
+  setPauseMenuAnimation("in", 130);
+  musicManager.playSfx("menuOpen");
+}
+
+function movePauseMenuSelection(direction) {
+  const total = pauseMenuState.options.length;
+  pauseMenuState.selected = (pauseMenuState.selected + direction + total) % total;
+  musicManager.playSfx("menuMove");
+}
+
+function toggleHighContrastMenu() {
+  pauseMenuState.highContrast = !pauseMenuState.highContrast;
+  musicManager.playSfx("menuConfirm");
+}
+
+function selectPauseMenuOption() {
+  const selected = pauseMenuState.options[pauseMenuState.selected];
+  musicManager.playSfx("menuConfirm");
+
+  if (selected === "Inventory") {
+    setPauseMenuAnimation("out", 140);
+    gameState = GAME_STATES.INVENTORY;
+  } else if (selected === "Attributes") {
+    setPauseMenuAnimation("out", 140);
+    gameState = GAME_STATES.ATTRIBUTES;
+  } else if (selected === "Settings") {
+    setPauseMenuAnimation("out", 140);
+    gameState = GAME_STATES.SETTINGS;
+  } else if (selected === "Quit") {
+    if (confirm("Quit game?")) {
+      window.location.reload();
+    }
+  }
+}
+
+function resetGamepadHeldStates() {
+  gamepadMenuState.heldDirection = 0;
+  gamepadMenuState.confirmHeld = false;
+  gamepadMenuState.backHeld = false;
+  gamepadMenuState.startHeld = false;
+}
+
+function handleGamepadPauseAndMenuInput(now) {
+  if (typeof navigator === "undefined" || typeof navigator.getGamepads !== "function") return;
+  const gamepads = navigator.getGamepads();
+  const pad = Array.from(gamepads || []).find((candidate) => candidate && candidate.connected);
+  if (!pad) {
+    resetGamepadHeldStates();
+    return;
+  }
+
+  const buttons = pad.buttons || [];
+  const axisY = Array.isArray(pad.axes) && pad.axes.length > 1 ? pad.axes[1] : 0;
+  const upPressed = Boolean(buttons[12]?.pressed) || axisY < -0.58;
+  const downPressed = Boolean(buttons[13]?.pressed) || axisY > 0.58;
+  const direction = upPressed ? -1 : downPressed ? 1 : 0;
+
+  const confirmPressed = Boolean(buttons[0]?.pressed); // A
+  const backPressed = Boolean(buttons[1]?.pressed); // B
+  const startPressed = Boolean(buttons[9]?.pressed); // Start
+
+  if (gameState === GAME_STATES.PAUSE_MENU) {
+    if (direction !== 0 && (direction !== gamepadMenuState.heldDirection || now >= gamepadMenuState.nextMoveAt)) {
+      movePauseMenuSelection(direction);
+      gamepadMenuState.heldDirection = direction;
+      gamepadMenuState.nextMoveAt = now + 145;
+    } else if (direction === 0) {
+      gamepadMenuState.heldDirection = 0;
+    }
+
+    if (confirmPressed && !gamepadMenuState.confirmHeld) {
+      selectPauseMenuOption();
+    }
+
+    if ((backPressed && !gamepadMenuState.backHeld) || (startPressed && !gamepadMenuState.startHeld)) {
+      resumeFromPauseMenu();
+    }
+
+    gamepadMenuState.confirmHeld = confirmPressed;
+    gamepadMenuState.backHeld = backPressed;
+    gamepadMenuState.startHeld = startPressed;
+    return;
+  }
+
+  gamepadMenuState.heldDirection = 0;
+
+  if (gameState === GAME_STATES.SETTINGS) {
+    if (confirmPressed && !gamepadMenuState.confirmHeld) {
+      toggleHighContrastMenu();
+    }
+    if ((backPressed && !gamepadMenuState.backHeld) || (startPressed && !gamepadMenuState.startHeld)) {
+      returnToPauseMenu();
+    }
+  } else if (gameState === GAME_STATES.INVENTORY || gameState === GAME_STATES.ATTRIBUTES) {
+    if (
+      (confirmPressed && !gamepadMenuState.confirmHeld) ||
+      (backPressed && !gamepadMenuState.backHeld) ||
+      (startPressed && !gamepadMenuState.startHeld)
+    ) {
+      returnToPauseMenu();
+    }
+  } else if (isFreeExploreState(gameState)) {
+    if (startPressed && !gamepadMenuState.startHeld) {
+      openPauseMenu();
+    }
+  }
+
+  gamepadMenuState.confirmHeld = confirmPressed;
+  gamepadMenuState.backHeld = backPressed;
+  gamepadMenuState.startHeld = startPressed;
+}
+
 addEventListener("keydown", (e) => {
   if (!choiceState.active) return;
 
@@ -214,44 +363,45 @@ addEventListener("keydown", (e) => {
 
 addEventListener("keydown", (e) => {
   if (choiceState.active) return;
+  const key = e.key.toLowerCase();
+
   if (gameState === GAME_STATES.PAUSE_MENU) {
     e.preventDefault();
-    if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "w" || e.key === "s") {
-      const direction = (e.key === "ArrowUp" || e.key === "w") ? -1 : 1;
-      const total = 4; // options length
-      pauseMenuState.selected = (pauseMenuState.selected + direction + total) % total;
+    if (!e.repeat && (key === "arrowup" || key === "arrowdown" || key === "w" || key === "s")) {
+      const direction = (key === "arrowup" || key === "w") ? -1 : 1;
+      movePauseMenuSelection(direction);
     }
-    if (e.key === " " && !e.repeat) {
-      const options = ['Inventory', 'Attributes', 'Settings', 'Quit'];
-      const selected = options[pauseMenuState.selected];
-      if (selected === 'Inventory') {
-        gameState = GAME_STATES.INVENTORY;
-      } else if (selected === 'Attributes') {
-        gameState = GAME_STATES.ATTRIBUTES;
-      } else if (selected === 'Settings') {
-        gameState = GAME_STATES.SETTINGS;
-      } else if (selected === 'Quit') {
-        if (confirm('Quit game?')) {
-          window.location.reload();
-        }
-      }
+    if ((key === "enter" || key === "escape") && !e.repeat) {
+      resumeFromPauseMenu();
+      return;
+    }
+    if (key === " " && !e.repeat) {
+      selectPauseMenuOption();
     }
     return;
   }
-  if (gameState === GAME_STATES.INVENTORY || gameState === GAME_STATES.ATTRIBUTES || gameState === GAME_STATES.SETTINGS) {
-    if (e.key === "Enter" && !e.repeat) {
-      gameState = GAME_STATES.PAUSE_MENU;
+
+  if (gameState === GAME_STATES.SETTINGS) {
+    if (key === " " && !e.repeat) {
+      toggleHighContrastMenu();
+      e.preventDefault();
+    } else if ((key === "enter" || key === "escape") && !e.repeat) {
+      returnToPauseMenu();
       e.preventDefault();
     }
     return;
   }
-  if (e.key === "Enter" && !e.repeat) {
-    if (gameState === GAME_STATES.PAUSE_MENU) {
-      gameState = previousGameState;
-    } else if (isFreeExploreState(gameState)) {
-      previousGameState = gameState;
-      gameState = GAME_STATES.PAUSE_MENU;
+
+  if (gameState === GAME_STATES.INVENTORY || gameState === GAME_STATES.ATTRIBUTES) {
+    if ((key === "enter" || key === "escape") && !e.repeat) {
+      returnToPauseMenu();
+      e.preventDefault();
     }
+    return;
+  }
+
+  if ((key === "enter" || key === "escape") && !e.repeat && isFreeExploreState(gameState)) {
+    openPauseMenu();
   }
 });
 
@@ -307,7 +457,8 @@ function render() {
       playerInventory,
       itemAlert,
       inventoryHint,
-      barMinigame
+      barMinigame,
+      pauseMenuState
     },
     dialogue
   });
@@ -316,6 +467,7 @@ function render() {
 gameController.syncMusicForCurrentArea();
 
 function loop() {
+  handleGamepadPauseAndMenuInput(performance.now());
   gameController.update();
   render();
   requestAnimationFrame(loop);

@@ -11,6 +11,7 @@ export class AudioManager {
     this.bgmFadeMs = fadeDurationMs;
     this.fadeTimers = new Map();
     this._unlockBound = false;
+    this._bgmDuckRestoreTimer = null;
   }
 
   registerAreaTrack(areaName, src) {
@@ -103,6 +104,10 @@ export class AudioManager {
         console.warn("AudioManager: failed to play SFX", src, err);
       });
     }
+
+    if (sfxNameOrSrc === "itemUnlock") {
+      this._duckCurrentMusic();
+    }
   }
 
   stopCurrentMusic() {
@@ -193,6 +198,30 @@ export class AudioManager {
     });
     this.sfxPrototypeBySrc.set(src, audio);
     return audio;
+  }
+
+  _duckCurrentMusic() {
+    if (!this.currentAudio) return;
+
+    const audio = this.currentAudio;
+    const duckTo = Math.max(0.08, this.bgmVolume * 0.35);
+    const downMs = 120;
+    const holdMs = 520;
+    const upMs = 300;
+
+    this._fadeAudio(audio, duckTo, downMs).catch(() => {});
+
+    if (this._bgmDuckRestoreTimer) {
+      clearTimeout(this._bgmDuckRestoreTimer);
+      this._bgmDuckRestoreTimer = null;
+    }
+
+    this._bgmDuckRestoreTimer = setTimeout(() => {
+      if (this.currentAudio === audio) {
+        this._fadeAudio(audio, this.bgmVolume, upMs).catch(() => {});
+      }
+      this._bgmDuckRestoreTimer = null;
+    }, holdMs);
   }
 }
 

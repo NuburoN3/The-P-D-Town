@@ -393,40 +393,218 @@ function drawInventoryOverlay(ctx, state, canvas, ui, colors) {
   drawUiText(ctx, progressText, barX + (barW - textWidth) / 2, barY + 15, colors);
 }
 
+const PAUSE_OPTION_SUBTITLES = Object.freeze({
+  Inventory: "Check your satchel and gathered goods",
+  Attributes: "Inspect your discipline and growth",
+  Settings: "Tune controls and visual comfort",
+  Quit: "Leave P-D Town for now"
+});
+
+function drawFantasySelectorIcon(ctx, x, y, { highContrast = false, pulse = 0 } = {}) {
+  const outer = highContrast ? "#ffffff" : "#7b5124";
+  const inner = highContrast ? "#57d4ff" : "#f6d388";
+  const glow = highContrast ? "rgba(88,210,255,0.34)" : "rgba(244,208,131,0.34)";
+
+  ctx.save();
+  ctx.translate(x, y);
+
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, 10 + pulse * 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = outer;
+  ctx.beginPath();
+  ctx.moveTo(0, -8);
+  ctx.lineTo(8, 0);
+  ctx.lineTo(0, 8);
+  ctx.lineTo(-8, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = inner;
+  ctx.beginPath();
+  ctx.moveTo(0, -5);
+  ctx.lineTo(5, 0);
+  ctx.lineTo(0, 5);
+  ctx.lineTo(-5, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = highContrast ? "#ffffff" : "#fff7dc";
+  ctx.fillRect(-1, -7, 2, 3);
+  ctx.fillRect(5, -1, 3, 2);
+  ctx.restore();
+}
+
 function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
   const { gameState, pauseMenuState } = state;
-  if (gameState !== GAME_STATES.PAUSE_MENU) return;
+  const isPauseActive = gameState === GAME_STATES.PAUSE_MENU;
+  const mode = pauseMenuState?.animationMode || "idle";
+  const startedAt = pauseMenuState?.animationStartedAt || 0;
+  const duration = Math.max(1, pauseMenuState?.animationDurationMs || 160);
+  const t = Math.min(1, (performance.now() - startedAt) / duration);
 
-  // Semi-transparent overlay
-  ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+  let visibility = isPauseActive ? 1 : 0;
+  if (mode === "in") {
+    visibility = isPauseActive ? t : 0;
+    if (isPauseActive && t >= 1 && pauseMenuState) pauseMenuState.animationMode = "idle";
+  } else if (mode === "out") {
+    visibility = 1 - t;
+    if (t >= 1 && pauseMenuState) pauseMenuState.animationMode = "idle";
+  }
+
+  if (visibility <= 0.01) return;
+
+  const highContrast = Boolean(pauseMenuState?.highContrast);
+  const baseDim = state.currentAreaKind === AREA_KINDS.OVERWORLD ? 0.22 : 0.42;
+  const dimAlpha = Math.min(0.72, baseDim + (highContrast ? 0.15 : 0));
+  ctx.fillStyle = `rgba(18, 14, 24, ${dimAlpha * visibility})`;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Menu panel on the right
-  const menuW = 200;
-  const menuH = 300;
-  const menuX = canvas.width - menuW - 20;
+  const menuW = 340;
+  const menuH = 392;
+  const slideOffset = (1 - visibility) * 34;
+  const menuX = canvas.width - menuW - 24 + slideOffset;
   const menuY = (canvas.height - menuH) / 2;
 
-  drawSkinnedPanel(ctx, menuX, menuY, menuW, menuH, colors, { titleBand: true });
+  const aura = ctx.createRadialGradient(
+    menuX + menuW * 0.5,
+    menuY + menuH * 0.25,
+    30,
+    menuX + menuW * 0.5,
+    menuY + menuH * 0.55,
+    menuW
+  );
+  aura.addColorStop(0, highContrast ? "rgba(96, 182, 234, 0.22)" : "rgba(247, 214, 145, 0.22)");
+  aura.addColorStop(1, "rgba(247, 214, 145, 0)");
+  ctx.fillStyle = aura;
+  ctx.fillRect(menuX - 20, menuY - 20, menuW + 40, menuH + 40);
+
+  const parchment = ctx.createLinearGradient(menuX, menuY, menuX, menuY + menuH);
+  parchment.addColorStop(0, highContrast ? "#212833" : "#f2e1b4");
+  parchment.addColorStop(1, highContrast ? "#101722" : "#d7bb7d");
+  ctx.fillStyle = parchment;
+  ctx.fillRect(menuX, menuY, menuW, menuH);
+
+  const inner = ctx.createLinearGradient(menuX + 5, menuY + 5, menuX + 5, menuY + menuH - 5);
+  inner.addColorStop(0, highContrast ? "rgba(48,58,74,0.86)" : "rgba(255,248,222,0.75)");
+  inner.addColorStop(1, highContrast ? "rgba(26,35,49,0.82)" : "rgba(230,205,146,0.62)");
+  ctx.fillStyle = inner;
+  ctx.fillRect(menuX + 5, menuY + 5, menuW - 10, menuH - 10);
+
+  ctx.strokeStyle = highContrast ? "#a6dfff" : "#6c4b1d";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(menuX + 1.5, menuY + 1.5, menuW - 3, menuH - 3);
+
+  ctx.strokeStyle = highContrast ? "#eef8ff" : "#f7e1ab";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(menuX + 6.5, menuY + 6.5, menuW - 13, menuH - 13);
+
+  ctx.fillStyle = highContrast ? "#8dc9eb" : "#8b632b";
+  ctx.fillRect(menuX + 10, menuY + 10, 12, 4);
+  ctx.fillRect(menuX + 10, menuY + 10, 4, 12);
+  ctx.fillRect(menuX + menuW - 22, menuY + 10, 12, 4);
+  ctx.fillRect(menuX + menuW - 14, menuY + 10, 4, 12);
+  ctx.fillRect(menuX + 10, menuY + menuH - 14, 12, 4);
+  ctx.fillRect(menuX + 10, menuY + menuH - 22, 4, 12);
+  ctx.fillRect(menuX + menuW - 22, menuY + menuH - 14, 12, 4);
+  ctx.fillRect(menuX + menuW - 14, menuY + menuH - 22, 4, 12);
+
+  const headerGradient = ctx.createLinearGradient(menuX + 8, menuY + 10, menuX + menuW - 8, menuY + 44);
+  if (highContrast) {
+    headerGradient.addColorStop(0, "rgba(41, 86, 118, 0.82)");
+    headerGradient.addColorStop(0.5, "rgba(67, 132, 179, 0.74)");
+    headerGradient.addColorStop(1, "rgba(41, 86, 118, 0.82)");
+  } else {
+    headerGradient.addColorStop(0, "rgba(116, 74, 32, 0.75)");
+    headerGradient.addColorStop(0.5, "rgba(151, 105, 49, 0.65)");
+    headerGradient.addColorStop(1, "rgba(116, 74, 32, 0.75)");
+  }
+  ctx.fillStyle = headerGradient;
+  ctx.fillRect(menuX + 8, menuY + 10, menuW - 16, 34);
 
   ctx.font = FONT_28;
-  ctx.fillStyle = "black";
-  ctx.fillText("Pause Menu", menuX + 24, menuY + 42);
+  ctx.fillStyle = highContrast ? "rgba(14, 28, 42, 0.5)" : "rgba(45, 24, 7, 0.45)";
+  ctx.fillText("Menu", menuX + 25, menuY + 42);
+  ctx.fillStyle = highContrast ? "#f7fdff" : "#fff2ca";
+  ctx.fillText("Menu", menuX + 24, menuY + 41);
 
-  const options = ['Inventory', 'Attributes', 'Settings', 'Quit'];
+  const options = pauseMenuState?.options || ['Inventory', 'Attributes', 'Settings', 'Quit'];
   const selected = pauseMenuState ? pauseMenuState.selected : 0;
+  const shimmerPhase = (performance.now() % 1500) / 1500;
 
   ctx.font = FONT_20;
   for (let i = 0; i < options.length; i++) {
     const option = options[i];
-    const y = menuY + 90 + i * 30;
+    const y = menuY + 106 + i * 64;
     if (i === selected) {
-      ctx.fillStyle = "rgba(0,0,0,0.5)";
-      ctx.fillRect(menuX + 10, y - 18, menuW - 20, 24);
+      const rowGradient = ctx.createLinearGradient(menuX + 24, y - 23, menuX + menuW - 22, y + 21);
+      if (highContrast) {
+        rowGradient.addColorStop(0, "rgba(82, 150, 196, 0.24)");
+        rowGradient.addColorStop(0.5, "rgba(140, 214, 255, 0.5)");
+        rowGradient.addColorStop(1, "rgba(82, 150, 196, 0.24)");
+      } else {
+        rowGradient.addColorStop(0, "rgba(153, 100, 40, 0.22)");
+        rowGradient.addColorStop(0.5, "rgba(244, 209, 135, 0.45)");
+        rowGradient.addColorStop(1, "rgba(153, 100, 40, 0.22)");
+      }
+      ctx.fillStyle = rowGradient;
+      ctx.fillRect(menuX + 24, y - 23, menuW - 48, 44);
+
+      // Moving light band for a subtle magical shimmer.
+      const shimmerX = menuX + 24 + (menuW - 48) * shimmerPhase;
+      const shimmer = ctx.createLinearGradient(shimmerX - 28, y - 23, shimmerX + 28, y + 21);
+      shimmer.addColorStop(0, "rgba(255,255,255,0)");
+      shimmer.addColorStop(0.5, highContrast ? "rgba(229,247,255,0.36)" : "rgba(255,244,212,0.35)");
+      shimmer.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = shimmer;
+      ctx.fillRect(menuX + 24, y - 23, menuW - 48, 44);
+
+      ctx.strokeStyle = highContrast ? "rgba(166, 222, 255, 0.78)" : "rgba(118, 76, 30, 0.7)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(menuX + 24.5, y - 22.5, menuW - 49, 43);
+
+      const pulse = Math.sin(performance.now() * 0.008) * 0.5 + 0.5;
+      drawFantasySelectorIcon(ctx, menuX + 29, y - 2, { highContrast, pulse });
     }
-    ctx.fillStyle = "black";
-    ctx.fillText(option, menuX + 24, y);
+    ctx.fillStyle = i === selected ? (highContrast ? "#f7fdff" : "#3f250e") : (highContrast ? "#deeff9" : "#5a3718");
+    ctx.fillText(option, menuX + 44, y);
+
+    const subtitle = PAUSE_OPTION_SUBTITLES[option] || "";
+    ctx.font = FONT_12;
+    ctx.fillStyle = highContrast ? "rgba(207,232,245,0.92)" : "rgba(88, 56, 26, 0.84)";
+    ctx.fillText(subtitle, menuX + 44, y + 16);
+    ctx.font = FONT_20;
+
+    // Rune-style separator marks between options.
+    if (i < options.length - 1) {
+      const sepY = y + 32;
+      ctx.strokeStyle = highContrast ? "rgba(140, 194, 225, 0.52)" : "rgba(122, 80, 36, 0.55)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(menuX + 34, sepY);
+      ctx.lineTo(menuX + menuW - 34, sepY);
+      ctx.stroke();
+
+      ctx.fillStyle = highContrast ? "rgba(182, 230, 255, 0.84)" : "rgba(122, 80, 36, 0.8)";
+      ctx.fillRect(menuX + menuW / 2 - 10, sepY - 1, 3, 3);
+      ctx.fillRect(menuX + menuW / 2 + 7, sepY - 1, 3, 3);
+      ctx.beginPath();
+      ctx.moveTo(menuX + menuW / 2 - 2, sepY - 4);
+      ctx.lineTo(menuX + menuW / 2 - 6, sepY);
+      ctx.lineTo(menuX + menuW / 2 - 2, sepY + 4);
+      ctx.lineTo(menuX + menuW / 2 + 2, sepY);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
+
+  ctx.font = FONT_12;
+  ctx.fillStyle = highContrast ? "#d9f2ff" : "#5f3b19";
+  ctx.fillText("W/S or Arrows: Move", menuX + 16, menuY + menuH - 52);
+  ctx.fillText("Space: Select   Enter/Esc: Resume", menuX + 16, menuY + menuH - 32);
+  ctx.fillText("Pad: D-Pad/Stick Move   A Select   B/Start Resume", menuX + 16, menuY + menuH - 12);
 }
 
 function drawAttributesOverlay(ctx, state, canvas, ui, colors) {
@@ -476,10 +654,11 @@ function drawAttributesOverlay(ctx, state, canvas, ui, colors) {
 }
 
 function drawSettingsOverlay(ctx, state, canvas, ui, colors) {
-  const { gameState } = state;
+  const { gameState, pauseMenuState } = state;
   if (gameState !== GAME_STATES.SETTINGS) return;
 
-  ctx.fillStyle = colors.INVENTORY_OVERLAY;
+  const highContrast = Boolean(pauseMenuState?.highContrast);
+  ctx.fillStyle = highContrast ? "rgba(0,0,0,0.7)" : colors.INVENTORY_OVERLAY;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const boxW = ui.INVENTORY_BOX_WIDTH;
@@ -490,12 +669,25 @@ function drawSettingsOverlay(ctx, state, canvas, ui, colors) {
   drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors, { titleBand: true });
 
   ctx.font = FONT_28;
-  ctx.fillStyle = "black";
-  ctx.fillText("Settings", boxX + 24, boxY + 42);
+  drawUiText(ctx, "Settings", boxX + 24, boxY + 42, colors);
+
+  const labelColor = highContrast ? "#f2fbff" : "#1f1203";
+  const valueOnColor = highContrast ? "#90e4ff" : "#27632a";
+  const valueOffColor = highContrast ? "#ffd57c" : "#7a3f1d";
 
   ctx.font = FONT_20;
-  ctx.fillStyle = "black";
-  ctx.fillText("Settings menu placeholder", boxX + 24, boxY + 90);
+  ctx.fillStyle = labelColor;
+  ctx.fillText("High Contrast Menu", boxX + 24, boxY + 96);
+
+  const statusText = pauseMenuState?.highContrast ? "ON" : "OFF";
+  ctx.fillStyle = pauseMenuState?.highContrast ? valueOnColor : valueOffColor;
+  ctx.fillText(statusText, boxX + boxW - 78, boxY + 96);
+
+  ctx.font = FONT_16;
+  ctx.fillStyle = labelColor;
+  ctx.fillText("Space or Gamepad A: Toggle", boxX + 24, boxY + 136);
+  ctx.fillText("Enter/Esc or Gamepad B/Start: Back", boxX + 24, boxY + 162);
+  ctx.fillText("This affects pause menu readability and contrast.", boxX + 24, boxY + 198);
 }
 
 function drawBarMinigameOverlay(ctx, state, canvas, colors) {
