@@ -186,6 +186,36 @@ function buildGameSnapshot() {
   };
 }
 
+function resolveNearestWalkablePlayerPosition(rawX, rawY) {
+  const startTx = Math.floor((rawX + TILE * 0.5) / TILE);
+  const startTy = Math.floor((rawY + TILE * 0.5) / TILE);
+  const maxRadius = 10;
+
+  for (let radius = 0; radius <= maxRadius; radius++) {
+    for (let oy = -radius; oy <= radius; oy++) {
+      for (let ox = -radius; ox <= radius; ox++) {
+        if (Math.max(Math.abs(ox), Math.abs(oy)) !== radius) continue;
+
+        const tx = startTx + ox;
+        const ty = startTy + oy;
+        if (tx < 0 || ty < 0 || tx >= currentMapW || ty >= currentMapH) continue;
+
+        const candidateX = tx * TILE;
+        const candidateY = ty * TILE;
+        if (collisionService.collides(candidateX, candidateY, currentMap, currentMapW, currentMapH)) continue;
+        if (collisionService.collidesWithNPC(candidateX, candidateY, npcs, currentAreaId)) continue;
+
+        return { x: candidateX, y: candidateY };
+      }
+    }
+  }
+
+  return {
+    x: Number.isFinite(player.spawnX) ? player.spawnX : rawX,
+    y: Number.isFinite(player.spawnY) ? player.spawnY : rawY
+  };
+}
+
 function applyGameSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== "object") return false;
 
@@ -207,10 +237,11 @@ function applyGameSnapshot(snapshot) {
 
   const px = Number.isFinite(snapshot.player?.x) ? snapshot.player.x : player.x;
   const py = Number.isFinite(snapshot.player?.y) ? snapshot.player.y : player.y;
-  player.x = px;
-  player.y = py;
-  player.spawnX = px;
-  player.spawnY = py;
+  const safePosition = resolveNearestWalkablePlayerPosition(px, py);
+  player.x = safePosition.x;
+  player.y = safePosition.y;
+  player.spawnX = safePosition.x;
+  player.spawnY = safePosition.y;
   player.dir = snapshot.player?.dir || player.dir || "down";
   player.maxHp = Number.isFinite(snapshot.player?.maxHp) ? Math.max(1, snapshot.player.maxHp) : player.maxHp;
   player.hp = Number.isFinite(snapshot.player?.hp)

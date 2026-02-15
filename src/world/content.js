@@ -269,10 +269,10 @@ export const GAME_CONTENT = {
             {
               id: "hanamiTownFountain",
               type: BUILDING_TYPES.FOUNTAIN,
-              x: 11,
-              y: 13,
-              width: 9,
-              height: 9
+              x: 12,
+              y: 14,
+              width: 7,
+              height: 7
             },
             {
               id: "hanamiBarFront",
@@ -396,6 +396,51 @@ export const GAME_CONTENT = {
           minigameDeclineDialogue: "No worries. Come back when your hands are steady.",
           minigameWinDialogue: "That's a clean pour. You'd survive a rush-hour shift.",
           minigameLoseDialogue: "Not bad. Bar work is rhythm, timing, and patience."
+        },
+        {
+          id: "barPatronRiku",
+          name: "Riku",
+          spriteName: "bar_patron_riku",
+          desiredHeightTiles: 1.15,
+          areaId: "hanamiBar",
+          x: 2,
+          y: 5,
+          dir: "up",
+          dialogue: [
+            "I come here after sparring to cool my head.",
+            "The trick is breathing before you throw a punch."
+          ],
+          hasTrainingChoice: false
+        },
+        {
+          id: "barPatronAya",
+          name: "Aya",
+          spriteName: "bar_patron_aya",
+          desiredHeightTiles: 1.15,
+          areaId: "hanamiBar",
+          x: 9,
+          y: 5,
+          dir: "up",
+          dialogue: [
+            "Mika runs the cleanest bar in town.",
+            "If you can handle this room, you can handle pressure."
+          ],
+          hasTrainingChoice: false
+        },
+        {
+          id: "barPatronKenji",
+          name: "Kenji",
+          spriteName: "bar_patron_kenji",
+          desiredHeightTiles: 1.15,
+          areaId: "hanamiBar",
+          x: 8,
+          y: 7,
+          dir: "up",
+          dialogue: [
+            "The dojo sharpens your body.",
+            "Places like this sharpen your timing."
+          ],
+          hasTrainingChoice: false
         }
       ],
       enemies: [

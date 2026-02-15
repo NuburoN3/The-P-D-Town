@@ -65,11 +65,14 @@ export function classifyFountainTile(building, tileX, tileY) {
 
   const centerX = Math.floor(building.width / 2);
   const centerY = Math.floor(building.height / 2);
+  const minSize = Math.min(building.width, building.height);
+  // Compact fountains keep a single center plinth so basin water still exists.
+  const plinthHalfSpan = minSize <= 7 ? 0 : 1;
   const onCenterPlinth =
-    localX >= centerX - 1 &&
-    localX <= centerX + 1 &&
-    localY >= centerY - 1 &&
-    localY <= centerY + 1;
+    localX >= centerX - plinthHalfSpan &&
+    localX <= centerX + plinthHalfSpan &&
+    localY >= centerY - plinthHalfSpan &&
+    localY <= centerY + plinthHalfSpan;
   if (onCenterPlinth) return FOUNTAIN_TILE_KIND.CENTER_PLINTH;
 
   return FOUNTAIN_TILE_KIND.WATER;
