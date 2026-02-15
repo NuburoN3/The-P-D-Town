@@ -352,6 +352,15 @@ const titleState = {
 };
 gameState = GAME_STATES.TITLE_SCREEN;
 
+const FOUNTAIN_HEAL_PER_TICK = 2;
+const FOUNTAIN_HEAL_INTERVAL_MS = 260;
+const FOUNTAIN_HEAL_VFX_INTERVAL_MS = 760;
+const fountainHealState = {
+  inWater: false,
+  nextHealAt: 0,
+  nextVfxAt: 0
+};
+
 function isDialogueActive() {
   return dialogue.isActive();
 }
@@ -440,6 +449,47 @@ function canRunCombatSystems() {
     !doorSequence.active &&
     !player.isTraining
   );
+}
+
+function updateFountainHealing(now) {
+  if (!isFreeExploreState(gameState) || doorSequence.active) {
+    fountainHealState.inWater = false;
+    return;
+  }
+
+  const centerX = player.x + TILE * 0.5;
+  const centerY = player.y + TILE * 0.5;
+  const tileX = Math.floor(centerX / TILE);
+  const tileY = Math.floor(centerY / TILE);
+  const inFountainWater = worldService.isFountainWaterTile(currentTownId, currentAreaId, tileX, tileY);
+
+  if (!inFountainWater) {
+    fountainHealState.inWater = false;
+    return;
+  }
+
+  if (!fountainHealState.inWater) {
+    fountainHealState.inWater = true;
+    fountainHealState.nextHealAt = now;
+  }
+
+  if (player.hp >= player.maxHp || now < fountainHealState.nextHealAt) return;
+
+  const healAmount = Math.min(FOUNTAIN_HEAL_PER_TICK, player.maxHp - player.hp);
+  if (healAmount <= 0) return;
+
+  player.hp += healAmount;
+  fountainHealState.nextHealAt = now + FOUNTAIN_HEAL_INTERVAL_MS;
+
+  if (now >= fountainHealState.nextVfxAt) {
+    vfxSystem.spawn("damageText", {
+      x: player.x + TILE * 0.5,
+      y: player.y + TILE * 0.2,
+      text: `+${Math.round(healAmount)}`,
+      color: "rgba(171, 238, 255, 0.96)"
+    });
+    fountainHealState.nextVfxAt = now + FOUNTAIN_HEAL_VFX_INTERVAL_MS;
+  }
 }
 
 function prepareHanamiChallengeEnemies() {
@@ -980,6 +1030,7 @@ function loop() {
       currentAreaId
     });
 
+    updateFountainHealing(now);
     input.clearAttackPressed();
   }
 
