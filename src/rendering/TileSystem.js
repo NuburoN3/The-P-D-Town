@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { TILE_TYPES, TILE, COLORS, GAME_STATES } from "../core/constants.js";
-import { renderBuildingTile } from "../WorldManager.js";
+import { BUILDING_TYPES, renderBuildingTile } from "../WorldManager.js";
 
 function hash2(x, y, seed = 0) {
   const n = x * 374761393 + y * 668265263 + seed * 982451653;
@@ -555,6 +555,14 @@ export function drawTile(
   getBuilding,
   getTileAt
 ) {
+  if (getBuilding) {
+    const building = getBuilding(currentTownId, currentAreaId, tileX, tileY);
+    if (building && building.type === BUILDING_TYPES.FOUNTAIN) {
+      const rendered = renderBuildingTile(building, x, y, tileX, tileY);
+      if (rendered) return;
+    }
+  }
+
   const renderer = tileRenderers[type];
   if (!renderer) return;
 
