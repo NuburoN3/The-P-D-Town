@@ -1,10 +1,33 @@
 import { AREA_KINDS, GAME_STATES } from "../core/constants.js";
 
-const FONT_12 = "600 12px 'Trebuchet MS', 'Verdana', sans-serif";
-const FONT_16 = "600 16px 'Trebuchet MS', 'Verdana', sans-serif";
-const FONT_20 = "600 20px 'Trebuchet MS', 'Verdana', sans-serif";
-const FONT_22 = "600 22px 'Trebuchet MS', 'Verdana', sans-serif";
-const FONT_28 = "700 28px 'Trebuchet MS', 'Verdana', sans-serif";
+const FONT_12 = "600 12px 'Trebuchet MS', 'Segoe UI', sans-serif";
+const FONT_16 = "600 16px 'Trebuchet MS', 'Segoe UI', sans-serif";
+const FONT_20 = "600 20px 'Trebuchet MS', 'Segoe UI', sans-serif";
+const FONT_22 = "700 22px 'Trebuchet MS', 'Segoe UI', sans-serif";
+const FONT_28 = "700 28px 'Palatino Linotype', 'Book Antiqua', serif";
+
+function hash01(seed) {
+  const value = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+const MOOD_PRESETS = Object.freeze({
+  goldenDawn: {
+    topTint: "rgba(255, 223, 159, 0.13)",
+    bottomTint: "rgba(112, 73, 32, 0.14)",
+    filmTint: "rgba(255, 231, 188, 0.08)"
+  },
+  inkQuiet: {
+    topTint: "rgba(182, 223, 248, 0.08)",
+    bottomTint: "rgba(26, 33, 49, 0.16)",
+    filmTint: "rgba(140, 177, 214, 0.06)"
+  },
+  amberLounge: {
+    topTint: "rgba(255, 210, 142, 0.12)",
+    bottomTint: "rgba(74, 35, 22, 0.2)",
+    filmTint: "rgba(255, 178, 109, 0.1)"
+  }
+});
 
 function drawEntityShadow(ctx, x, y, width, height, color) {
   ctx.fillStyle = color;
@@ -31,6 +54,12 @@ function drawSkinnedPanel(ctx, x, y, width, height, colors, { titleBand = false 
   ctx.fillStyle = colors.PANEL_INNER || "rgba(255,255,255,0.04)";
   ctx.fillRect(x + 2, y + 2, width - 4, height - 4);
 
+  const sheen = ctx.createLinearGradient(x + 2, y + 2, x + 2, y + Math.max(4, height * 0.45));
+  sheen.addColorStop(0, "rgba(255,255,255,0.14)");
+  sheen.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = sheen;
+  ctx.fillRect(x + 2, y + 2, width - 4, Math.max(10, height * 0.45));
+
   if (titleBand) {
     ctx.fillStyle = "rgba(255,255,255,0.08)";
     ctx.fillRect(x + 2, y + 2, width - 4, 28);
@@ -45,6 +74,12 @@ function drawSkinnedPanel(ctx, x, y, width, height, colors, { titleBand = false 
   ctx.strokeStyle = colors.PANEL_BORDER_LIGHT || "rgba(255,255,255,0.7)";
   ctx.lineWidth = 1;
   ctx.strokeRect(x + 4.5, y + 4.5, width - 9, height - 9);
+
+  ctx.fillStyle = colors.PANEL_ACCENT || "rgba(255, 226, 161, 0.8)";
+  ctx.fillRect(x + 8, y + 8, 4, 4);
+  ctx.fillRect(x + width - 12, y + 8, 4, 4);
+  ctx.fillRect(x + 8, y + height - 12, 4, 4);
+  ctx.fillRect(x + width - 12, y + height - 12, 4, 4);
 }
 
 function drawUiText(ctx, text, x, y, colors) {
@@ -317,18 +352,51 @@ function drawTextbox(ctx, state, canvas, ui, colors, dialogue) {
   }
 }
 
-function drawDoorTransition(ctx, state, canvas, tileSize) {
+function drawDoorTransition(ctx, state, canvas, tileSize, cameraZoom) {
   const { gameState, player, cam, doorSequence } = state;
   if (gameState !== GAME_STATES.TRANSITION) return;
 
+  const transitionRatio = doorSequence.maxFadeRadius > 0
+    ? Math.max(0, Math.min(1, doorSequence.fadeRadius / doorSequence.maxFadeRadius))
+    : 0;
+  const viewW = canvas.width / cameraZoom;
+  const viewH = canvas.height / cameraZoom;
+
   const px = player.x - cam.x + tileSize / 2;
   const py = player.y - cam.y + tileSize / 2;
+  const maxHoleRadius = Math.hypot(viewW, viewH) * 0.62;
+  const holeRadius = Math.max(0, maxHoleRadius * (1 - transitionRatio));
 
   ctx.save();
-  ctx.fillStyle = "black";
+  ctx.fillStyle = `rgba(4, 6, 10, ${0.22 + transitionRatio * 0.74})`;
+  ctx.fillRect(0, 0, viewW, viewH);
+
+  if (holeRadius > 0.5) {
+    ctx.globalCompositeOperation = "destination-out";
+    const feather = ctx.createRadialGradient(
+      px,
+      py,
+      Math.max(0, holeRadius - 28),
+      px,
+      py,
+      holeRadius + 8
+    );
+    feather.addColorStop(0, "rgba(0,0,0,1)");
+    feather.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = feather;
+    ctx.beginPath();
+    ctx.arc(px, py, holeRadius + 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  const pulse = 0.5 + Math.sin(performance.now() * 0.011) * 0.5;
+  const ringAlpha = Math.max(0.08, (1 - transitionRatio) * 0.22 + pulse * 0.08);
+  ctx.strokeStyle = `rgba(248, 214, 140, ${ringAlpha})`;
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(px, py, doorSequence.fadeRadius, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.arc(px, py, Math.max(10, holeRadius + 2), 0, Math.PI * 2);
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -807,32 +875,251 @@ function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
 }
 
 function drawAtmosphere(ctx, canvas, colors, state) {
-  if (state.currentAreaKind !== AREA_KINDS.OVERWORLD) return;
+  const isOverworld = state.currentAreaKind === AREA_KINDS.OVERWORLD;
 
-  const topLight = ctx.createLinearGradient(0, 0, 0, canvas.height * 0.65);
-  topLight.addColorStop(0, colors.AMBIENT_TOP);
-  topLight.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = topLight;
+  if (isOverworld) {
+    const topLight = ctx.createLinearGradient(0, 0, 0, canvas.height * 0.65);
+    topLight.addColorStop(0, colors.AMBIENT_TOP);
+    topLight.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = topLight;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const bottomTint = ctx.createLinearGradient(0, canvas.height * 0.35, 0, canvas.height);
+    bottomTint.addColorStop(0, "rgba(0,0,0,0)");
+    bottomTint.addColorStop(1, colors.AMBIENT_BOTTOM);
+    ctx.fillStyle = bottomTint;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  const now = performance.now() * 0.001;
+  const particleCount = isOverworld ? 42 : 18;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+
+  for (let i = 0; i < particleCount; i++) {
+    const seed = i * 13.17 + (isOverworld ? 0 : 97.23);
+    const speed = isOverworld ? 0.028 + hash01(seed + 0.2) * 0.048 : 0.012 + hash01(seed + 0.2) * 0.02;
+    const drift = (now * speed + hash01(seed + 0.8)) % 1;
+    const xBase = (1 - drift) * (canvas.width + 120) - 60;
+    const yBase = hash01(seed + 1.7) * canvas.height;
+
+    const x = xBase + Math.sin(now * (0.8 + hash01(seed + 2.4)) + seed) * (isOverworld ? 20 : 10);
+    const y = yBase + Math.sin(now * (0.75 + hash01(seed + 3.6)) + seed * 1.3) * (isOverworld ? 16 : 7);
+    const alpha = isOverworld ? 0.07 + hash01(seed + 4.1) * 0.16 : 0.04 + hash01(seed + 4.1) * 0.08;
+    const size = isOverworld ? 1.4 + hash01(seed + 5.5) * 2.6 : 1 + hash01(seed + 5.5) * 1.6;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(hash01(seed + 6.8) * Math.PI + now * (isOverworld ? 0.35 : 0.12));
+    ctx.fillStyle = isOverworld
+      ? `rgba(255, 222, 239, ${alpha})`
+      : `rgba(255, 238, 206, ${alpha})`;
+    ctx.fillRect(-size * 0.5, -size, size, size * 1.8);
+    ctx.restore();
+  }
+
+  ctx.restore();
+
+  if (isOverworld) {
+    const vignette = ctx.createRadialGradient(
+      canvas.width * 0.5,
+      canvas.height * 0.38,
+      canvas.height * 0.12,
+      canvas.width * 0.5,
+      canvas.height * 0.5,
+      canvas.width * 0.62
+    );
+    vignette.addColorStop(0, "rgba(0,0,0,0)");
+    vignette.addColorStop(1, colors.VIGNETTE);
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+function drawWorldVfx(ctx, state) {
+  const effects = Array.isArray(state.vfxEffects) ? state.vfxEffects : null;
+  if (!effects || effects.length === 0) return;
+
+  const now = performance.now();
+  for (const effect of effects) {
+    const age = now - effect.startedAt;
+    const life = Math.max(1, effect.durationMs);
+    const t = Math.max(0, Math.min(1, age / life));
+    const inv = 1 - t;
+
+    const x = effect.x - state.cam.x;
+    const y = effect.y - state.cam.y;
+    const baseSize = effect.size || 22;
+    const glowSize = baseSize * (1.2 + t * 1.1);
+
+    ctx.save();
+    ctx.globalAlpha = Math.max(0.03, inv * 0.95);
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, glowSize);
+    glow.addColorStop(0, effect.glowColor || "rgba(255,255,255,0.34)");
+    glow.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, glowSize, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (effect.type === "trainingBurst") {
+      ctx.strokeStyle = effect.color || "rgba(255, 224, 157, 0.95)";
+      ctx.lineWidth = 2;
+      const rays = 8;
+      for (let i = 0; i < rays; i++) {
+        const angle = i * ((Math.PI * 2) / rays) + t * 0.7;
+        const inner = baseSize * (0.2 + t * 0.12);
+        const outer = baseSize * (0.75 + t * 0.45);
+        ctx.beginPath();
+        ctx.moveTo(x + Math.cos(angle) * inner, y + Math.sin(angle) * inner);
+        ctx.lineTo(x + Math.cos(angle) * outer, y + Math.sin(angle) * outer);
+        ctx.stroke();
+      }
+    } else if (effect.type === "doorSwirl") {
+      ctx.strokeStyle = effect.color || "rgba(250, 240, 195, 0.9)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, baseSize * (0.45 + t * 0.65), t * Math.PI * 2, t * Math.PI * 2 + Math.PI * 1.5);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y, baseSize * (0.22 + t * 0.45), -t * Math.PI * 2, -t * Math.PI * 2 + Math.PI * 1.3);
+      ctx.stroke();
+    } else if (effect.type === "pickupGlow") {
+      ctx.fillStyle = effect.color || "rgba(171, 238, 255, 0.95)";
+      for (let i = 0; i < 6; i++) {
+        const angle = i * ((Math.PI * 2) / 6) + t * 2.1;
+        const dist = baseSize * (0.22 + t * 0.58);
+        const sparkleSize = Math.max(1, baseSize * 0.09 * inv);
+        ctx.fillRect(
+          x + Math.cos(angle) * dist - sparkleSize * 0.5,
+          y + Math.sin(angle) * dist - sparkleSize * 0.5 - t * 9,
+          sparkleSize,
+          sparkleSize
+        );
+      }
+    } else {
+      ctx.strokeStyle = effect.color || "rgba(255, 245, 209, 0.9)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, baseSize * (0.34 + t * 0.78), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+}
+
+function drawMoodGrading(ctx, canvas, state) {
+  const preset = MOOD_PRESETS[state.moodPreset];
+  if (!preset) return;
+
+  const top = ctx.createLinearGradient(0, 0, 0, canvas.height * 0.7);
+  top.addColorStop(0, preset.topTint);
+  top.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = top;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const bottomTint = ctx.createLinearGradient(0, canvas.height * 0.35, 0, canvas.height);
-  bottomTint.addColorStop(0, "rgba(0,0,0,0)");
-  bottomTint.addColorStop(1, colors.AMBIENT_BOTTOM);
-  ctx.fillStyle = bottomTint;
+  const bottom = ctx.createLinearGradient(0, canvas.height * 0.28, 0, canvas.height);
+  bottom.addColorStop(0, "rgba(0,0,0,0)");
+  bottom.addColorStop(1, preset.bottomTint);
+  ctx.fillStyle = bottom;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const vignette = ctx.createRadialGradient(
+  ctx.save();
+  ctx.globalCompositeOperation = "soft-light";
+  ctx.fillStyle = preset.filmTint;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+
+function drawTitleScreenOverlay(ctx, canvas, state, colors) {
+  const titleState = state.titleState;
+  if (!titleState || state.gameState !== GAME_STATES.TITLE_SCREEN) return;
+
+  const now = performance.now();
+  const elapsed = (now - titleState.startedAt) / 1000;
+  const pulse = 0.5 + Math.sin((elapsed + titleState.promptPulseOffset * 0.001) * 2.4) * 0.5;
+
+  const topGlow = ctx.createRadialGradient(
     canvas.width * 0.5,
-    canvas.height * 0.38,
-    canvas.height * 0.12,
+    canvas.height * 0.2,
+    20,
     canvas.width * 0.5,
-    canvas.height * 0.5,
-    canvas.width * 0.62
+    canvas.height * 0.34,
+    canvas.width * 0.7
   );
-  vignette.addColorStop(0, "rgba(0,0,0,0)");
-  vignette.addColorStop(1, colors.VIGNETTE);
-  ctx.fillStyle = vignette;
+  topGlow.addColorStop(0, "rgba(255, 214, 158, 0.28)");
+  topGlow.addColorStop(1, "rgba(12, 10, 16, 0.78)");
+  ctx.fillStyle = topGlow;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "rgba(8, 10, 16, 0.45)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.font = FONT_28;
+  ctx.fillStyle = "rgba(0,0,0,0.5)";
+  ctx.fillText("P-D TOWN", 84, 120);
+  const logoGradient = ctx.createLinearGradient(82, 62, 82, 124);
+  logoGradient.addColorStop(0, "#fff3d1");
+  logoGradient.addColorStop(1, "#e4ba72");
+  ctx.fillStyle = logoGradient;
+  ctx.fillText("P-D TOWN", 82, 118);
+
+  ctx.font = FONT_20;
+  ctx.fillStyle = "rgba(243, 227, 198, 0.92)";
+  ctx.fillText("Way of the Cherry Blossom", 84, 148);
+
+  const panelX = 72;
+  const panelY = canvas.height - 234;
+  const panelW = 372;
+  const panelH = 164;
+  drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors, { titleBand: true });
+
+  ctx.font = FONT_16;
+  for (let i = 0; i < titleState.options.length; i++) {
+    const y = panelY + 64 + i * 38;
+    const isSelected = i === titleState.selected;
+    if (isSelected) {
+      const band = ctx.createLinearGradient(panelX + 14, y - 20, panelX + panelW - 14, y + 7);
+      band.addColorStop(0, "rgba(255, 209, 127, 0.14)");
+      band.addColorStop(0.5, "rgba(255, 232, 186, 0.32)");
+      band.addColorStop(1, "rgba(255, 209, 127, 0.14)");
+      ctx.fillStyle = band;
+      ctx.fillRect(panelX + 14, y - 20, panelW - 28, 28);
+    }
+    ctx.fillStyle = isSelected ? "#fff3d3" : "rgba(226, 214, 187, 0.88)";
+    ctx.fillText(`${isSelected ? "> " : "  "}${titleState.options[i]}`, panelX + 28, y);
+  }
+
+  ctx.font = FONT_12;
+  ctx.fillStyle = `rgba(245, 230, 202, ${0.58 + pulse * 0.42})`;
+  ctx.fillText("Arrow keys or stick: Navigate", panelX + 22, panelY + panelH - 38);
+  ctx.fillText("Enter/Space or A/Start: Confirm", panelX + 22, panelY + panelH - 20);
+
+  if (titleState.showHowTo) {
+    const helpW = Math.min(canvas.width - 120, 520);
+    const helpH = 210;
+    const helpX = Math.round((canvas.width - helpW) / 2);
+    const helpY = Math.round((canvas.height - helpH) / 2);
+    drawSkinnedPanel(ctx, helpX, helpY, helpW, helpH, colors, { titleBand: true });
+    ctx.font = FONT_22;
+    drawUiText(ctx, "How To Play", helpX + 20, helpY + 36, colors);
+    ctx.font = FONT_16;
+    drawUiText(ctx, "Move: W A S D or Arrow Keys", helpX + 20, helpY + 72, colors);
+    drawUiText(ctx, "Interact / Advance: Space", helpX + 20, helpY + 96, colors);
+    drawUiText(ctx, "Pause Menu: Enter or Esc", helpX + 20, helpY + 120, colors);
+    drawUiText(ctx, "Inventory: I", helpX + 20, helpY + 144, colors);
+    drawUiText(ctx, "Gamepad: Left Stick + A + Start", helpX + 20, helpY + 168, colors);
+    ctx.font = FONT_12;
+    drawUiText(ctx, "Press ESC/B to close this panel", helpX + 20, helpY + 192, colors);
+  }
+
+  if (titleState.fadeOutActive) {
+    const fadeElapsed = now - titleState.fadeOutStartedAt;
+    const fadeRatio = Math.max(0, Math.min(1, fadeElapsed / Math.max(1, titleState.fadeOutDurationMs)));
+    ctx.fillStyle = `rgba(0,0,0,${fadeRatio})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 }
 
 function drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoom, drawTile) {
@@ -908,12 +1195,18 @@ export function renderGameFrame({
   drawNPCs(ctx, state, canvas, tileSize, colors);
   drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, spriteFrameHeight, spriteFramesPerRow);
   drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoom, drawTile);
+  drawWorldVfx(ctx, state);
   drawTrainingPopup(ctx, state, canvas, ui, colors, tileSize);
-  drawDoorTransition(ctx, state, canvas, tileSize);
+  drawDoorTransition(ctx, state, canvas, tileSize, cameraZoom);
   ctx.restore();
 
   drawItemNotifications(ctx, state, cameraZoom, tileSize, colors);
   drawAtmosphere(ctx, canvas, colors, state);
+  drawMoodGrading(ctx, canvas, state);
+  if (state.gameState === GAME_STATES.TITLE_SCREEN) {
+    drawTitleScreenOverlay(ctx, canvas, state, colors);
+    return;
+  }
   if (typeof drawCustomOverlays === "function") {
     drawCustomOverlays({ ctx, canvas, colors, ui, state });
   }

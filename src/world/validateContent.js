@@ -113,6 +113,10 @@ export function validateGameContent(content) {
         errors.push(`${areaPath}.kind must be '${AREA_KINDS.OVERWORLD}' or '${AREA_KINDS.INTERIOR}'.`);
       }
 
+      if (area.mood != null && (typeof area.mood !== "string" || area.mood.length === 0)) {
+        errors.push(`${areaPath}.mood must be a non-empty string when provided.`);
+      }
+
       if (!isPositiveInteger(area.width) || !isPositiveInteger(area.height)) {
         errors.push(`${areaPath}.width and .height must be positive integers.`);
       }

@@ -232,6 +232,7 @@ export const GAME_CONTENT = {
         overworld: {
           id: "overworld",
           kind: "overworld",
+          mood: "goldenDawn",
           width: 30,
           height: 30,
           musicSrc: "assets/audio/Anticipation_Game_Audio_BG.wav",
@@ -271,6 +272,7 @@ export const GAME_CONTENT = {
         hanamiDojo: {
           id: "hanamiDojo",
           kind: "interior",
+          mood: "inkQuiet",
           width: 12,
           height: 10,
           musicSrc: "assets/audio/Hanami_Game_Audio_BG.wav",
@@ -280,6 +282,7 @@ export const GAME_CONTENT = {
         hanamiBar: {
           id: "hanamiBar",
           kind: "interior",
+          mood: "amberLounge",
           width: 12,
           height: 10,
           generateBaseMap: generateBarInteriorBase

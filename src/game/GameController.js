@@ -136,7 +136,8 @@ export function createGameController({
       player: state.player,
       currentMapW: state.getCurrentMapW(),
       currentMapH: state.getCurrentMapH(),
-      canvas: state.canvas
+      canvas: state.canvas,
+      gameState
     });
   }
 

@@ -34,6 +34,7 @@ export function createInteractionSystem({
   advanceDialogue,
   getInteractPressed,
   clearInteractPressed,
+  spawnVisualEffect = () => {},
   handleFeatureNPCInteraction = () => false,
   handleFeatureStateInteraction = () => false
 }) {
@@ -86,6 +87,11 @@ export function createInteractionSystem({
     player.handstandAnimTimer = 0;
     player.handstandFrame = 0;
     player.walking = false;
+    spawnVisualEffect("trainingBurst", {
+      x: player.x + tileSize / 2,
+      y: player.y + tileSize * 0.35,
+      size: 38
+    });
 
     if (playerStats.disciplineXP >= playerStats.disciplineXPNeeded) {
       trainingPopup.levelUp = true;
@@ -116,6 +122,14 @@ export function createInteractionSystem({
   }
 
   function handleNPCInteraction(npc) {
+    const playerCenterX = player.x + tileSize / 2;
+    const playerCenterY = player.y + tileSize / 2;
+    spawnVisualEffect("interactionPulse", {
+      x: playerCenterX,
+      y: playerCenterY - tileSize * 0.2,
+      size: 22
+    });
+
     if (handleFeatureNPCInteraction(npc)) {
       return;
     }
@@ -147,6 +161,11 @@ export function createInteractionSystem({
             itemAlert.startedAt = performance.now();
             inventoryHint.active = true;
             inventoryHint.startedAt = performance.now();
+            spawnVisualEffect("pickupGlow", {
+              x: player.x + tileSize / 2,
+              y: player.y + tileSize * 0.4,
+              size: 32
+            });
             try {
               musicManager.playSfx("itemUnlock");
             } catch (_) {}
@@ -200,6 +219,11 @@ export function createInteractionSystem({
     doorSequence.maxFadeRadius = Math.hypot(canvas.width, canvas.height);
     doorSequence.fadeRadius = 0;
     doorSequence.transitionPhase = "out";
+    spawnVisualEffect("doorSwirl", {
+      x: doorCenterX,
+      y: doorCenterY,
+      size: 34
+    });
 
     setGameState(GAME_STATES.ENTERING_DOOR);
     clearInteractPressed();
@@ -212,7 +236,13 @@ export function createInteractionSystem({
       return;
     }
 
-    if (gameState === GAME_STATES.INVENTORY) {
+    if (
+      gameState === GAME_STATES.TITLE_SCREEN ||
+      gameState === GAME_STATES.INVENTORY ||
+      gameState === GAME_STATES.PAUSE_MENU ||
+      gameState === GAME_STATES.SETTINGS ||
+      gameState === GAME_STATES.ATTRIBUTES
+    ) {
       clearInteractPressed();
       return;
     }
@@ -277,6 +307,11 @@ export function createInteractionSystem({
 
         const signpostText = worldService.getSignpostText(currentTownId, currentAreaId, tx, ty);
         if (signpostText) {
+          spawnVisualEffect("interactionPulse", {
+            x: tx * tileSize + tileSize / 2,
+            y: ty * tileSize + tileSize / 2,
+            size: 18
+          });
           showDialogue("", signpostText);
           clearInteractPressed();
           return;

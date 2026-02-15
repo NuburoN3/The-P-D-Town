@@ -19,6 +19,7 @@ import { createMovementSystem } from "../game/MovementSystem.js";
 import { createInteractionSystem } from "../game/InteractionSystem.js";
 import { createGameController } from "../game/GameController.js";
 import { createGameRuntime } from "../game/bootstrap.js";
+import { createVfxSystem } from "../game/VfxSystem.js";
 import { createGameFeatures } from "../game/features/index.js";
 import { createFeatureCoordinator } from "../game/features/FeatureCoordinator.js";
 
@@ -48,7 +49,13 @@ const input = new InputManager({
       interactionSystem.toggleInventory();
     }
   },
-  shouldHandleInput: () => !(gameState === GAME_STATES.PAUSE_MENU || gameState === GAME_STATES.INVENTORY || gameState === GAME_STATES.ATTRIBUTES || gameState === GAME_STATES.SETTINGS)
+  shouldHandleInput: () => !(
+    gameState === GAME_STATES.TITLE_SCREEN ||
+    gameState === GAME_STATES.PAUSE_MENU ||
+    gameState === GAME_STATES.INVENTORY ||
+    gameState === GAME_STATES.ATTRIBUTES ||
+    gameState === GAME_STATES.SETTINGS
+  )
 });
 
 const collisionService = new CollisionService({ tileSize: TILE });
@@ -80,6 +87,19 @@ const gamepadMenuState = {
   startHeld: false
 };
 const trainingContent = worldService.getTrainingContent();
+const vfxSystem = createVfxSystem();
+const gameplayStartState = gameState;
+const titleState = {
+  startedAt: performance.now(),
+  selected: 0,
+  options: ["Start Journey", "How To Play"],
+  showHowTo: false,
+  fadeOutActive: false,
+  fadeOutStartedAt: 0,
+  fadeOutDurationMs: 720,
+  promptPulseOffset: Math.random() * 1000
+};
+gameState = GAME_STATES.TITLE_SCREEN;
 
 function isDialogueActive() {
   return dialogue.isActive();
@@ -99,6 +119,66 @@ function confirmChoice() {
 
 function advanceDialogue() {
   dialogue.advance();
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(value, max));
+}
+
+function moveTitleSelection(direction) {
+  const total = titleState.options.length;
+  titleState.selected = (titleState.selected + direction + total) % total;
+  musicManager.playSfx("menuMove");
+}
+
+function confirmTitleSelection() {
+  if (titleState.selected === 1) {
+    titleState.showHowTo = !titleState.showHowTo;
+    musicManager.playSfx("menuSelect");
+    return;
+  }
+
+  titleState.fadeOutActive = true;
+  titleState.fadeOutStartedAt = performance.now();
+  titleState.showHowTo = false;
+  vfxSystem.spawn("pickupGlow", {
+    x: player.x + TILE / 2,
+    y: player.y + TILE * 0.3,
+    size: 40,
+    durationMs: 620
+  });
+  musicManager.playSfx("menuConfirm");
+}
+
+function updateTitleScreen(now) {
+  const worldW = currentMapW * TILE;
+  const worldH = currentMapH * TILE;
+  const visibleW = canvas.width / CAMERA_ZOOM;
+  const visibleH = canvas.height / CAMERA_ZOOM;
+
+  const baseX = player.x - visibleW * 0.5;
+  const baseY = player.y - visibleH * 0.5;
+  const seconds = (now - titleState.startedAt) / 1000;
+  const driftX = Math.sin(seconds * 0.33) * TILE * 2.4;
+  const driftY = Math.cos(seconds * 0.27) * TILE * 1.6;
+
+  const minX = Math.min(0, worldW - visibleW);
+  const maxX = Math.max(0, worldW - visibleW);
+  const minY = Math.min(0, worldH - visibleH);
+  const maxY = Math.max(0, worldH - visibleH);
+
+  cam.x = clamp(baseX + driftX, minX, maxX);
+  cam.y = clamp(baseY + driftY, minY, maxY);
+
+  if (!titleState.fadeOutActive) return;
+
+  const elapsed = now - titleState.fadeOutStartedAt;
+  if (elapsed >= titleState.fadeOutDurationMs) {
+    titleState.fadeOutActive = false;
+    gameState = gameplayStartState;
+    previousWorldState = gameplayStartState;
+    previousGameState = gameplayStartState;
+  }
 }
 
 const gameFeatures = createGameFeatures({
@@ -152,6 +232,7 @@ interactionSystem = createInteractionSystem({
   advanceDialogue,
   getInteractPressed: () => input.getInteractPressed(),
   clearInteractPressed: () => input.clearInteractPressed(),
+  spawnVisualEffect: (type, options) => vfxSystem.spawn(type, options),
   handleFeatureNPCInteraction: (npc) => featureCoordinator.tryHandleNPCInteraction(npc),
   handleFeatureStateInteraction: (activeGameState) => {
     if (!featureCoordinator.handlesGameState(activeGameState)) return false;
@@ -307,6 +388,30 @@ function handleGamepadPauseAndMenuInput(now) {
   const backPressed = Boolean(buttons[1]?.pressed); // B
   const startPressed = Boolean(buttons[9]?.pressed); // Start
 
+  if (gameState === GAME_STATES.TITLE_SCREEN) {
+    if (direction !== 0 && (direction !== gamepadMenuState.heldDirection || now >= gamepadMenuState.nextMoveAt)) {
+      moveTitleSelection(direction);
+      gamepadMenuState.heldDirection = direction;
+      gamepadMenuState.nextMoveAt = now + 170;
+    } else if (direction === 0) {
+      gamepadMenuState.heldDirection = 0;
+    }
+
+    if ((confirmPressed || startPressed) && !gamepadMenuState.confirmHeld) {
+      confirmTitleSelection();
+    }
+
+    if (backPressed && !gamepadMenuState.backHeld) {
+      titleState.showHowTo = false;
+      musicManager.playSfx("menuConfirm");
+    }
+
+    gamepadMenuState.confirmHeld = confirmPressed || startPressed;
+    gamepadMenuState.backHeld = backPressed;
+    gamepadMenuState.startHeld = startPressed;
+    return;
+  }
+
   if (gameState === GAME_STATES.PAUSE_MENU) {
     if (direction !== 0 && (direction !== gamepadMenuState.heldDirection || now >= gamepadMenuState.nextMoveAt)) {
       movePauseMenuSelection(direction);
@@ -376,6 +481,31 @@ addEventListener("keydown", (e) => {
 addEventListener("keydown", (e) => {
   if (choiceState.active) return;
   const key = e.key.toLowerCase();
+
+  if (gameState === GAME_STATES.TITLE_SCREEN) {
+    if (!e.repeat && (key === "arrowup" || key === "w")) {
+      moveTitleSelection(-1);
+      e.preventDefault();
+      return;
+    }
+    if (!e.repeat && (key === "arrowdown" || key === "s")) {
+      moveTitleSelection(1);
+      e.preventDefault();
+      return;
+    }
+    if (!e.repeat && (key === " " || key === "enter")) {
+      confirmTitleSelection();
+      e.preventDefault();
+      return;
+    }
+    if (!e.repeat && key === "escape") {
+      titleState.showHowTo = false;
+      musicManager.playSfx("menuConfirm");
+      e.preventDefault();
+      return;
+    }
+    return;
+  }
 
   if (gameState === GAME_STATES.PAUSE_MENU) {
     e.preventDefault();
@@ -467,13 +597,16 @@ function render() {
       currentMapW,
       currentMapH,
       getBuildingAtWorldTile: (tx, ty) => worldService.getBuilding(currentTownId, currentAreaId, tx, ty),
+      moodPreset: worldService.getAreaMoodPreset(currentTownId, currentAreaId),
       currentAreaId,
       currentAreaKind: worldService.getAreaKind(currentTownId, currentAreaId),
       gameState,
+      titleState,
       doorSequence,
       player,
       npcs,
       cam,
+      vfxEffects: vfxSystem.effects,
       trainingPopup,
       playerStats,
       playerInventory,
@@ -488,8 +621,16 @@ function render() {
 gameController.syncMusicForCurrentArea();
 
 function loop() {
-  handleGamepadPauseAndMenuInput(performance.now());
-  gameController.update();
+  const now = performance.now();
+  handleGamepadPauseAndMenuInput(now);
+
+  if (gameState === GAME_STATES.TITLE_SCREEN) {
+    updateTitleScreen(now);
+  } else {
+    gameController.update();
+  }
+
+  vfxSystem.update(now);
   render();
   requestAnimationFrame(loop);
 }

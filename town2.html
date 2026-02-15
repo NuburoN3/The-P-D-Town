@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dojo Town</title>
   <style>
+    :root {
+      --bg-deep: #0c1719;
+      --bg-mid: #1a2d2a;
+      --bg-warm: #3d2c1a;
+      --frame-dark: #2d2418;
+      --frame-mid: #7e6239;
+      --frame-light: #d8bf89;
+      --ink: #f6edd6;
+    }
+
     body {
       margin: 0;
       min-height: 100vh;
@@ -12,31 +22,63 @@
       place-items: center;
       overflow: hidden;
       background:
-        radial-gradient(1200px 700px at 15% 10%, rgba(255, 244, 209, 0.28), transparent 60%),
-        radial-gradient(900px 500px at 80% 90%, rgba(37, 79, 54, 0.35), transparent 55%),
-        linear-gradient(160deg, #1f2f22 0%, #13251c 44%, #0f1716 100%);
-      font-family: "Trebuchet MS", "Verdana", sans-serif;
+        radial-gradient(1000px 680px at 14% 8%, rgba(255, 230, 166, 0.24), transparent 62%),
+        radial-gradient(880px 620px at 86% 92%, rgba(86, 141, 88, 0.3), transparent 58%),
+        linear-gradient(148deg, var(--bg-mid) 0%, var(--bg-deep) 52%, #090f13 100%);
+      font-family: "Palatino Linotype", "Book Antiqua", "Trebuchet MS", serif;
+      position: relative;
+      color: var(--ink);
+    }
+
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    body::before {
+      background:
+        repeating-linear-gradient(
+          45deg,
+          rgba(255, 255, 255, 0.03) 0 2px,
+          rgba(0, 0, 0, 0) 2px 14px
+        );
+      mix-blend-mode: soft-light;
+      opacity: 0.38;
+    }
+
+    body::after {
+      background:
+        radial-gradient(circle at center, rgba(0, 0, 0, 0) 52%, rgba(0, 0, 0, 0.54) 100%);
+      opacity: 0.9;
     }
 
     canvas {
       display: block;
       image-rendering: pixelated;
       background: #a7d9a8;
-      border: 5px solid #213c2a;
-      border-radius: 8px;
+      border: 6px solid var(--frame-dark);
+      border-radius: 10px;
       box-shadow:
-        0 0 0 2px rgba(255, 249, 220, 0.35),
-        0 20px 50px rgba(0, 0, 0, 0.55),
-        inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+        0 0 0 2px rgba(255, 255, 255, 0.1),
+        0 0 0 6px rgba(30, 24, 18, 0.7),
+        0 0 0 8px var(--frame-mid),
+        0 28px 64px rgba(0, 0, 0, 0.58),
+        inset 0 0 0 1px rgba(255, 246, 214, 0.22),
+        inset 0 -14px 32px rgba(0, 0, 0, 0.15);
       width: min(100vw - 24px, 1280px);
       height: auto;
       max-height: calc(100vh - 24px);
+      position: relative;
+      z-index: 1;
     }
   </style>
 </head>
 <body>
   <canvas id="game" width="1280" height="720"></canvas>
 
-<script type="module" src="main.js?v=2026-02-15-dojo5"></script>
+<script type="module" src="main.js?v=2026-02-15-dojo7"></script>
 </body>
 </html>

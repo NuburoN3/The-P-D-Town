@@ -127,6 +127,12 @@ export class WorldService {
     return area ? area.musicAreaKey : null;
   }
 
+  getAreaMoodPreset(townId, areaId) {
+    const area = this.getArea(townId, areaId);
+    if (!area || typeof area.mood !== "string") return null;
+    return area.mood;
+  }
+
   getInitialSpawn(townId) {
     const town = this.getTown(townId);
     if (!town) return null;

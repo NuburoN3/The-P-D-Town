@@ -45,7 +45,7 @@ export class DialogueSystem {
     const sourceLines = Array.isArray(textOrLines) ? textOrLines : [textOrLines];
 
     this.ctx.save();
-    this.ctx.font = "20px monospace";
+    this.ctx.font = "600 20px 'Trebuchet MS', 'Segoe UI', sans-serif";
 
     const textMaxWidth = this.canvas.width - 80;
     const lineSpacing = this.ui.LINE_SPACING;

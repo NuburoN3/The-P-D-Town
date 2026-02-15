@@ -10,6 +10,26 @@ export function createMovementSystem({
 }) {
   let lastWalkSoundTime = 0;
 
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(value, max));
+  }
+
+  function lerp(start, end, t) {
+    return start + (end - start) * t;
+  }
+
+  function getCameraLookAhead(player) {
+    if (!player.walking) {
+      return { x: 0, y: 0 };
+    }
+
+    const lookAhead = tileSize * 0.38;
+    if (player.dir === "left") return { x: -lookAhead, y: 0 };
+    if (player.dir === "right") return { x: lookAhead, y: 0 };
+    if (player.dir === "up") return { x: 0, y: -lookAhead };
+    return { x: 0, y: lookAhead };
+  }
+
   function updatePlayerMovement({
     player,
     currentMap,
@@ -160,7 +180,7 @@ export function createMovementSystem({
     }
   }
 
-  function updateCamera({ cam, player, currentMapW, currentMapH, canvas }) {
+  function updateCamera({ cam, player, currentMapW, currentMapH, canvas, gameState }) {
     const worldW = currentMapW * tileSize;
     const worldH = currentMapH * tileSize;
     const visibleW = canvas.width / cameraZoom;
@@ -168,16 +188,40 @@ export function createMovementSystem({
     const halfVisibleW = visibleW / 2;
     const halfVisibleH = visibleH / 2;
 
-    const cx = player.x - halfVisibleW;
-    const cy = player.y - halfVisibleH;
-
     const minX = Math.min(0, worldW - visibleW);
     const maxX = Math.max(0, worldW - visibleW);
     const minY = Math.min(0, worldH - visibleH);
     const maxY = Math.max(0, worldH - visibleH);
 
-    cam.x = Math.max(minX, Math.min(cx, maxX));
-    cam.y = Math.max(minY, Math.min(cy, maxY));
+    const lookAhead = getCameraLookAhead(player);
+    const targetX = clamp(player.x + lookAhead.x - halfVisibleW, minX, maxX);
+    const targetY = clamp(player.y + lookAhead.y - halfVisibleH, minY, maxY);
+
+    if (!cam.initialized) {
+      cam.x = targetX;
+      cam.y = targetY;
+      cam.initialized = true;
+      return;
+    }
+
+    const snapDistance = tileSize * 8;
+    if (Math.abs(targetX - cam.x) > snapDistance || Math.abs(targetY - cam.y) > snapDistance) {
+      cam.x = targetX;
+      cam.y = targetY;
+      return;
+    }
+
+    const smoothing = gameState === GAME_STATES.TRANSITION
+      ? 0.32
+      : player.walking
+        ? 0.18
+        : 0.12;
+
+    cam.x = clamp(lerp(cam.x, targetX, smoothing), minX, maxX);
+    cam.y = clamp(lerp(cam.y, targetY, smoothing), minY, maxY);
+
+    if (Math.abs(cam.x - targetX) < 0.05) cam.x = targetX;
+    if (Math.abs(cam.y - targetY) < 0.05) cam.y = targetY;
   }
 
   return {
