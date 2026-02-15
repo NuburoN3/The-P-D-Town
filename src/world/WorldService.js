@@ -5,9 +5,19 @@
 import { TILE_TYPES, AREA_KINDS } from "../core/constants.js";
 import { GAME_CONTENT } from "./content.js";
 import { assertValidGameContent } from "./validateContent.js";
+import { BUILDING_TYPES } from "./buildingRenderers.js";
+import { isFountainSolidTile, isFountainWaterTile as isFountainWaterTileInBuilding } from "./fountainGeometry.js";
 
 function keyForTile(x, y) {
   return `${x},${y}`;
+}
+
+function resolveBuildingTileType(building, tileX, tileY) {
+  if (building.type === BUILDING_TYPES.FOUNTAIN) {
+    return isFountainSolidTile(building, tileX, tileY) ? TILE_TYPES.WALL : TILE_TYPES.PATH;
+  }
+
+  return TILE_TYPES.WALL;
 }
 
 export class WorldService {
@@ -62,7 +72,7 @@ export class WorldService {
           for (const building of area.buildings) {
             for (let y = building.y; y < building.y + building.height; y++) {
               for (let x = building.x; x < building.x + building.width; x++) {
-                area.map[y][x] = TILE_TYPES.WALL;
+                area.map[y][x] = resolveBuildingTileType(building, x, y);
               }
             }
           }
@@ -191,6 +201,12 @@ export class WorldService {
     }
 
     return null;
+  }
+
+  isFountainWaterTile(townId, areaId, tileX, tileY) {
+    const building = this.getBuilding(townId, areaId, tileX, tileY);
+    if (!building || building.type !== BUILDING_TYPES.FOUNTAIN) return false;
+    return isFountainWaterTileInBuilding(building, tileX, tileY);
   }
 
   createNPCsForTown(townId) {

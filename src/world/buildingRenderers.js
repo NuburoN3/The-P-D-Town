@@ -2,6 +2,8 @@
 // BUILDING RENDERERS - Isolated building visuals by type
 // ============================================================================
 
+import { classifyFountainTile, FOUNTAIN_TILE_KIND } from "./fountainGeometry.js";
+
 export const BUILDING_TYPES = {
   DOJO: "DOJO",
   HOUSE: "HOUSE",
@@ -275,33 +277,23 @@ export function initializeBuildingRenderers(ctx, tileSize) {
         const waterMid = "#49a3ca";
         const waterLight = "#8fd8f0";
 
-        const onOuterRing = isTopRow || isBottomRow || isLeftCol || isRightCol;
-        const onInnerBasinEdge =
-          localX === 1 ||
-          localX === building.width - 2 ||
-          localY === 1 ||
-          localY === building.height - 2;
-        const onCenterPlinth =
-          localX >= Math.floor(building.width / 2) - 1 &&
-          localX <= Math.floor(building.width / 2) + 1 &&
-          localY >= Math.floor(building.height / 2) - 1 &&
-          localY <= Math.floor(building.height / 2) + 1;
+        const tileKind = classifyFountainTile(building, tileX, tileY);
 
-        if (onOuterRing) {
+        if (tileKind === FOUNTAIN_TILE_KIND.OUTER_RING) {
           ctx.fillStyle = stoneDark;
           ctx.fillRect(x, y, tileSize, tileSize);
           ctx.fillStyle = stoneLight;
           ctx.fillRect(x + 2, y + 2, tileSize - 4, 2);
           ctx.fillStyle = "rgba(0,0,0,0.18)";
           ctx.fillRect(x + 2, y + tileSize - 4, tileSize - 4, 2);
-        } else if (onCenterPlinth) {
+        } else if (tileKind === FOUNTAIN_TILE_KIND.CENTER_PLINTH) {
           ctx.fillStyle = stoneMid;
           ctx.fillRect(x, y, tileSize, tileSize);
           ctx.fillStyle = stoneLight;
           ctx.fillRect(x + 4, y + 4, tileSize - 8, tileSize - 8);
           ctx.fillStyle = "rgba(0,0,0,0.2)";
           ctx.fillRect(x + 4, y + tileSize - 8, tileSize - 8, 2);
-        } else if (onInnerBasinEdge) {
+        } else if (tileKind === FOUNTAIN_TILE_KIND.INNER_BASIN_EDGE) {
           ctx.fillStyle = stoneMid;
           ctx.fillRect(x, y, tileSize, tileSize);
           ctx.fillStyle = "rgba(255,255,255,0.2)";
