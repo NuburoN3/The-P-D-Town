@@ -1,5 +1,26 @@
 import { AREA_KINDS, GAME_STATES } from "../core/constants.js";
 
+const FONT_12 = "600 12px 'Trebuchet MS', 'Verdana', sans-serif";
+const FONT_16 = "600 16px 'Trebuchet MS', 'Verdana', sans-serif";
+const FONT_20 = "600 20px 'Trebuchet MS', 'Verdana', sans-serif";
+const FONT_22 = "600 22px 'Trebuchet MS', 'Verdana', sans-serif";
+const FONT_28 = "700 28px 'Trebuchet MS', 'Verdana', sans-serif";
+
+function drawEntityShadow(ctx, x, y, width, height, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(
+    Math.round(x + width / 2),
+    Math.round(y + height - 3),
+    Math.max(5, Math.round(width * 0.24)),
+    Math.max(2, Math.round(height * 0.11)),
+    0,
+    0,
+    Math.PI * 2
+  );
+  ctx.fill();
+}
+
 function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, spriteFrameHeight, spriteFramesPerRow) {
   const { player, cam } = state;
   if (!player.sprite || !player.sprite.width || !player.sprite.height) return;
@@ -10,6 +31,8 @@ function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, 
   const drawHeight = spriteFrameHeight * scale;
   const drawX = Math.round(player.x - cam.x - (drawWidth - tileSize) / 2);
   const drawY = Math.round(player.y - cam.y - (drawHeight - tileSize));
+
+  drawEntityShadow(ctx, drawX, drawY, drawWidth, drawHeight, "rgba(0,0,0,0.22)");
 
   if (player.isTraining) {
     const handSprite = getHandstandSprite() || player.sprite;
@@ -110,6 +133,7 @@ function drawNPCs(ctx, state, canvas, tileSize, colors) {
           drawY = Math.round(npc.y - cam.y - (drawHeight - tileSize));
         }
 
+        drawEntityShadow(ctx, drawX, drawY, drawWidth, drawHeight, colors.GROUND_SHADOW);
         drawNPCSprite(ctx, npc, drawX, drawY, drawWidth, drawHeight, colors);
       } else {
         drawNPCPlaceholder(ctx, nx, ny, colors);
@@ -163,7 +187,7 @@ function drawTrainingPopup(ctx, state, canvas, ui, colors, tileSize) {
   ctx.strokeRect(boxX, boxY, boxW, boxH);
 
   ctx.fillStyle = colors.TEXT;
-  ctx.font = "12px monospace";
+  ctx.font = FONT_12;
   ctx.fillText(`Lv. ${playerStats.disciplineLevel}`, boxX + 8, boxY + 13);
   ctx.fillText(`+${trainingPopup.xpGained} XP`, boxX + 78, boxY + 13);
 
@@ -195,7 +219,7 @@ function drawTextbox(ctx, state, canvas, ui, colors, dialogue) {
   ctx.strokeRect(20, boxY, canvas.width - 40, boxHeight);
 
   ctx.fillStyle = colors.TEXT;
-  ctx.font = "20px monospace";
+  ctx.font = FONT_20;
 
   const textStartX = 40;
   const lineSpacing = ui.LINE_SPACING;
@@ -226,7 +250,7 @@ function drawTextbox(ctx, state, canvas, ui, colors, dialogue) {
 
   if (dialogue.choiceState.active) {
     const optPadding = 10;
-    ctx.font = "20px monospace";
+    ctx.font = FONT_20;
     let maxW = 0;
     for (const opt of dialogue.choiceState.options) {
       maxW = Math.max(maxW, ctx.measureText(opt).width);
@@ -312,11 +336,11 @@ function drawInventoryOverlay(ctx, state, canvas, ui, colors) {
   ctx.strokeRect(boxX, boxY, boxW, boxH);
 
   ctx.fillStyle = colors.TEXT;
-  ctx.font = "28px monospace";
+  ctx.font = FONT_28;
   ctx.fillText("Inventory", boxX + 24, boxY + 42);
 
   const entries = Object.entries(playerInventory);
-  ctx.font = "20px monospace";
+  ctx.font = FONT_20;
 
   let row = 0;
   if (entries.length === 0) {
@@ -330,10 +354,10 @@ function drawInventoryOverlay(ctx, state, canvas, ui, colors) {
   }
 
   const statsY = boxY + 90 + row * 28 + 18;
-  ctx.font = "22px monospace";
+  ctx.font = FONT_22;
   ctx.fillText("Stats", boxX + 24, statsY);
 
-  ctx.font = "20px monospace";
+  ctx.font = FONT_20;
   const levelY = statsY + 30;
   ctx.fillText(`Discipline Lv. ${playerStats.disciplineLevel}`, boxX + 24, levelY);
 
@@ -354,7 +378,7 @@ function drawInventoryOverlay(ctx, state, canvas, ui, colors) {
   ctx.strokeRect(barX, barY, barW, barH);
 
   ctx.fillStyle = colors.TEXT;
-  ctx.font = "16px monospace";
+  ctx.font = FONT_16;
   const progressText = `${playerStats.disciplineXP} / ${playerStats.disciplineXPNeeded}`;
   const textWidth = ctx.measureText(progressText).width;
   ctx.fillText(progressText, barX + (barW - textWidth) / 2, barY + 15);
@@ -372,7 +396,7 @@ function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
 
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.font = "18px monospace";
+    ctx.font = FONT_16;
 
     const padding = 8;
     const text = itemAlert.text;
@@ -399,7 +423,7 @@ function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
 
     ctx.save();
     ctx.globalAlpha = alpha * 0.95;
-    ctx.font = "16px monospace";
+    ctx.font = FONT_16;
 
     const hintText = "New item received - press I to view your inventory";
     const padding = 8;
@@ -419,6 +443,35 @@ function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
     ctx.fillText(hintText, boxX + padding, boxY + 19);
     ctx.restore();
   }
+}
+
+function drawAtmosphere(ctx, canvas, colors, state) {
+  if (state.currentAreaKind !== AREA_KINDS.OVERWORLD) return;
+
+  const topLight = ctx.createLinearGradient(0, 0, 0, canvas.height * 0.65);
+  topLight.addColorStop(0, colors.AMBIENT_TOP);
+  topLight.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = topLight;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const bottomTint = ctx.createLinearGradient(0, canvas.height * 0.35, 0, canvas.height);
+  bottomTint.addColorStop(0, "rgba(0,0,0,0)");
+  bottomTint.addColorStop(1, colors.AMBIENT_BOTTOM);
+  ctx.fillStyle = bottomTint;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const vignette = ctx.createRadialGradient(
+    canvas.width * 0.5,
+    canvas.height * 0.38,
+    canvas.height * 0.12,
+    canvas.width * 0.5,
+    canvas.height * 0.5,
+    canvas.width * 0.62
+  );
+  vignette.addColorStop(0, "rgba(0,0,0,0)");
+  vignette.addColorStop(1, colors.VIGNETTE);
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
 export function renderGameFrame({
@@ -467,6 +520,7 @@ export function renderGameFrame({
   ctx.restore();
 
   drawItemNotifications(ctx, state, cameraZoom, tileSize, colors);
+  drawAtmosphere(ctx, canvas, colors, state);
   drawInventoryOverlay(ctx, state, canvas, ui, colors);
   drawTextbox(ctx, state, canvas, ui, colors, dialogue);
 }

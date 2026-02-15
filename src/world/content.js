@@ -20,18 +20,39 @@ function generateHanamiOverworldBase(width, height) {
     }
   }
 
-  const pathX = 15;
+  // Main north/south road
+  const roadCenterX = 15;
   for (let y = 2; y < height - 2; y++) {
-    map[y][pathX] = TILE_TYPES.PATH;
+    map[y][roadCenterX] = TILE_TYPES.PATH;
+    if (y > 7 && y < 24) {
+      map[y][roadCenterX - 1] = TILE_TYPES.PATH;
+    }
   }
 
-  for (let x = 8; x <= 22; x++) {
+  // Dojo-facing plaza
+  for (let x = 9; x <= 21; x++) {
     map[15][x] = TILE_TYPES.PATH;
+    if (x > 10 && x < 20) {
+      map[16][x] = TILE_TYPES.PATH;
+    }
+  }
+
+  // Side lanes to make the town feel lived-in
+  for (let x = 7; x <= 13; x++) {
+    map[22][x] = TILE_TYPES.PATH;
+  }
+  for (let x = 17; x <= 23; x++) {
+    map[22][x] = TILE_TYPES.PATH;
+  }
+  for (let y = 20; y <= 24; y++) {
+    map[y][7] = TILE_TYPES.PATH;
+    map[y][23] = TILE_TYPES.PATH;
   }
 
   const treeClusters = [
-    [4, 4], [5, 4], [4, 5], [24, 4], [25, 4], [24, 5],
-    [5, 23], [4, 24], [24, 23], [25, 24], [22, 20], [8, 20]
+    [4, 4], [5, 4], [6, 4], [4, 5], [5, 5], [24, 4], [25, 4], [24, 5],
+    [5, 23], [4, 24], [24, 23], [25, 24], [22, 20], [8, 20], [3, 18], [26, 18],
+    [3, 12], [26, 12]
   ];
 
   for (const [x, y] of treeClusters) {
@@ -41,7 +62,9 @@ function generateHanamiOverworldBase(width, height) {
   }
 
   const cherryBlossomPositions = [
-    [15, 5], [14, 6], [15, 6], [16, 6], [14, 7], [15, 7], [16, 7]
+    [15, 5], [14, 5], [16, 5], [13, 6], [14, 6], [15, 6], [16, 6], [17, 6],
+    [13, 7], [14, 7], [15, 7], [16, 7], [17, 7], [14, 8], [15, 8], [16, 8],
+    [9, 24], [10, 24], [20, 24], [21, 24]
   ];
 
   for (const [x, y] of cherryBlossomPositions) {

@@ -7,15 +7,30 @@
   <style>
     body {
       margin: 0;
-      background: #0f1720;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
       overflow: hidden;
-   }
- 
+      background:
+        radial-gradient(1200px 700px at 15% 10%, rgba(255, 244, 209, 0.28), transparent 60%),
+        radial-gradient(900px 500px at 80% 90%, rgba(37, 79, 54, 0.35), transparent 55%),
+        linear-gradient(160deg, #1f2f22 0%, #13251c 44%, #0f1716 100%);
+      font-family: "Trebuchet MS", "Verdana", sans-serif;
+    }
+
     canvas {
       display: block;
-      margin: auto;
-image-rendering: pixelated;
+      image-rendering: pixelated;
       background: #a7d9a8;
+      border: 5px solid #213c2a;
+      border-radius: 8px;
+      box-shadow:
+        0 0 0 2px rgba(255, 249, 220, 0.35),
+        0 20px 50px rgba(0, 0, 0, 0.55),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+      width: min(100vw - 24px, 1280px);
+      height: auto;
+      max-height: calc(100vh - 24px);
     }
   </style>
 </head>

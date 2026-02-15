@@ -191,6 +191,12 @@ addEventListener("keydown", (e) => {
 });
 
 function drawTile(type, x, y, tileX, tileY) {
+  const getTileAt = (tx, ty) => {
+    if (ty < 0 || ty >= currentMapH || tx < 0 || tx >= currentMapW) return null;
+    const row = currentMap[ty];
+    return row ? row[tx] : null;
+  };
+
   drawTileSystem(
     ctx,
     currentTownId,
@@ -202,7 +208,8 @@ function drawTile(type, x, y, tileX, tileY) {
     y,
     tileX,
     tileY,
-    (townId, areaId, tx, ty) => worldService.getBuilding(townId, areaId, tx, ty)
+    (townId, areaId, tx, ty) => worldService.getBuilding(townId, areaId, tx, ty),
+    getTileAt
   );
 }
 

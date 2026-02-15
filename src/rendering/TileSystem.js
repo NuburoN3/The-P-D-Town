@@ -1,76 +1,297 @@
 // ============================================================================
-// TILE SYSTEM - Strategy-based tile rendering
+// TILE SYSTEM - Stylized tile rendering with neighbor-aware transitions
 // ============================================================================
 
 import { TILE_TYPES, TILE, COLORS, GAME_STATES } from "../core/constants.js";
 import { renderBuildingTile } from "../WorldManager.js";
 
-function drawGrassTile(ctx, x, y, tileX, tileY) {
-  // Almost flat grass: base fill plus a few slightly darker speckles
-  ctx.fillStyle = COLORS.GRASS;
+function hash2(x, y, seed = 0) {
+  const n = x * 374761393 + y * 668265263 + seed * 982451653;
+  return (n ^ (n >> 13)) >>> 0;
+}
+
+function sampleTile(deps, x, y) {
+  if (!deps.getTileAt) return null;
+  return deps.getTileAt(x, y);
+}
+
+function isShadowNeighborTile(tileType) {
+  return (
+    tileType === TILE_TYPES.TREE ||
+    tileType === TILE_TYPES.WALL ||
+    tileType === TILE_TYPES.CHERRY_BLOSSOM
+  );
+}
+
+function isGrassFamilyTile(tileType) {
+  return (
+    tileType === TILE_TYPES.GRASS ||
+    tileType === TILE_TYPES.CHERRY_BLOSSOM ||
+    tileType === TILE_TYPES.TREE
+  );
+}
+
+function drawGrassTile(ctx, deps) {
+  const { x, y, tileX, tileY } = deps;
+  const n = hash2(tileX, tileY, 3);
+
+  ctx.fillStyle = (tileX + tileY) % 2 === 0 ? COLORS.GRASS : COLORS.GRASS_MID;
   ctx.fillRect(x, y, TILE, TILE);
 
-  // Draw a couple of tiny vertical blade-like speckles so they read as grass
-  const blades = 2;
-  for (let i = 0; i < blades; i++) {
-    const sx = 2 + ((tileX * 13 + tileY * 7 + i * 11) % (TILE - 6));
-    const sy = 6 + ((tileX * 5 + tileY * 17 + i * 19) % (TILE - 10));
-    const h = 2 + ((tileX + tileY + i) % 2); // 2 or 3 px tall
-    const color = i % 2 === 0 ? COLORS.GRASS_SPECKLE : COLORS.GRASS_DARK;
-    ctx.fillStyle = color;
+  ctx.fillStyle = "rgba(255,255,255,0.09)";
+  for (let i = 0; i < 4; i++) {
+    const sx = 2 + ((n >> (i * 5)) % (TILE - 6));
+    const sy = 2 + ((n >> (i * 6 + 2)) % (TILE - 6));
+    ctx.fillRect(x + sx, y + sy, 1, 1);
+  }
+
+  for (let i = 0; i < 7; i++) {
+    const sx = 1 + ((n >> (i * 3 + 1)) % (TILE - 3));
+    const sy = 2 + ((n >> (i * 4 + 2)) % (TILE - 6));
+    const h = 2 + ((n >> (i * 5 + 4)) % 3);
+    ctx.fillStyle = i % 2 === 0 ? COLORS.GRASS_DARK : COLORS.GRASS_SPECKLE;
     ctx.fillRect(x + sx, y + sy, 1, h);
   }
 
-  // Very subtle bottom shadow to anchor tiles (minimal)
-  ctx.fillStyle = "rgba(0,0,0,0.04)";
-  ctx.fillRect(x, y + TILE - 3, TILE, 3);
+  const left = sampleTile(deps, tileX - 1, tileY);
+  const right = sampleTile(deps, tileX + 1, tileY);
+  const top = sampleTile(deps, tileX, tileY - 1);
+  const bottom = sampleTile(deps, tileX, tileY + 1);
+
+  ctx.fillStyle = "rgba(0,0,0,0.12)";
+  if (isShadowNeighborTile(left)) ctx.fillRect(x, y, 3, TILE);
+  if (isShadowNeighborTile(right)) ctx.fillRect(x + TILE - 3, y, 3, TILE);
+  if (isShadowNeighborTile(top)) ctx.fillRect(x, y, TILE, 3);
+  if (isShadowNeighborTile(bottom)) ctx.fillRect(x, y + TILE - 3, TILE, 3);
+
+  ctx.fillStyle = COLORS.GRASS_LIGHT;
+  if (left === TILE_TYPES.PATH) ctx.fillRect(x, y + 1, 2, TILE - 2);
+  if (right === TILE_TYPES.PATH) ctx.fillRect(x + TILE - 2, y + 1, 2, TILE - 2);
+  if (top === TILE_TYPES.PATH) ctx.fillRect(x + 1, y, TILE - 2, 2);
+  if (bottom === TILE_TYPES.PATH) ctx.fillRect(x + 1, y + TILE - 2, TILE - 2, 2);
+
+  if ((n & 31) === 9) {
+    ctx.fillStyle = "#e8f7b1";
+    ctx.fillRect(x + 11, y + 17, 1, 1);
+    ctx.fillRect(x + 12, y + 16, 1, 1);
+    ctx.fillRect(x + 13, y + 17, 1, 1);
+    ctx.fillRect(x + 12, y + 18, 1, 1);
+  }
+}
+
+function drawPathTile(ctx, deps) {
+  const { x, y, tileX, tileY } = deps;
+  const n = hash2(tileX, tileY, 19);
+
+  ctx.fillStyle = COLORS.PATH;
+  ctx.fillRect(x, y, TILE, TILE);
+
+  for (let i = 0; i < 10; i++) {
+    const sx = 2 + ((n >> (i * 2 + 1)) % (TILE - 4));
+    const sy = 2 + ((n >> (i * 3 + 2)) % (TILE - 4));
+    ctx.fillStyle = i % 3 === 0 ? COLORS.PATH_DARK : COLORS.PATH_LIGHT;
+    ctx.fillRect(x + sx, y + sy, 1, 1);
+  }
+
+  const same = (tx, ty) => {
+    const t = sampleTile(deps, tx, ty);
+    return t === TILE_TYPES.PATH;
+  };
+
+  const connectTop = same(tileX, tileY - 1);
+  const connectBottom = same(tileX, tileY + 1);
+  const connectLeft = same(tileX - 1, tileY);
+  const connectRight = same(tileX + 1, tileY);
+
+  ctx.fillStyle = COLORS.PATH_EDGE;
+  if (!connectTop) ctx.fillRect(x, y, TILE, 3);
+  if (!connectBottom) ctx.fillRect(x, y + TILE - 3, TILE, 3);
+  if (!connectLeft) ctx.fillRect(x, y, 3, TILE);
+  if (!connectRight) ctx.fillRect(x + TILE - 3, y, 3, TILE);
+
+  ctx.fillStyle = COLORS.PATH_LIGHT;
+  if (!connectTop) ctx.fillRect(x + 2, y + 1, TILE - 4, 1);
+  if (!connectLeft) ctx.fillRect(x + 1, y + 2, 1, TILE - 4);
+
+  const grassNeighbor = (tx, ty) => isGrassFamilyTile(sampleTile(deps, tx, ty));
+
+  ctx.fillStyle = COLORS.GRASS_DARK;
+  if (!connectTop && grassNeighbor(tileX, tileY - 1)) {
+    for (let px = 2; px < TILE - 2; px += 3) {
+      ctx.fillRect(x + px, y + 1, 1, 1);
+    }
+  }
+  if (!connectBottom && grassNeighbor(tileX, tileY + 1)) {
+    for (let px = 1; px < TILE - 2; px += 4) {
+      ctx.fillRect(x + px, y + TILE - 2, 1, 1);
+    }
+  }
+}
+
+function drawTreeTile(ctx, deps) {
+  const { x, y, tileX, tileY } = deps;
+  const n = hash2(tileX, tileY, 47);
+
+  drawGrassTile(ctx, deps);
+
+  ctx.fillStyle = "rgba(0,0,0,0.2)";
+  ctx.beginPath();
+  ctx.ellipse(x + 16, y + 25, 10, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = COLORS.TREE_TRUNK_DARK;
+  ctx.fillRect(x + 11, y + 18, 10, 14);
+  ctx.fillStyle = COLORS.TREE_TRUNK;
+  ctx.fillRect(x + 12, y + 18, 8, 13);
+  ctx.fillStyle = "rgba(255,255,255,0.14)";
+  ctx.fillRect(x + 13, y + 19, 2, 10);
+
+  ctx.fillStyle = COLORS.TREE_DEEP;
+  ctx.beginPath();
+  ctx.arc(x + 16, y + 13, 12, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = COLORS.TREE_DARK;
+  ctx.beginPath();
+  ctx.arc(x + 9, y + 12, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 23, y + 12, 8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = COLORS.TREE_MID;
+  ctx.beginPath();
+  ctx.arc(x + 16, y + 8, 9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 10, y + 7, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 22, y + 7, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = COLORS.TREE_LIGHT;
+  ctx.beginPath();
+  ctx.arc(x + 13, y + 6, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 20, y + 5, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  for (let i = 0; i < 6; i++) {
+    const sx = 7 + ((n >> (i * 3 + 2)) % 18);
+    const sy = 3 + ((n >> (i * 4 + 1)) % 10);
+    ctx.fillStyle = i % 2 === 0 ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.12)";
+    ctx.fillRect(x + sx, y + sy, 1, 1);
+  }
+}
+
+function drawCherryBlossomTile(ctx, deps) {
+  const { x, y, tileX, tileY } = deps;
+  const n = hash2(tileX, tileY, 83);
+
+  drawGrassTile(ctx, deps);
+
+  ctx.fillStyle = "rgba(0,0,0,0.16)";
+  ctx.beginPath();
+  ctx.ellipse(x + 16, y + 25, 9, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = COLORS.TREE_TRUNK_DARK;
+  ctx.fillRect(x + 11, y + 16, 10, 16);
+  ctx.fillStyle = COLORS.TREE_TRUNK;
+  ctx.fillRect(x + 12, y + 16, 8, 15);
+  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  ctx.fillRect(x + 14, y + 17, 1, 11);
+
+  ctx.fillStyle = COLORS.CHERRY_DARK;
+  ctx.beginPath();
+  ctx.arc(x + 16, y + 12, 11, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = COLORS.CHERRY_MID;
+  ctx.beginPath();
+  ctx.arc(x + 9, y + 11, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 23, y + 11, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 16, y + 7, 8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = COLORS.CHERRY_LIGHT;
+  for (let i = 0; i < 8; i++) {
+    const sx = 7 + ((n >> (i * 3 + 1)) % 18);
+    const sy = 2 + ((n >> (i * 4 + 2)) % 12);
+    ctx.fillRect(x + sx, y + sy, 2, 2);
+  }
+}
+
+function drawSignpostTile(ctx, deps) {
+  ctx.fillStyle = COLORS.SIGNPOST_WOOD;
+  ctx.fillRect(deps.x + 12, deps.y + 8, 8, 18);
+  ctx.fillStyle = "rgba(255,255,255,0.16)";
+  ctx.fillRect(deps.x + 13, deps.y + 9, 1, 16);
+
+  ctx.fillStyle = COLORS.SIGNPOST_SIGN;
+  ctx.fillRect(deps.x + 5, deps.y + 5, 22, 11);
+  ctx.strokeStyle = "#8a7f75";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(deps.x + 5.5, deps.y + 5.5, 21, 10);
+  ctx.fillStyle = "#78695a";
+  ctx.fillRect(deps.x + 9, deps.y + 9, 14, 1);
+  ctx.fillRect(deps.x + 9, deps.y + 12, 10, 1);
+}
+
+function drawDoorTile(ctx, deps) {
+  const isActiveDoor =
+    deps.gameState === GAME_STATES.ENTERING_DOOR &&
+    deps.tileX === deps.doorSequence.tx &&
+    deps.tileY === deps.doorSequence.ty;
+
+  ctx.fillStyle = isActiveDoor ? COLORS.DOOR_ACTIVE : COLORS.DOOR_INACTIVE;
+  ctx.fillRect(deps.x, deps.y, TILE, TILE);
+
+  ctx.fillStyle = isActiveDoor ? COLORS.DOOR_FRAME_ACTIVE : COLORS.DOOR_FRAME_INACTIVE;
+  ctx.fillRect(deps.x + 5, deps.y + 3, 22, 26);
+  ctx.fillStyle = "rgba(255,255,255,0.2)";
+  ctx.fillRect(deps.x + 6, deps.y + 4, 1, 24);
+
+  ctx.fillStyle = COLORS.DOOR_KNOB;
+  ctx.fillRect(deps.x + 19, deps.y + 15, 3, 3);
+}
+
+function drawInteriorFloorTile(ctx, deps) {
+  const alt = (deps.tileX + deps.tileY) % 2 === 0;
+  ctx.fillStyle = alt ? COLORS.INTERIOR_FLOOR_LIGHT : COLORS.INTERIOR_FLOOR_DARK;
+  ctx.fillRect(deps.x, deps.y, TILE, TILE);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(deps.x + 1.5, deps.y + 1.5, TILE - 3, TILE - 3);
+
+  ctx.strokeStyle = COLORS.INTERIOR_FLOOR_TRIM;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(deps.x + 4.5, deps.y + 4.5, TILE - 9, TILE - 9);
+}
+
+function drawTrainingFloorTile(ctx, deps) {
+  ctx.fillStyle = COLORS.TRAINING_FLOOR_DARK;
+  ctx.fillRect(deps.x, deps.y, TILE, TILE);
+
+  ctx.fillStyle = COLORS.TRAINING_FLOOR_LIGHT;
+  ctx.fillRect(deps.x + 2, deps.y + 2, TILE - 4, TILE - 4);
+  ctx.fillStyle = COLORS.TRAINING_FLOOR_DARK;
+  ctx.fillRect(deps.x + 7, deps.y + 7, TILE - 14, TILE - 14);
+  ctx.fillStyle = "rgba(255,255,255,0.2)";
+  ctx.fillRect(deps.x + 12, deps.y + 12, TILE - 24, TILE - 24);
 }
 
 const tileRenderers = {
-  [TILE_TYPES.GRASS]: (ctx, deps) => {
-    drawGrassTile(ctx, deps.x, deps.y, deps.tileX, deps.tileY);
-  },
-
-  [TILE_TYPES.PATH]: (ctx, deps) => {
-    ctx.fillStyle = COLORS.PATH;
-    ctx.fillRect(deps.x, deps.y, TILE, TILE);
-  },
-
-  [TILE_TYPES.TREE]: (ctx, deps) => {
-    const { x, y, tileX, tileY } = deps;
-    drawGrassTile(ctx, x, y, tileX, tileY);
-
-    ctx.fillStyle = "#5d4037";
-    ctx.fillRect(x + 12, y + 18, 8, 14);
-    ctx.fillStyle = "#3e2723";
-    ctx.fillRect(x + 12, y + 22, 8, 2);
-
-    ctx.fillStyle = COLORS.TREE_DARK;
-    ctx.beginPath();
-    ctx.arc(x + 16, y + 16, 11, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = COLORS.TREE_LIGHT;
-    ctx.beginPath();
-    ctx.arc(x + 16, y + 10, 10, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = "#4caf50";
-    ctx.beginPath();
-    ctx.arc(x + 16, y + 5, 8, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = "rgba(76,175,80,0.6)";
-    ctx.beginPath();
-    ctx.arc(x + 14, y + 8, 3, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = "rgba(46,125,50,0.6)";
-    ctx.beginPath();
-    ctx.arc(x + 18, y + 14, 4, 0, Math.PI * 2);
-    ctx.fill();
-  },
-
+  [TILE_TYPES.GRASS]: (ctx, deps) => drawGrassTile(ctx, deps),
+  [TILE_TYPES.PATH]: (ctx, deps) => drawPathTile(ctx, deps),
+  [TILE_TYPES.TREE]: (ctx, deps) => drawTreeTile(ctx, deps),
   [TILE_TYPES.WALL]: (ctx, deps) => {
     const building = deps.getBuilding
       ? deps.getBuilding(deps.currentTownId, deps.currentAreaId, deps.tileX, deps.tileY)
@@ -82,102 +303,30 @@ const tileRenderers = {
 
     ctx.fillStyle = COLORS.WALL;
     ctx.fillRect(deps.x, deps.y, TILE, TILE);
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    ctx.fillRect(deps.x + 2, deps.y + 2, TILE - 4, 1);
   },
-
-  [TILE_TYPES.SIGNPOST]: (ctx, deps) => {
-    ctx.fillStyle = COLORS.SIGNPOST_WOOD;
-    ctx.fillRect(deps.x + 12, deps.y + 8, 8, 18);
-    ctx.fillStyle = COLORS.SIGNPOST_SIGN;
-    ctx.fillRect(deps.x + 6, deps.y + 6, 20, 10);
-  },
-
-  [TILE_TYPES.DOOR]: (ctx, deps) => {
-    const isActiveDoor =
-      deps.gameState === GAME_STATES.ENTERING_DOOR &&
-      deps.tileX === deps.doorSequence.tx &&
-      deps.tileY === deps.doorSequence.ty;
-
-    ctx.fillStyle = isActiveDoor ? COLORS.DOOR_ACTIVE : COLORS.DOOR_INACTIVE;
-    ctx.fillRect(deps.x, deps.y, TILE, TILE);
-
-    ctx.fillStyle = isActiveDoor ? COLORS.DOOR_FRAME_ACTIVE : COLORS.DOOR_FRAME_INACTIVE;
-    ctx.fillRect(deps.x + 6, deps.y + 4, 20, 24);
-
-    ctx.fillStyle = COLORS.DOOR_KNOB;
-    ctx.fillRect(deps.x + 18, deps.y + 14, 3, 3);
-  },
-
-  [TILE_TYPES.INTERIOR_FLOOR]: (ctx, deps) => {
-    ctx.fillStyle = COLORS.INTERIOR_FLOOR_LIGHT;
-    ctx.fillRect(deps.x, deps.y, TILE, TILE);
-
-    ctx.strokeStyle = COLORS.INTERIOR_FLOOR_DARK;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(deps.x, deps.y + TILE / 2);
-    ctx.lineTo(deps.x + TILE, deps.y + TILE / 2);
-    ctx.stroke();
-
-    ctx.strokeStyle = "rgba(161, 136, 127, 0.4)";
-    ctx.lineWidth = 0.5;
-    for (let i = 0; i < TILE; i += 4) {
-      ctx.beginPath();
-      ctx.moveTo(deps.x + i, deps.y);
-      ctx.lineTo(deps.x + i, deps.y + TILE);
-      ctx.stroke();
-    }
-
-    ctx.fillStyle = "rgba(161, 136, 127, 0.2)";
-    ctx.fillRect(deps.x, deps.y, 4, 4);
-    ctx.fillRect(deps.x + TILE - 4, deps.y, 4, 4);
-    ctx.fillRect(deps.x, deps.y + TILE - 4, 4, 4);
-    ctx.fillRect(deps.x + TILE - 4, deps.y + TILE - 4, 4, 4);
-  },
-
-  [TILE_TYPES.CHERRY_BLOSSOM]: (ctx, deps) => {
-    drawGrassTile(ctx, deps.x, deps.y, deps.tileX, deps.tileY);
-
-    ctx.fillStyle = "#8b6f47";
-    ctx.fillRect(deps.x + 11, deps.y + 16, 10, 16);
-    ctx.fillStyle = "#5d4037";
-    ctx.fillRect(deps.x + 11, deps.y + 20, 10, 2);
-
-    ctx.fillStyle = "#c24d6d";
-    ctx.beginPath();
-    ctx.arc(deps.x + 16, deps.y + 14, 12, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = "#d8749c";
-    ctx.beginPath();
-    ctx.arc(deps.x + 16, deps.y + 8, 11, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = "#e8a9c9";
-    ctx.beginPath();
-    ctx.arc(deps.x + 16, deps.y + 3, 9, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = "rgba(255, 200, 220, 0.8)";
-    const petalPositions = [
-      [10, 8], [22, 8], [16, 3], [16, 20], [12, 14], [20, 14]
-    ];
-
-    for (const [px, py] of petalPositions) {
-      ctx.beginPath();
-      ctx.arc(deps.x + px, deps.y + py, 3, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  },
-
-  [TILE_TYPES.TRAINING_FLOOR]: (ctx, deps) => {
-    ctx.fillStyle = COLORS.TRAINING_FLOOR_LIGHT;
-    ctx.fillRect(deps.x, deps.y, TILE, TILE);
-    ctx.fillStyle = COLORS.TRAINING_FLOOR_DARK;
-    ctx.fillRect(deps.x + 2, deps.y + 2, TILE - 4, TILE - 4);
-  }
+  [TILE_TYPES.SIGNPOST]: (ctx, deps) => drawSignpostTile(ctx, deps),
+  [TILE_TYPES.DOOR]: (ctx, deps) => drawDoorTile(ctx, deps),
+  [TILE_TYPES.INTERIOR_FLOOR]: (ctx, deps) => drawInteriorFloorTile(ctx, deps),
+  [TILE_TYPES.TRAINING_FLOOR]: (ctx, deps) => drawTrainingFloorTile(ctx, deps),
+  [TILE_TYPES.CHERRY_BLOSSOM]: (ctx, deps) => drawCherryBlossomTile(ctx, deps)
 };
 
-export function drawTile(ctx, currentTownId, currentAreaId, gameState, doorSequence, type, x, y, tileX, tileY, getBuilding) {
+export function drawTile(
+  ctx,
+  currentTownId,
+  currentAreaId,
+  gameState,
+  doorSequence,
+  type,
+  x,
+  y,
+  tileX,
+  tileY,
+  getBuilding,
+  getTileAt
+) {
   const renderer = tileRenderers[type];
   if (!renderer) return;
 
@@ -191,6 +340,7 @@ export function drawTile(ctx, currentTownId, currentAreaId, gameState, doorSeque
     y,
     tileX,
     tileY,
-    getBuilding
+    getBuilding,
+    getTileAt
   });
 }
