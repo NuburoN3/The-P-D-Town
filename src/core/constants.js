@@ -45,7 +45,9 @@ export const TILE_TYPES = {
   BAR_COUNTER: 10,
   BAR_STOOL: 11,
   BAR_TABLE: 12,
-  BAR_DECOR: 13
+  BAR_DECOR: 13,
+  PORCH: 14,
+  DOJO_POST: 15
 };
 
 // Colors for rendering
@@ -88,6 +90,12 @@ export const COLORS = {
   BAR_TABLE_TOP: "#8c5c38",
   BAR_TABLE_LEG: "#4f311f",
   BAR_DECOR: "#d6ab58",
+  PORCH_WOOD_DARK: "#7a583a",
+  PORCH_WOOD_MID: "#9e7750",
+  PORCH_WOOD_LIGHT: "#c39a70",
+  DOJO_POST_WOOD_DARK: "#4c2e1f",
+  DOJO_POST_WOOD_MID: "#714631",
+  DOJO_POST_ROPE: "#dbc48a",
   TRAINING_FLOOR_LIGHT: "#8d7964",
   TRAINING_FLOOR_DARK: "#6d5b4c",
   CHERRY_LIGHT: "#f4bfd5",

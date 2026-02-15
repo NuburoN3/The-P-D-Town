@@ -835,6 +835,36 @@ function drawAtmosphere(ctx, canvas, colors, state) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
+function drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoom, drawTile) {
+  if (typeof state.getBuildingAtWorldTile !== "function") return;
+
+  const visibleW = canvas.width / cameraZoom;
+  const visibleH = canvas.height / cameraZoom;
+
+  const startX = Math.max(0, Math.floor(state.cam.x / tileSize) - 1);
+  const endX = Math.min(state.currentMapW - 1, Math.ceil((state.cam.x + visibleW) / tileSize) + 1);
+  const startY = Math.max(0, Math.floor(state.cam.y / tileSize) - 1);
+  const endY = Math.min(state.currentMapH - 1, Math.ceil((state.cam.y + visibleH) / tileSize) + 1);
+
+  for (let y = startY; y <= endY; y++) {
+    const row = state.currentMap[y];
+    if (!row) continue;
+
+    for (let x = startX; x <= endX; x++) {
+      const tileType = row[x];
+      if (typeof tileType !== "number") continue;
+
+      const building = state.getBuildingAtWorldTile(x, y);
+      // Redraw dojo top row after entities so roof/eaves occlude player behind it.
+      if (!building || building.type !== "DOJO" || y !== building.y) continue;
+
+      const drawX = x * tileSize - state.cam.x;
+      const drawY = y * tileSize - state.cam.y;
+      drawTile(tileType, drawX, drawY, x, y);
+    }
+  }
+}
+
 export function renderGameFrame({
   ctx,
   canvas,
@@ -877,6 +907,7 @@ export function renderGameFrame({
 
   drawNPCs(ctx, state, canvas, tileSize, colors);
   drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, spriteFrameHeight, spriteFramesPerRow);
+  drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoom, drawTile);
   drawTrainingPopup(ctx, state, canvas, ui, colors, tileSize);
   drawDoorTransition(ctx, state, canvas, tileSize);
   ctx.restore();

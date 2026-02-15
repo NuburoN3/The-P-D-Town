@@ -16,186 +16,137 @@ let buildingRenderers = null;
 export function initializeBuildingRenderers(ctx, tileSize) {
   buildingRenderers = {
     DOJO: {
-      renderTile(x, y, tileX, tileY, isTopRow, isBottomRow, isLeftCol, isRightCol) {
-        const roofDarkRed = "#8b2020";
-        const roofBrightRed = "#d32f2f";
-        const roofHighlight = "#ff6b6b";
-        const woodDark = "#5d4037";
-        const woodMid = "#795548";
-        const wallLight = "#e8d5c4";
-        const shadowColor = "#3e2723";
-        const goldAccent = "#ffd700";
-        const goldDark = "#daa520";
-        const windowColor = "#87ceeb";
+      renderTile(x, y, tileX, tileY, isTopRow, isBottomRow, isLeftCol, isRightCol, building) {
+        const localX = tileX - building.x;
+        const center = Math.floor(building.width / 2);
+        const leftEntranceCol = Math.max(0, center - 1);
+        const rightEntranceCol = center;
+        const isEntranceColumn = localX === leftEntranceCol || localX === rightEntranceCol;
 
-        ctx.fillStyle = wallLight;
+        const roofEdge = "#521814";
+        const roofMid = "#7e2922";
+        const roofLight = "#b74a3a";
+        const roofShadow = "rgba(16,10,8,0.5)";
+        const wallWoodDark = "#4b311f";
+        const wallWoodMid = "#69452d";
+        const wallWoodLight = "#8a5f3f";
+        const trimGold = "#b58f53";
+        const signBg = "#3f291c";
+        const shojiPaper = "#e8dec4";
+
+        // Low, wide wooden wall body.
+        ctx.fillStyle = wallWoodDark;
         ctx.fillRect(x, y, tileSize, tileSize);
+        ctx.fillStyle = wallWoodMid;
+        ctx.fillRect(x + 1, y + 1, tileSize - 2, tileSize - 2);
 
-        ctx.fillStyle = "rgba(184, 149, 106, 0.4)";
-        ctx.fillRect(x, y + 20, tileSize, 12);
-
-        ctx.strokeStyle = "rgba(139, 69, 19, 0.15)";
-        ctx.lineWidth = 1;
-        for (let i = 0; i < tileSize; i += 4) {
-          ctx.beginPath();
-          ctx.moveTo(x, y + i);
-          ctx.lineTo(x + tileSize, y + i);
-          ctx.stroke();
+        // Horizontal beam pattern (no brick/plaster style).
+        for (let py = 4; py < tileSize - 3; py += 6) {
+          ctx.fillStyle = py % 12 === 4 ? wallWoodLight : wallWoodMid;
+          ctx.fillRect(x + 1, y + py, tileSize - 2, 1);
         }
 
+        // Temple roof drawn once: 2 tiles tall, 1 tile overhang on each side.
+        // Keep silhouette flatter so the dojo reads grounded and wide.
+        if (isTopRow && isLeftCol) {
+          const roofX = x - tileSize;
+          const roofTop = y - tileSize * 2;
+          const roofW = (building.width + 2) * tileSize;
+
+          // Lower roof mass reaches wall top so it doesn't float.
+          ctx.fillStyle = roofMid;
+          ctx.fillRect(roofX + 8, roofTop + 38, roofW - 16, 20);
+          ctx.fillStyle = roofEdge;
+          ctx.fillRect(roofX, roofTop + 48, roofW, 16);
+
+          // Upper slope and ridge highlight.
+          ctx.fillStyle = roofEdge;
+          ctx.fillRect(roofX + 14, roofTop + 28, roofW - 28, 10);
+          ctx.fillStyle = roofMid;
+          ctx.fillRect(roofX + 20, roofTop + 22, roofW - 40, 8);
+          ctx.fillStyle = roofLight;
+          ctx.fillRect(roofX + 26, roofTop + 24, roofW - 52, 3);
+
+          // Slight curved slope hint using side wedges.
+          ctx.fillStyle = roofEdge;
+          ctx.beginPath();
+          ctx.moveTo(roofX, roofTop + 48);
+          ctx.lineTo(roofX + 14, roofTop + 36);
+          ctx.lineTo(roofX + 14, roofTop + 62);
+          ctx.closePath();
+          ctx.fill();
+          ctx.beginPath();
+          ctx.moveTo(roofX + roofW, roofTop + 48);
+          ctx.lineTo(roofX + roofW - 14, roofTop + 36);
+          ctx.lineTo(roofX + roofW - 14, roofTop + 62);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        // Dark shadow line under roof eaves.
         if (isTopRow) {
-          ctx.fillStyle = roofDarkRed;
-          ctx.fillRect(x - 2, y - 2, tileSize + 4, 12);
-
-          ctx.fillStyle = roofBrightRed;
-          ctx.fillRect(x, y, tileSize, 9);
-
-          ctx.fillStyle = roofHighlight;
-          ctx.fillRect(x + 2, y + 1, tileSize - 4, 3);
-
-          ctx.fillStyle = roofDarkRed;
-          ctx.fillRect(x + 1, y + 5, tileSize - 2, 2);
-
-          for (let i = 0; i < tileSize; i += 4) {
-            ctx.fillStyle = roofDarkRed;
-            ctx.fillRect(x + i, y + 7, 3, 2);
-          }
-
-          ctx.fillStyle = goldDark;
-          ctx.fillRect(x, y + 9, tileSize, 2);
-
-          if (isLeftCol) {
-            ctx.fillStyle = goldAccent;
-            ctx.beginPath();
-            ctx.arc(x + 4, y + 5, 2, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = goldDark;
-            ctx.beginPath();
-            ctx.arc(x + 4, y + 5, 1, 0, Math.PI * 2);
-            ctx.fill();
-          }
-          if (isRightCol) {
-            ctx.fillStyle = goldAccent;
-            ctx.beginPath();
-            ctx.arc(x + tileSize - 4, y + 5, 2, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = goldDark;
-            ctx.beginPath();
-            ctx.arc(x + tileSize - 4, y + 5, 1, 0, Math.PI * 2);
-            ctx.fill();
-          }
+          ctx.fillStyle = roofShadow;
+          ctx.fillRect(x, y, tileSize, 4);
         }
 
+        // Strong corner/segment pillars.
         if (isLeftCol) {
-          ctx.fillStyle = woodDark;
-          ctx.fillRect(x + 1, y + 10, 5, tileSize - 10);
-          ctx.fillStyle = woodMid;
-          ctx.fillRect(x + 2, y + 10, 3, tileSize - 10);
-
-          ctx.fillStyle = "rgba(0,0,0,0.3)";
-          ctx.fillRect(x + 1, y + 10, 2, tileSize - 10);
-          ctx.fillStyle = "rgba(255,255,255,0.2)";
-          ctx.fillRect(x + 4, y + 10, 1, tileSize - 10);
+          ctx.fillStyle = wallWoodDark;
+          ctx.fillRect(x + 1, y + 10, 4, tileSize - 10);
         }
-
         if (isRightCol) {
-          ctx.fillStyle = woodDark;
-          ctx.fillRect(x + tileSize - 6, y + 10, 5, tileSize - 10);
-          ctx.fillStyle = woodMid;
-          ctx.fillRect(x + tileSize - 5, y + 10, 3, tileSize - 10);
-
-          ctx.fillStyle = "rgba(0,0,0,0.3)";
-          ctx.fillRect(x + tileSize - 6, y + 10, 2, tileSize - 10);
-          ctx.fillStyle = "rgba(255,255,255,0.2)";
-          ctx.fillRect(x + tileSize - 3, y + 10, 1, tileSize - 10);
+          ctx.fillStyle = wallWoodDark;
+          ctx.fillRect(x + tileSize - 5, y + 10, 4, tileSize - 10);
         }
 
-        if (!isTopRow && !isBottomRow) {
-          ctx.fillStyle = woodDark;
-          ctx.fillRect(x, y + 12, tileSize, 2);
-          ctx.fillStyle = "rgba(0,0,0,0.3)";
-          ctx.fillRect(x, y + 12, tileSize, 1);
-          ctx.fillStyle = "rgba(255,255,255,0.1)";
-          ctx.fillRect(x, y + 13, tileSize, 1);
-
-          ctx.fillStyle = woodDark;
-          ctx.fillRect(x, y + 22, tileSize, 2);
-          ctx.fillStyle = "rgba(0,0,0,0.3)";
-          ctx.fillRect(x, y + 22, tileSize, 1);
-          ctx.fillStyle = "rgba(255,255,255,0.1)";
-          ctx.fillRect(x, y + 23, tileSize, 1);
-        }
-
+        // Shoji wall section (replaces normal windows).
         if (!isTopRow && !isBottomRow && !isLeftCol && !isRightCol) {
-          ctx.fillStyle = woodDark;
-          ctx.fillRect(x + 8, y + 14, 16, 10);
+          ctx.fillStyle = wallWoodDark;
+          ctx.fillRect(x + 5, y + 13, 22, 11);
+          ctx.fillStyle = shojiPaper;
+          ctx.fillRect(x + 7, y + 15, 18, 7);
+          ctx.fillStyle = "rgba(72,46,31,0.45)";
+          ctx.fillRect(x + 13, y + 15, 1, 7);
+          ctx.fillRect(x + 19, y + 15, 1, 7);
+        }
 
-          ctx.fillStyle = windowColor;
-          ctx.fillRect(x + 10, y + 16, 6, 6);
-          ctx.fillRect(x + 18, y + 16, 6, 6);
-
-          ctx.fillStyle = "rgba(255,255,255,0.4)";
-          ctx.fillRect(x + 11, y + 17, 2, 2);
-          ctx.fillRect(x + 19, y + 17, 2, 2);
-
-          ctx.strokeStyle = woodDark;
+        // Hanging dojo sign/banner above entrance.
+        if (!isTopRow && !isBottomRow && isEntranceColumn) {
+          ctx.fillStyle = "#eadfc5";
+          ctx.fillRect(x + 6, y + 13, 20, 7);
+          ctx.fillStyle = "rgba(70,44,29,0.24)";
+          ctx.fillRect(x + 12, y + 13, 1, 7);
+          ctx.fillRect(x + 19, y + 13, 1, 7);
+          ctx.fillStyle = signBg;
+          ctx.fillRect(x + 11, y + 21, 10, 6);
+          ctx.strokeStyle = trimGold;
           ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(x + 16, y + 16);
-          ctx.lineTo(x + 16, y + 22);
-          ctx.stroke();
+          ctx.strokeRect(x + 11.5, y + 21.5, 9, 5);
         }
 
-        if (isBottomRow && !isLeftCol && !isRightCol) {
-          ctx.fillStyle = woodDark;
-          ctx.fillRect(x + 6, y + 12, 20, 20);
+        if (isBottomRow) {
+          // Wall base above front engawa.
+          ctx.fillStyle = wallWoodDark;
+          ctx.fillRect(x, y + 24, tileSize, 2);
 
-          ctx.fillStyle = "#6d4c41";
-          ctx.fillRect(x + 8, y + 14, 8, 16);
-          ctx.fillRect(x + 18, y + 14, 8, 16);
-
-          ctx.fillStyle = "#4caf50";
-          ctx.fillRect(x + 9, y + 15, 2, 14);
-          ctx.fillRect(x + 19, y + 15, 2, 14);
-
-          ctx.fillStyle = goldAccent;
-          ctx.beginPath();
-          ctx.arc(x + 12, y + 22, 1.5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(x + 22, y + 22, 1.5, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.fillStyle = goldDark;
-          ctx.beginPath();
-          ctx.arc(x + 12, y + 22, 0.8, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(x + 22, y + 22, 0.8, 0, Math.PI * 2);
-          ctx.fill();
+          if (isEntranceColumn) {
+            // Wide sliding entrance framing (actual DOOR tile visuals are handled in TileSystem).
+            ctx.fillStyle = "#4f3424";
+            ctx.fillRect(x + 4, y + 10, 24, 14);
+            ctx.fillStyle = "#6f4a34";
+            ctx.fillRect(x + 6, y + 12, 20, 10);
+          } else {
+            ctx.fillStyle = wallWoodDark;
+            ctx.fillRect(x + 8, y + 12, 16, 12);
+          }
         }
 
-        ctx.strokeStyle = shadowColor;
-        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = "rgba(43, 25, 16, 0.95)";
+        ctx.lineWidth = 1.25;
         ctx.strokeRect(x, y, tileSize, tileSize);
-
-        ctx.strokeStyle = "rgba(255,255,255,0.3)";
+        ctx.strokeStyle = "rgba(255,255,255,0.2)";
         ctx.lineWidth = 0.5;
         ctx.strokeRect(x + 1, y + 1, tileSize - 2, tileSize - 2);
-
-        if (isTopRow && isLeftCol) {
-          ctx.fillStyle = goldAccent;
-          ctx.fillRect(x + 2, y + 4, 4, 4);
-          ctx.fillStyle = goldDark;
-          ctx.fillRect(x + 3, y + 5, 2, 2);
-        }
-
-        if (isTopRow && isRightCol) {
-          ctx.fillStyle = goldAccent;
-          ctx.fillRect(x + tileSize - 6, y + 4, 4, 4);
-          ctx.fillStyle = goldDark;
-          ctx.fillRect(x + tileSize - 5, y + 5, 2, 2);
-        }
       }
     },
     HOUSE: {

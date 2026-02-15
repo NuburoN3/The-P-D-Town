@@ -232,18 +232,21 @@ function openPauseMenu() {
   previousGameState = gameState;
   gameState = GAME_STATES.PAUSE_MENU;
   setPauseMenuAnimation("in", 170);
+  musicManager.pauseForPauseMenu();
   musicManager.playSfx("menuOpen");
 }
 
 function resumeFromPauseMenu() {
   setPauseMenuAnimation("out", 140);
   gameState = previousGameState;
+  musicManager.resumeFromPauseMenu();
   musicManager.playSfx("menuConfirm");
 }
 
 function returnToPauseMenu() {
   gameState = GAME_STATES.PAUSE_MENU;
   setPauseMenuAnimation("in", 130);
+  musicManager.pauseForPauseMenu();
   musicManager.playSfx("menuOpen");
 }
 
@@ -260,7 +263,7 @@ function toggleHighContrastMenu() {
 
 function selectPauseMenuOption() {
   const selected = pauseMenuState.options[pauseMenuState.selected];
-  musicManager.playSfx("menuConfirm");
+  musicManager.playSfx("menuSelect");
 
   if (selected === "Inventory") {
     setPauseMenuAnimation("out", 140);
@@ -463,6 +466,7 @@ function render() {
       currentMap,
       currentMapW,
       currentMapH,
+      getBuildingAtWorldTile: (tx, ty) => worldService.getBuilding(currentTownId, currentAreaId, tx, ty),
       currentAreaId,
       currentAreaKind: worldService.getAreaKind(currentTownId, currentAreaId),
       gameState,
