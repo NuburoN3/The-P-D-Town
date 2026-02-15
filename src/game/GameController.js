@@ -133,7 +133,7 @@ export function createGameController({
       updateTransition();
     }
 
-    if (state.getGameState() !== GAME_STATES.TRANSITION) {
+    if (state.getGameState() !== GAME_STATES.TRANSITION && !state.playerDefeatSequence?.active) {
       actions.handleInteraction();
     }
 

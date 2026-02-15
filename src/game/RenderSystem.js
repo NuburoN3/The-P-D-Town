@@ -93,6 +93,11 @@ function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, 
   const { player, cam } = state;
   if (!player.sprite || !player.sprite.width || !player.sprite.height) return;
   const now = performance.now();
+  const defeatSequence = state.playerDefeatSequence;
+  const isDefeatFallActive = Boolean(
+    defeatSequence?.active &&
+    (defeatSequence.phase === "fall" || defeatSequence.phase === "fadeOut")
+  );
 
   const targetHeight = tileSize * player.desiredHeightTiles;
   const scale = targetHeight / spriteFrameHeight;
@@ -137,6 +142,35 @@ function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, 
   const frame = player.walking ? player.animFrame : 1;
   const sx = frame * spriteFrameWidth;
   const sy = row * spriteFrameHeight;
+  const defeatFallProgress = isDefeatFallActive
+    ? Math.max(0, Math.min(1, defeatSequence.fallProgress || 0))
+    : 0;
+
+  if (isDefeatFallActive) {
+    const pivotX = drawX + drawWidth / 2;
+    const pivotY = drawY + drawHeight - 2;
+    const maxFallAngle = Math.PI * 0.44;
+    const fallAngle = -maxFallAngle * defeatFallProgress;
+
+    ctx.save();
+    ctx.translate(pivotX, pivotY);
+    ctx.rotate(fallAngle);
+    ctx.translate(-pivotX, -pivotY);
+    ctx.drawImage(
+      player.sprite,
+      sx,
+      sy,
+      spriteFrameWidth,
+      spriteFrameHeight,
+      drawX,
+      drawY,
+      drawWidth,
+      drawHeight
+    );
+    ctx.restore();
+    ctx.restore();
+    return;
+  }
 
   ctx.drawImage(
     player.sprite,
@@ -492,6 +526,17 @@ function drawDoorTransition(ctx, state, canvas, tileSize, cameraZoom) {
   ctx.arc(px, py, Math.max(10, holeRadius + 2), 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
+}
+
+function drawPlayerDefeatOverlay(ctx, state, canvas) {
+  const sequence = state.playerDefeatSequence;
+  if (!sequence || !sequence.active) return;
+
+  const alpha = Math.max(0, Math.min(1, sequence.overlayAlpha || 0));
+  if (alpha <= 0.001) return;
+
+  ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
 function drawInventoryOverlay(ctx, state, canvas, ui, colors) {
@@ -1385,4 +1430,5 @@ export function renderGameFrame({
   drawAttributesOverlay(ctx, state, canvas, ui, colors);
   drawSettingsOverlay(ctx, state, canvas, ui, colors);
   drawTextbox(ctx, state, canvas, ui, colors, dialogue);
+  drawPlayerDefeatOverlay(ctx, state, canvas);
 }

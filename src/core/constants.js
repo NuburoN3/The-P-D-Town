@@ -21,6 +21,7 @@ export const GAME_STATES = Object.freeze({
   INVENTORY: "inventory",
   ENTERING_DOOR: "enteringDoor",
   TRANSITION: "transition",
+  PLAYER_DEFEATED: "playerDefeated",
   BAR_MINIGAME: "barMinigame",
   PAUSE_MENU: "pauseMenu",
   ATTRIBUTES: "attributes",
