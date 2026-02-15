@@ -128,6 +128,34 @@ function generateHanamiOverworldBase(width, height) {
   ];
   paintPoints(map, cherryBlossomPositions, TILE_TYPES.CHERRY_BLOSSOM);
 
+  // Dojo front veranda (walkable wooden porch, 2 tiles deep across full frontage).
+  paintPoints(
+    map,
+    [
+      [13, 9], [14, 9], [15, 9], [16, 9], [17, 9],
+      [13, 10], [14, 10], [15, 10], [16, 10], [17, 10]
+    ],
+    TILE_TYPES.PORCH
+  );
+
+  // Ground anchor directly under porch edge.
+  paintPoints(
+    map,
+    [
+      [13, 11], [14, 11], [15, 11], [16, 11], [17, 11]
+    ],
+    TILE_TYPES.PATH
+  );
+
+  // Keep dojo signpost on the same cream path tone.
+  paintPoints(
+    map,
+    [
+      [12, 10]
+    ],
+    TILE_TYPES.PATH
+  );
+
   return map;
 }
 
@@ -215,7 +243,7 @@ export const GAME_CONTENT = {
               x: 13,
               y: 6,
               width: 5,
-              height: 4
+              height: 3
             },
             {
               id: "hanamiTownFountain",
@@ -235,7 +263,7 @@ export const GAME_CONTENT = {
             }
           ],
           signposts: [
-            { x: 14, y: 10, text: "The Dojo" },
+            { x: 12, y: 10, text: "The Dojo" },
             { x: 21, y: 20, text: "Sakura Bar" },
             { x: 15, y: 23, text: "Hanami Grand Fountain" }
           ]
@@ -259,14 +287,18 @@ export const GAME_CONTENT = {
       },
       spawns: {
         townGate: { areaId: "overworld", x: 15, y: 26, dir: "up" },
-        dojoExteriorDoor: { areaId: "overworld", x: 15, y: 10, dir: "down" },
+        dojoExteriorDoor: { areaId: "overworld", x: 15, y: 9, dir: "down" },
         dojoInteriorDoor: { areaId: "hanamiDojo", x: 6, y: 8, dir: "up" },
         barExteriorDoor: { areaId: "overworld", x: 22, y: 20, dir: "down" },
         barInteriorDoor: { areaId: "hanamiBar", x: 6, y: 8, dir: "up" }
       },
       doors: [
         {
-          from: { areaId: "overworld", x: 15, y: 9 },
+          from: { areaId: "overworld", x: 14, y: 8 },
+          to: { townId: "hanamiTown", spawnId: "dojoInteriorDoor" }
+        },
+        {
+          from: { areaId: "overworld", x: 15, y: 8 },
           to: { townId: "hanamiTown", spawnId: "dojoInteriorDoor" }
         },
         {

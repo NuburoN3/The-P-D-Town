@@ -11,6 +11,11 @@ export class AudioManager {
     this.bgmFadeMs = fadeDurationMs;
     this.fadeTimers = new Map();
     this._unlockBound = false;
+    this._bgmDuckRestoreTimer = null;
+    this.activeSfxShots = new Set();
+    this._pauseMenuAudioSuspended = false;
+    this._resumeMusicAfterPause = false;
+    this._pausedSfxShots = new Set();
   }
 
   registerAreaTrack(areaName, src) {
@@ -96,12 +101,23 @@ export class AudioManager {
     const shot = prototype.cloneNode(true);
     shot.volume = this.sfxVolume;
     shot.currentTime = 0;
+    this.activeSfxShots.add(shot);
+    shot.addEventListener("ended", () => {
+      this.activeSfxShots.delete(shot);
+      this._pausedSfxShots.delete(shot);
+    }, { once: true });
 
     const playPromise = shot.play();
     if (playPromise && typeof playPromise.catch === "function") {
       playPromise.catch((err) => {
         console.warn("AudioManager: failed to play SFX", src, err);
+        this.activeSfxShots.delete(shot);
+        this._pausedSfxShots.delete(shot);
       });
+    }
+
+    if (sfxNameOrSrc === "itemUnlock") {
+      this._duckCurrentMusic();
     }
   }
 
@@ -116,6 +132,7 @@ export class AudioManager {
     });
     this.currentAudio = null;
     this.currentArea = null;
+    this._resumeMusicAfterPause = false;
   }
 
   attachUnlockHandlers(target = window) {
@@ -123,6 +140,7 @@ export class AudioManager {
     this._unlockBound = true;
 
     const unlock = () => {
+      if (this._pauseMenuAudioSuspended) return;
       if (!this.currentAudio || !this.currentAudio.paused) return;
       const playPromise = this.currentAudio.play();
       if (playPromise && typeof playPromise.catch === "function") {
@@ -193,6 +211,74 @@ export class AudioManager {
     });
     this.sfxPrototypeBySrc.set(src, audio);
     return audio;
+  }
+
+  _duckCurrentMusic() {
+    if (!this.currentAudio) return;
+
+    const audio = this.currentAudio;
+    const duckTo = Math.max(0.08, this.bgmVolume * 0.35);
+    const downMs = 120;
+    const holdMs = 520;
+    const upMs = 300;
+
+    this._fadeAudio(audio, duckTo, downMs).catch(() => {});
+
+    if (this._bgmDuckRestoreTimer) {
+      clearTimeout(this._bgmDuckRestoreTimer);
+      this._bgmDuckRestoreTimer = null;
+    }
+
+    this._bgmDuckRestoreTimer = setTimeout(() => {
+      if (this.currentAudio === audio) {
+        this._fadeAudio(audio, this.bgmVolume, upMs).catch(() => {});
+      }
+      this._bgmDuckRestoreTimer = null;
+    }, holdMs);
+  }
+
+  pauseForPauseMenu() {
+    if (this._pauseMenuAudioSuspended) return;
+    this._pauseMenuAudioSuspended = true;
+
+    this._resumeMusicAfterPause = false;
+    if (this.currentAudio && !this.currentAudio.paused) {
+      try {
+        this.currentAudio.pause();
+        this._resumeMusicAfterPause = true;
+      } catch (e) {}
+    }
+
+    this._pausedSfxShots.clear();
+    for (const shot of this.activeSfxShots) {
+      if (!shot || shot.paused || shot.ended) continue;
+      try {
+        shot.pause();
+        this._pausedSfxShots.add(shot);
+      } catch (e) {}
+    }
+  }
+
+  resumeFromPauseMenu() {
+    if (!this._pauseMenuAudioSuspended) return;
+    this._pauseMenuAudioSuspended = false;
+
+    if (this._resumeMusicAfterPause && this.currentAudio) {
+      const playPromise = this.currentAudio.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {});
+      }
+    }
+    this._resumeMusicAfterPause = false;
+
+    for (const shot of this._pausedSfxShots) {
+      if (!shot || shot.ended) continue;
+      const playPromise = shot.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {});
+      }
+    }
+    this._pausedSfxShots.clear();
   }
 }
 

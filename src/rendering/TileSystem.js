@@ -255,6 +255,9 @@ function drawCherryBlossomTile(ctx, deps) {
 }
 
 function drawSignpostTile(ctx, deps) {
+  // Paint path base beneath signposts so they don't appear on raw grass.
+  drawPathTile(ctx, deps);
+
   ctx.fillStyle = COLORS.SIGNPOST_WOOD;
   ctx.fillRect(deps.x + 12, deps.y + 8, 8, 18);
   ctx.fillStyle = "rgba(255,255,255,0.16)";
@@ -271,6 +274,48 @@ function drawSignpostTile(ctx, deps) {
 }
 
 function drawDoorTile(ctx, deps) {
+  const building = deps.getBuilding
+    ? deps.getBuilding(deps.currentTownId, deps.currentAreaId, deps.tileX, deps.tileY)
+    : null;
+  const isDojoDoor = building && building.type === "DOJO";
+
+  if (isDojoDoor) {
+    // Dojo entrance: open/sliding threshold style, not a standard standalone door tile.
+    const localX = deps.tileX - building.x;
+    const center = Math.floor(building.width / 2);
+    const leftEntranceCol = Math.max(0, center - 1);
+    const isLeftPanel = localX === leftEntranceCol;
+
+    const frameDark = "#4e3123";
+    const frameMid = "#6f4a35";
+    const paper = "#f0e5cd";
+
+    ctx.fillStyle = frameDark;
+    ctx.fillRect(deps.x, deps.y, TILE, TILE);
+
+    ctx.fillStyle = frameMid;
+    ctx.fillRect(deps.x + 1, deps.y + 1, TILE - 2, TILE - 2);
+
+    // Header beam under eaves.
+    ctx.fillStyle = "#3e261b";
+    ctx.fillRect(deps.x, deps.y + 2, TILE, 5);
+
+    // Entrance opening + one visible slider panel to imply a wider doorway.
+    ctx.fillStyle = "rgba(18,12,9,0.65)";
+    ctx.fillRect(deps.x + 6, deps.y + 8, 20, 22);
+
+    ctx.fillStyle = frameDark;
+    ctx.fillRect(isLeftPanel ? deps.x + 16 : deps.x + 6, deps.y + 8, 10, 22);
+    ctx.fillStyle = paper;
+    ctx.fillRect(isLeftPanel ? deps.x + 18 : deps.x + 8, deps.y + 10, 6, 18);
+    ctx.fillStyle = "rgba(94,61,42,0.45)";
+    ctx.fillRect(isLeftPanel ? deps.x + 21 : deps.x + 11, deps.y + 10, 1, 18);
+
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.fillRect(deps.x, deps.y + TILE - 2, TILE, 2);
+    return;
+  }
+
   const isActiveDoor =
     deps.gameState === GAME_STATES.ENTERING_DOOR &&
     deps.tileX === deps.doorSequence.tx &&
@@ -381,6 +426,63 @@ function drawTrainingFloorTile(ctx, deps) {
   ctx.fillRect(deps.x + 12, deps.y + 12, TILE - 24, TILE - 24);
 }
 
+function drawPorchTile(ctx, deps) {
+  ctx.fillStyle = COLORS.PORCH_WOOD_DARK;
+  ctx.fillRect(deps.x, deps.y, TILE, TILE);
+
+  ctx.fillStyle = COLORS.PORCH_WOOD_MID;
+  ctx.fillRect(deps.x + 1, deps.y + 1, TILE - 2, TILE - 2);
+
+  for (let i = 4; i < TILE; i += 6) {
+    ctx.fillStyle = i % 12 === 4 ? COLORS.PORCH_WOOD_LIGHT : COLORS.PORCH_WOOD_MID;
+    ctx.fillRect(deps.x, deps.y + i, TILE, 1);
+  }
+
+  ctx.strokeStyle = "rgba(39,24,15,0.55)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(deps.x + 0.5, deps.y + 0.5, TILE - 1, TILE - 1);
+
+  // Front corner support posts for dojo porch (on front row only).
+  if (!deps.getBuilding) return;
+  const backOne = deps.getBuilding(deps.currentTownId, deps.currentAreaId, deps.tileX, deps.tileY - 1);
+  const backTwo = deps.getBuilding(deps.currentTownId, deps.currentAreaId, deps.tileX, deps.tileY - 2);
+  const dojo = (backOne && backOne.type === "DOJO") ? backOne : (backTwo && backTwo.type === "DOJO" ? backTwo : null);
+  if (!dojo) return;
+
+  const frontRowY = dojo.y + dojo.height + 1;
+  const isFrontRow = deps.tileY === frontRowY;
+  const isCorner = deps.tileX === dojo.x || deps.tileX === dojo.x + dojo.width - 1;
+  if (!isFrontRow || !isCorner) return;
+
+  ctx.fillStyle = "#4b311f";
+  ctx.fillRect(deps.x + 12, deps.y + 4, 8, TILE - 4);
+  ctx.fillStyle = "#6a4630";
+  ctx.fillRect(deps.x + 14, deps.y + 4, 4, TILE - 4);
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
+  ctx.fillRect(deps.x + 11, deps.y + TILE - 3, 10, 2);
+}
+
+function drawDojoPostTile(ctx, deps) {
+  // Practice posts sit on packed dirt so they read as training equipment near the dojo.
+  drawPathTile(ctx, deps);
+
+  ctx.fillStyle = "rgba(0,0,0,0.18)";
+  ctx.beginPath();
+  ctx.ellipse(deps.x + 16, deps.y + 24, 8, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = COLORS.DOJO_POST_WOOD_DARK;
+  ctx.fillRect(deps.x + 13, deps.y + 8, 6, 18);
+  ctx.fillStyle = COLORS.DOJO_POST_WOOD_MID;
+  ctx.fillRect(deps.x + 14, deps.y + 9, 4, 16);
+
+  // Binding rope wraps.
+  ctx.fillStyle = COLORS.DOJO_POST_ROPE;
+  ctx.fillRect(deps.x + 12, deps.y + 11, 8, 2);
+  ctx.fillRect(deps.x + 12, deps.y + 16, 8, 2);
+  ctx.fillRect(deps.x + 12, deps.y + 21, 8, 2);
+}
+
 const tileRenderers = {
   [TILE_TYPES.GRASS]: (ctx, deps) => drawGrassTile(ctx, deps),
   [TILE_TYPES.PATH]: (ctx, deps) => drawPathTile(ctx, deps),
@@ -408,7 +510,9 @@ const tileRenderers = {
   [TILE_TYPES.BAR_TABLE]: (ctx, deps) => drawBarTableTile(ctx, deps),
   [TILE_TYPES.BAR_DECOR]: (ctx, deps) => drawBarDecorTile(ctx, deps),
   [TILE_TYPES.TRAINING_FLOOR]: (ctx, deps) => drawTrainingFloorTile(ctx, deps),
-  [TILE_TYPES.CHERRY_BLOSSOM]: (ctx, deps) => drawCherryBlossomTile(ctx, deps)
+  [TILE_TYPES.CHERRY_BLOSSOM]: (ctx, deps) => drawCherryBlossomTile(ctx, deps),
+  [TILE_TYPES.PORCH]: (ctx, deps) => drawPorchTile(ctx, deps),
+  [TILE_TYPES.DOJO_POST]: (ctx, deps) => drawDojoPostTile(ctx, deps)
 };
 
 export function drawTile(
