@@ -19,6 +19,8 @@ import { createMovementSystem } from "../game/MovementSystem.js";
 import { createInteractionSystem } from "../game/InteractionSystem.js";
 import { createGameController } from "../game/GameController.js";
 import { createGameRuntime } from "../game/bootstrap.js";
+import { createCombatSystem } from "../game/CombatSystem.js";
+import { createEnemyAISystem } from "../game/EnemyAISystem.js";
 import { createVfxSystem } from "../game/VfxSystem.js";
 import { createGameFeatures } from "../game/features/index.js";
 import { createFeatureCoordinator } from "../game/features/FeatureCoordinator.js";
@@ -33,6 +35,7 @@ const {
   itemAlert,
   inventoryHint,
   npcs,
+  enemies,
   player,
   cam,
   doorSequence
@@ -84,10 +87,80 @@ const gamepadMenuState = {
   heldDirection: 0,
   confirmHeld: false,
   backHeld: false,
-  startHeld: false
+  startHeld: false,
+  attackHeld: false
 };
 const trainingContent = worldService.getTrainingContent();
 const vfxSystem = createVfxSystem();
+
+function handleChallengeEnemyDefeat(enemy, now) {
+  if (!enemy || !enemy.countsForChallenge) return;
+  if (!gameFlags.acceptedTraining) {
+    enemy.dead = false;
+    enemy.hp = enemy.maxHp;
+    enemy.x = enemy.spawnX;
+    enemy.y = enemy.spawnY;
+    enemy.state = "idle";
+    enemy.pendingStrike = false;
+    enemy.respawnAt = 0;
+    enemy.invulnerableUntil = now + 180;
+    return;
+  }
+  if (gameFlags.completedTraining) return;
+  if (enemy.challengeDefeatedCounted) return;
+
+  enemy.challengeDefeatedCounted = true;
+  gameFlags.hanamiChallengeKills = Math.min(
+    gameFlags.hanamiChallengeTarget,
+    gameFlags.hanamiChallengeKills + 1
+  );
+
+  itemAlert.active = true;
+  itemAlert.text = `Challenge progress: ${gameFlags.hanamiChallengeKills}/${gameFlags.hanamiChallengeTarget}`;
+  itemAlert.startedAt = now;
+
+  if (gameFlags.hanamiChallengeKills >= gameFlags.hanamiChallengeTarget) {
+    gameFlags.completedTraining = true;
+    if (!gameFlags.hanamiChallengeCompleteAnnounced) {
+      gameFlags.hanamiChallengeCompleteAnnounced = true;
+      itemAlert.active = true;
+      itemAlert.text = "Challenge complete! Speak to Mr. Hanami.";
+      itemAlert.startedAt = now;
+      vfxSystem.spawn("trainingBurst", {
+        x: player.x + TILE / 2,
+        y: player.y + TILE * 0.35,
+        size: 48,
+        durationMs: 800
+      });
+    }
+  }
+}
+
+function handlePlayerDefeated({ player: defeatedPlayer }) {
+  defeatedPlayer.hp = defeatedPlayer.maxHp;
+  defeatedPlayer.x = defeatedPlayer.spawnX;
+  defeatedPlayer.y = defeatedPlayer.spawnY;
+  vfxSystem.spawn("doorSwirl", {
+    x: defeatedPlayer.x + TILE / 2,
+    y: defeatedPlayer.y + TILE / 2,
+    size: 30,
+    durationMs: 500
+  });
+}
+
+const combatSystem = createCombatSystem({
+  tileSize: TILE,
+  eventHandlers: {
+    onRequestVfx: (type, options) => vfxSystem.spawn(type, options),
+    onEntityDefeated: (enemy, now) => {
+      handleChallengeEnemyDefeat(enemy, now);
+    },
+    onPlayerDefeated: ({ player: defeatedPlayer }) => {
+      handlePlayerDefeated({ player: defeatedPlayer });
+    }
+  }
+});
+const enemyAiSystem = createEnemyAISystem({ tileSize: TILE });
 const gameplayStartState = gameState;
 const titleState = {
   startedAt: performance.now(),
@@ -181,6 +254,37 @@ function updateTitleScreen(now) {
   }
 }
 
+function canRunCombatSystems() {
+  return (
+    isFreeExploreState(gameState) &&
+    !isDialogueActive() &&
+    !choiceState.active &&
+    !doorSequence.active &&
+    !player.isTraining
+  );
+}
+
+function prepareHanamiChallengeEnemies() {
+  if (!gameFlags.acceptedTraining || gameFlags.completedTraining) return;
+  if (gameFlags.hanamiChallengePrepared) return;
+
+  for (const enemy of enemies) {
+    if (!enemy || !enemy.countsForChallenge) continue;
+    enemy.dead = false;
+    enemy.hp = enemy.maxHp;
+    enemy.x = enemy.spawnX;
+    enemy.y = enemy.spawnY;
+    enemy.state = "idle";
+    enemy.pendingStrike = false;
+    enemy.invulnerableUntil = 0;
+    enemy.hitStunUntil = 0;
+    enemy.respawnAt = 0;
+    enemy.challengeDefeatedCounted = false;
+  }
+
+  gameFlags.hanamiChallengePrepared = true;
+}
+
 const gameFeatures = createGameFeatures({
   getCurrentAreaKind: () => worldService.getAreaKind(currentTownId, currentAreaId),
   setGameState: (nextState) => {
@@ -257,6 +361,7 @@ const gameController = createGameController({
   state: {
     player,
     npcs,
+    enemies,
     doorSequence,
     trainingPopup,
     itemAlert,
@@ -279,6 +384,10 @@ const gameController = createGameController({
     reloadTownNPCs: (townId) => {
       const nextTownNPCs = worldService.createNPCsForTown(townId);
       npcs.splice(0, npcs.length, ...nextTownNPCs);
+    },
+    reloadTownEnemies: (townId) => {
+      const nextTownEnemies = worldService.createEnemiesForTown(townId);
+      enemies.splice(0, enemies.length, ...nextTownEnemies);
     },
     getCurrentMap: () => currentMap,
     getCurrentMapW: () => currentMapW,
@@ -367,6 +476,7 @@ function resetGamepadHeldStates() {
   gamepadMenuState.confirmHeld = false;
   gamepadMenuState.backHeld = false;
   gamepadMenuState.startHeld = false;
+  gamepadMenuState.attackHeld = false;
 }
 
 function handleGamepadPauseAndMenuInput(now) {
@@ -386,6 +496,7 @@ function handleGamepadPauseAndMenuInput(now) {
 
   const confirmPressed = Boolean(buttons[0]?.pressed); // A
   const backPressed = Boolean(buttons[1]?.pressed); // B
+  const attackPressed = Boolean(buttons[2]?.pressed); // X
   const startPressed = Boolean(buttons[9]?.pressed); // Start
 
   if (gameState === GAME_STATES.TITLE_SCREEN) {
@@ -409,6 +520,7 @@ function handleGamepadPauseAndMenuInput(now) {
     gamepadMenuState.confirmHeld = confirmPressed || startPressed;
     gamepadMenuState.backHeld = backPressed;
     gamepadMenuState.startHeld = startPressed;
+    gamepadMenuState.attackHeld = attackPressed;
     return;
   }
 
@@ -432,6 +544,7 @@ function handleGamepadPauseAndMenuInput(now) {
     gamepadMenuState.confirmHeld = confirmPressed;
     gamepadMenuState.backHeld = backPressed;
     gamepadMenuState.startHeld = startPressed;
+    gamepadMenuState.attackHeld = attackPressed;
     return;
   }
 
@@ -456,11 +569,15 @@ function handleGamepadPauseAndMenuInput(now) {
     if (startPressed && !gamepadMenuState.startHeld) {
       openPauseMenu();
     }
+    if (attackPressed && !gamepadMenuState.attackHeld && canRunCombatSystems()) {
+      input.triggerAttackPressed();
+    }
   }
 
   gamepadMenuState.confirmHeld = confirmPressed;
   gamepadMenuState.backHeld = backPressed;
   gamepadMenuState.startHeld = startPressed;
+  gamepadMenuState.attackHeld = attackPressed;
 }
 
 addEventListener("keydown", (e) => {
@@ -605,6 +722,8 @@ function render() {
       doorSequence,
       player,
       npcs,
+      enemies,
+      gameFlags,
       cam,
       vfxEffects: vfxSystem.effects,
       trainingPopup,
@@ -628,6 +747,35 @@ function loop() {
     updateTitleScreen(now);
   } else {
     gameController.update();
+    prepareHanamiChallengeEnemies();
+
+    enemyAiSystem.update({
+      now,
+      gameState,
+      isDialogueActive: isDialogueActive(),
+      choiceActive: choiceState.active,
+      enemies,
+      player,
+      currentAreaId,
+      currentMap,
+      currentMapW,
+      currentMapH,
+      collidesAt: (...args) => collisionService.collides(...args)
+    });
+
+    combatSystem.update({
+      now,
+      gameState,
+      isDialogueActive: isDialogueActive(),
+      choiceActive: choiceState.active,
+      attackPressed: input.getAttackPressed(),
+      requestedAttackId: player.requestedAttackId || player.equippedAttackId || null,
+      player,
+      enemies,
+      currentAreaId
+    });
+
+    input.clearAttackPressed();
   }
 
   vfxSystem.update(now);

@@ -171,6 +171,26 @@ function generateDojoInteriorBase(width, height) {
   return map;
 }
 
+function generateDojoUpstairsBase(width, height) {
+  const map = createFilledMap(width, height, TILE_TYPES.INTERIOR_FLOOR);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (x === 0 || y === 0 || x === width - 1 || y === height - 1) {
+        map[y][x] = TILE_TYPES.WALL;
+      }
+    }
+  }
+
+  // Sparring posts for upstairs challenge room.
+  map[3][3] = TILE_TYPES.DOJO_POST;
+  map[3][8] = TILE_TYPES.DOJO_POST;
+  map[6][3] = TILE_TYPES.DOJO_POST;
+  map[6][8] = TILE_TYPES.DOJO_POST;
+  map[4][6] = TILE_TYPES.DOJO_POST;
+
+  return map;
+}
+
 function generateBarInteriorBase(width, height) {
   const map = createFilledMap(width, height, TILE_TYPES.BAR_FLOOR);
   for (let y = 0; y < height; y++) {
@@ -212,16 +232,16 @@ function generateBarInteriorBase(width, height) {
 
 export const GAME_CONTENT = {
   training: {
-    completedPrompt: "Training complete. Speak to Mr. Hanami.",
-    acceptedDialogue: "Your training has already begun. Focus your mind.",
+    completedPrompt: "Challenge complete. Speak to Mr. Hanami.",
+    acceptedDialogue: "Your challenge is upstairs. Defeat three opponents.",
     postCompleteDialogue: [
       "Excellent.",
-      "You have mastered the basics and are now ready for your next lesson. I won't tell you what it is though!"
+      "You passed my upstairs challenge. Your discipline is ready for the next lesson."
     ],
     declineDialogue: "Come speak to me when you are ready.",
     itemName: "Training Headband",
-    itemUnlockMessage: "New item: Training Headband",
-    itemReceivedMessage: "You received a Training Headband!"
+    itemUnlockMessage: "Challenge accepted: Defeat 3 upstairs opponents",
+    itemReceivedMessage: "Challenge accepted. Defeat three upstairs opponents!"
   },
   towns: {
     hanamiTown: {
@@ -279,6 +299,14 @@ export const GAME_CONTENT = {
           generateBaseMap: generateDojoInteriorBase,
           trainingTile: { x: 4, y: 5 }
         },
+        hanamiDojoUpstairs: {
+          id: "hanamiDojoUpstairs",
+          kind: "interior",
+          mood: "inkQuiet",
+          width: 12,
+          height: 10,
+          generateBaseMap: generateDojoUpstairsBase
+        },
         hanamiBar: {
           id: "hanamiBar",
           kind: "interior",
@@ -292,6 +320,8 @@ export const GAME_CONTENT = {
         townGate: { areaId: "overworld", x: 15, y: 26, dir: "up" },
         dojoExteriorDoor: { areaId: "overworld", x: 15, y: 9, dir: "down" },
         dojoInteriorDoor: { areaId: "hanamiDojo", x: 6, y: 8, dir: "up" },
+        dojoUpstairsDoor: { areaId: "hanamiDojo", x: 9, y: 4, dir: "left" },
+        dojoUpstairsEntry: { areaId: "hanamiDojoUpstairs", x: 6, y: 8, dir: "up" },
         barExteriorDoor: { areaId: "overworld", x: 25, y: 20, dir: "down" },
         barInteriorDoor: { areaId: "hanamiBar", x: 6, y: 8, dir: "up" }
       },
@@ -307,6 +337,14 @@ export const GAME_CONTENT = {
         {
           from: { areaId: "hanamiDojo", x: 6, y: 9 },
           to: { townId: "hanamiTown", spawnId: "dojoExteriorDoor" }
+        },
+        {
+          from: { areaId: "hanamiDojo", x: 9, y: 3 },
+          to: { townId: "hanamiTown", spawnId: "dojoUpstairsEntry" }
+        },
+        {
+          from: { areaId: "hanamiDojoUpstairs", x: 6, y: 9 },
+          to: { townId: "hanamiTown", spawnId: "dojoUpstairsDoor" }
         },
         {
           from: { areaId: "overworld", x: 25, y: 19 },
@@ -358,6 +396,71 @@ export const GAME_CONTENT = {
           minigameDeclineDialogue: "No worries. Come back when your hands are steady.",
           minigameWinDialogue: "That's a clean pour. You'd survive a rush-hour shift.",
           minigameLoseDialogue: "Not bad. Bar work is rhythm, timing, and patience."
+        }
+      ],
+      enemies: [
+        {
+          id: "hanamiChallengeFighterA",
+          name: "Dojo Challenger A",
+          areaId: "hanamiDojoUpstairs",
+          x: 3,
+          y: 2,
+          dir: "right",
+          maxHp: 38,
+          damage: 8,
+          speed: 1.0,
+          aggroRangeTiles: 6,
+          attackRangeTiles: 1.1,
+          attackCooldownMs: 900,
+          attackWindupMs: 240,
+          attackRecoveryMs: 300,
+          respawnDelayMs: 5000,
+          behaviorType: "meleeChaser",
+          attackType: "lightSlash",
+          respawnEnabled: false,
+          countsForChallenge: true
+        },
+        {
+          id: "hanamiChallengeFighterB",
+          name: "Dojo Challenger B",
+          areaId: "hanamiDojoUpstairs",
+          x: 8,
+          y: 2,
+          dir: "left",
+          maxHp: 40,
+          damage: 8,
+          speed: 1.05,
+          aggroRangeTiles: 6,
+          attackRangeTiles: 1.2,
+          attackCooldownMs: 920,
+          attackWindupMs: 240,
+          attackRecoveryMs: 320,
+          respawnDelayMs: 5000,
+          behaviorType: "meleeChaser",
+          attackType: "lightSlash",
+          respawnEnabled: false,
+          countsForChallenge: true
+        },
+        {
+          id: "hanamiChallengeFighterC",
+          name: "Dojo Challenger C",
+          areaId: "hanamiDojoUpstairs",
+          x: 6,
+          y: 5,
+          dir: "down",
+          maxHp: 44,
+          damage: 9,
+          speed: 1.08,
+          aggroRangeTiles: 6.3,
+          attackRangeTiles: 1.2,
+          attackCooldownMs: 880,
+          attackWindupMs: 220,
+          attackRecoveryMs: 320,
+          respawnDelayMs: 5000,
+          behaviorType: "meleeChaser",
+          attackType: "lightSlash",
+          respawnEnabled: false,
+          countsForChallenge: true
         }
       ]
     }

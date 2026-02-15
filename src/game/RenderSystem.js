@@ -1,4 +1,4 @@
-import { AREA_KINDS, GAME_STATES } from "../core/constants.js";
+import { AREA_KINDS, GAME_STATES, isFreeExploreState } from "../core/constants.js";
 
 const FONT_12 = "600 12px 'Trebuchet MS', 'Segoe UI', sans-serif";
 const FONT_16 = "600 16px 'Trebuchet MS', 'Segoe UI', sans-serif";
@@ -92,6 +92,7 @@ function drawUiText(ctx, text, x, y, colors) {
 function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, spriteFrameHeight, spriteFramesPerRow) {
   const { player, cam } = state;
   if (!player.sprite || !player.sprite.width || !player.sprite.height) return;
+  const now = performance.now();
 
   const targetHeight = tileSize * player.desiredHeightTiles;
   const scale = targetHeight / spriteFrameHeight;
@@ -101,6 +102,10 @@ function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, 
   const drawY = Math.round(player.y - cam.y - (drawHeight - tileSize));
 
   drawEntityShadow(ctx, drawX, drawY, drawWidth, drawHeight, "rgba(0,0,0,0.22)");
+  ctx.save();
+  if (player.invulnerableUntil > now && Math.floor(now / 90) % 2 === 0) {
+    ctx.globalAlpha = 0.45;
+  }
 
   if (player.isTraining) {
     const handSprite = getHandstandSprite() || player.sprite;
@@ -118,6 +123,7 @@ function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, 
       drawWidth,
       drawHeight
     );
+    ctx.restore();
     return;
   }
 
@@ -143,6 +149,7 @@ function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, 
     drawWidth,
     drawHeight
   );
+  ctx.restore();
 }
 
 function drawNPCSprite(ctx, npc, drawX, drawY, drawWidth, drawHeight, colors) {
@@ -207,6 +214,93 @@ function drawNPCs(ctx, state, canvas, tileSize, colors) {
         drawNPCPlaceholder(ctx, nx, ny, colors);
       }
     }
+  }
+}
+
+function drawEnemyPlaceholder(ctx, enemy, ex, ey, tileSize) {
+  const base = enemy.state === "attackWindup"
+    ? "#bb4a4a"
+    : enemy.state === "hitStun"
+      ? "#9b7ea6"
+      : "#705765";
+  const trim = enemy.state === "attackWindup" ? "#ffd0a0" : "#d7bbc5";
+
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
+  ctx.beginPath();
+  ctx.ellipse(ex + 16, ey + tileSize - 4, 9, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = base;
+  ctx.fillRect(ex + 7, ey + 8, 18, 17);
+  ctx.fillStyle = trim;
+  ctx.fillRect(ex + 10, ey + 11, 12, 4);
+  ctx.fillStyle = "#f1e0d0";
+  ctx.fillRect(ex + 11, ey + 17, 10, 5);
+  ctx.fillStyle = "#2a2327";
+  ctx.fillRect(ex + 12, ey + 18, 1, 1);
+  ctx.fillRect(ex + 19, ey + 18, 1, 1);
+  ctx.fillStyle = "#3e2529";
+  ctx.fillRect(ex + 9, ey + 24, 6, 5);
+  ctx.fillRect(ex + 17, ey + 24, 6, 5);
+
+  ctx.fillStyle = "#50323d";
+  ctx.beginPath();
+  ctx.moveTo(ex + 12, ey + 8);
+  ctx.lineTo(ex + 15, ey + 3);
+  ctx.lineTo(ex + 17, ey + 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(ex + 18, ey + 8);
+  ctx.lineTo(ex + 21, ey + 3);
+  ctx.lineTo(ex + 23, ey + 8);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawEnemyHealthBar(ctx, enemy, ex, ey, tileSize) {
+  if (enemy.hp >= enemy.maxHp) return;
+  const ratio = Math.max(0, Math.min(1, enemy.hp / Math.max(1, enemy.maxHp)));
+  const barW = tileSize - 4;
+  const barH = 4;
+  const barX = ex + 2;
+  const barY = ey - 8;
+  ctx.fillStyle = "rgba(10, 10, 14, 0.8)";
+  ctx.fillRect(barX, barY, barW, barH);
+  ctx.fillStyle = ratio > 0.5 ? "#7ad080" : ratio > 0.25 ? "#ddb95f" : "#d36a6a";
+  ctx.fillRect(barX, barY, barW * ratio, barH);
+  ctx.strokeStyle = "rgba(255,255,255,0.35)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
+}
+
+function drawEnemies(ctx, state, canvas, tileSize) {
+  const { currentAreaId, enemies, cam } = state;
+  if (!Array.isArray(enemies) || enemies.length === 0) return;
+
+  for (const enemy of enemies) {
+    if (!enemy || enemy.dead || enemy.world !== currentAreaId) continue;
+
+    const ex = Math.round(enemy.x - cam.x);
+    const ey = Math.round(enemy.y - cam.y);
+    if (ex > canvas.width || ey > canvas.height || ex < -tileSize || ey < -tileSize) continue;
+
+    if (enemy.sprite && enemy.sprite.width && enemy.sprite.height) {
+      ctx.drawImage(enemy.sprite, ex, ey, tileSize, tileSize);
+    } else {
+      drawEnemyPlaceholder(ctx, enemy, ex, ey, tileSize);
+    }
+
+    if (enemy.state === "attackWindup") {
+      const pulse = 0.5 + Math.sin(performance.now() * 0.02) * 0.5;
+      ctx.strokeStyle = `rgba(255, 154, 120, ${0.35 + pulse * 0.4})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(ex + tileSize / 2, ey + tileSize / 2, tileSize * 0.62, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    drawEnemyHealthBar(ctx, enemy, ex, ey, tileSize);
   }
 }
 
@@ -825,6 +919,45 @@ function drawBarMinigameOverlay(ctx, state, canvas, colors) {
   ctx.restore();
 }
 
+function drawCombatHud(ctx, state, colors) {
+  if (!isFreeExploreState(state.gameState)) return;
+  if (!state.player || !Number.isFinite(state.player.maxHp)) return;
+
+  const showChallenge = Boolean(state.gameFlags?.acceptedTraining);
+  const panelX = 14;
+  const panelY = 14;
+  const panelW = 224;
+  const panelH = showChallenge ? 76 : 54;
+  drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors);
+
+  const hpRatio = Math.max(0, Math.min(1, state.player.hp / Math.max(1, state.player.maxHp)));
+  const hpBarX = panelX + 12;
+  const hpBarY = panelY + 28;
+  const hpBarW = panelW - 24;
+  const hpBarH = 12;
+
+  ctx.font = FONT_12;
+  drawUiText(ctx, `HP ${Math.round(state.player.hp)} / ${Math.round(state.player.maxHp)}`, panelX + 12, panelY + 19, colors);
+
+  ctx.fillStyle = "rgba(11, 12, 16, 0.85)";
+  ctx.fillRect(hpBarX, hpBarY, hpBarW, hpBarH);
+  ctx.fillStyle = hpRatio > 0.5 ? "#7ad080" : hpRatio > 0.25 ? "#ddb95f" : "#d36a6a";
+  ctx.fillRect(hpBarX, hpBarY, hpBarW * hpRatio, hpBarH);
+  ctx.strokeStyle = "rgba(255,255,255,0.4)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(hpBarX + 0.5, hpBarY + 0.5, hpBarW - 1, hpBarH - 1);
+
+  if (showChallenge) {
+    const kills = Number.isFinite(state.gameFlags.hanamiChallengeKills) ? state.gameFlags.hanamiChallengeKills : 0;
+    const target = Number.isFinite(state.gameFlags.hanamiChallengeTarget) ? state.gameFlags.hanamiChallengeTarget : 3;
+    ctx.font = FONT_12;
+    const challengeText = state.gameFlags.completedTraining
+      ? "Mr. Hanami challenge complete"
+      : `Mr. Hanami challenge: ${kills}/${target}`;
+    drawUiText(ctx, challengeText, panelX + 12, panelY + 48, colors);
+  }
+}
+
 function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
   const { itemAlert, inventoryHint, player, cam } = state;
 
@@ -997,6 +1130,40 @@ function drawWorldVfx(ctx, state) {
           sparkleSize
         );
       }
+    } else if (effect.type === "attackSlash") {
+      const start = Math.PI * 0.15 + t * 1.6;
+      const end = start + Math.PI * 0.95;
+      ctx.strokeStyle = effect.color || "rgba(255, 238, 198, 0.95)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(x, y, baseSize * (0.72 + t * 0.2), start, end);
+      ctx.stroke();
+    } else if (effect.type === "hitSpark") {
+      const rays = 6;
+      ctx.strokeStyle = effect.color || "rgba(255, 191, 142, 0.96)";
+      ctx.lineWidth = 2;
+      for (let i = 0; i < rays; i++) {
+        const angle = i * ((Math.PI * 2) / rays) + t * 0.4;
+        const inner = baseSize * 0.12;
+        const outer = baseSize * (0.45 + t * 0.36);
+        ctx.beginPath();
+        ctx.moveTo(x + Math.cos(angle) * inner, y + Math.sin(angle) * inner);
+        ctx.lineTo(x + Math.cos(angle) * outer, y + Math.sin(angle) * outer);
+        ctx.stroke();
+      }
+    } else if (effect.type === "damageText") {
+      ctx.font = FONT_16;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const floatY = y - t * 22;
+      ctx.fillStyle = effect.color || "rgba(255, 233, 190, 0.98)";
+      ctx.strokeStyle = "rgba(0,0,0,0.55)";
+      ctx.lineWidth = 2;
+      const text = String(effect.text || "");
+      ctx.strokeText(text, x, floatY);
+      ctx.fillText(text, x, floatY);
+      ctx.textAlign = "start";
+      ctx.textBaseline = "alphabetic";
     } else {
       ctx.strokeStyle = effect.color || "rgba(255, 245, 209, 0.9)";
       ctx.lineWidth = 2;
@@ -1098,7 +1265,7 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
 
   if (titleState.showHowTo) {
     const helpW = Math.min(canvas.width - 120, 520);
-    const helpH = 210;
+    const helpH = 236;
     const helpX = Math.round((canvas.width - helpW) / 2);
     const helpY = Math.round((canvas.height - helpH) / 2);
     drawSkinnedPanel(ctx, helpX, helpY, helpW, helpH, colors, { titleBand: true });
@@ -1107,11 +1274,12 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
     ctx.font = FONT_16;
     drawUiText(ctx, "Move: W A S D or Arrow Keys", helpX + 20, helpY + 72, colors);
     drawUiText(ctx, "Interact / Advance: Space", helpX + 20, helpY + 96, colors);
-    drawUiText(ctx, "Pause Menu: Enter or Esc", helpX + 20, helpY + 120, colors);
-    drawUiText(ctx, "Inventory: I", helpX + 20, helpY + 144, colors);
-    drawUiText(ctx, "Gamepad: Left Stick + A + Start", helpX + 20, helpY + 168, colors);
+    drawUiText(ctx, "Attack: J (or K)", helpX + 20, helpY + 120, colors);
+    drawUiText(ctx, "Pause Menu: Enter or Esc", helpX + 20, helpY + 144, colors);
+    drawUiText(ctx, "Inventory: I", helpX + 20, helpY + 168, colors);
+    drawUiText(ctx, "Gamepad: Left Stick + A/X + Start", helpX + 20, helpY + 192, colors);
     ctx.font = FONT_12;
-    drawUiText(ctx, "Press ESC/B to close this panel", helpX + 20, helpY + 192, colors);
+    drawUiText(ctx, "Press ESC/B to close this panel", helpX + 20, helpY + 218, colors);
   }
 
   if (titleState.fadeOutActive) {
@@ -1193,6 +1361,7 @@ export function renderGameFrame({
   }
 
   drawNPCs(ctx, state, canvas, tileSize, colors);
+  drawEnemies(ctx, state, canvas, tileSize);
   drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, spriteFrameHeight, spriteFramesPerRow);
   drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoom, drawTile);
   drawWorldVfx(ctx, state);
@@ -1207,6 +1376,7 @@ export function renderGameFrame({
     drawTitleScreenOverlay(ctx, canvas, state, colors);
     return;
   }
+  drawCombatHud(ctx, state, colors);
   if (typeof drawCustomOverlays === "function") {
     drawCustomOverlays({ ctx, canvas, colors, ui, state });
   }

@@ -26,6 +26,33 @@ function createDefaultsForType(type) {
     };
   }
 
+  if (type === "attackSlash") {
+    return {
+      durationMs: 210,
+      size: 30,
+      color: "rgba(255, 243, 214, 0.95)",
+      glowColor: "rgba(255, 212, 132, 0.22)"
+    };
+  }
+
+  if (type === "hitSpark") {
+    return {
+      durationMs: 260,
+      size: 20,
+      color: "rgba(255, 188, 142, 0.95)",
+      glowColor: "rgba(255, 154, 92, 0.24)"
+    };
+  }
+
+  if (type === "damageText") {
+    return {
+      durationMs: 560,
+      size: 20,
+      color: "rgba(255, 224, 184, 0.98)",
+      glowColor: "rgba(0, 0, 0, 0)"
+    };
+  }
+
   return {
     durationMs: 450,
     size: 24,
@@ -51,6 +78,7 @@ export function createVfxSystem() {
       size: options.size ?? defaults.size,
       color: options.color || defaults.color,
       glowColor: options.glowColor || defaults.glowColor,
+      text: options.text || "",
       intensity: options.intensity ?? 1
     });
   }

@@ -61,6 +61,13 @@ export function createInteractionSystem({
     const onTrainingTile = tilePos.x === trainingTile.x && tilePos.y === trainingTile.y;
     if (!onTrainingTile) return;
 
+    if (gameFlags.acceptedTraining && !gameFlags.completedTraining) {
+      if (!isDialogueActive()) {
+        showDialogue("", "Mr. Hanami's challenge is upstairs. Defeat three opponents.");
+      }
+      return;
+    }
+
     if (playerStats.disciplineLevel >= 2) {
       if (!isDialogueActive()) {
         showDialogue("", trainingContent.completedPrompt);
@@ -145,7 +152,12 @@ export function createInteractionSystem({
     }
 
     if (gameFlags.acceptedTraining) {
-      showDialogue(npc.name, trainingContent.acceptedDialogue);
+      const kills = Number.isFinite(gameFlags.hanamiChallengeKills) ? gameFlags.hanamiChallengeKills : 0;
+      const target = Number.isFinite(gameFlags.hanamiChallengeTarget) ? gameFlags.hanamiChallengeTarget : 3;
+      showDialogue(npc.name, [
+        trainingContent.acceptedDialogue,
+        `Challenge progress: ${kills}/${target}.`
+      ]);
       return;
     }
 
@@ -153,6 +165,10 @@ export function createInteractionSystem({
       openYesNoChoice((selectedOption) => {
         if (selectedOption === "Yes") {
           gameFlags.acceptedTraining = true;
+          gameFlags.hanamiChallengeKills = 0;
+          gameFlags.hanamiChallengeTarget = 3;
+          gameFlags.hanamiChallengeCompleteAnnounced = false;
+          gameFlags.hanamiChallengePrepared = false;
 
           if (!playerInventory[trainingContent.itemName]) {
             playerInventory[trainingContent.itemName] = 1;

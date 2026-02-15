@@ -231,6 +231,80 @@ export class WorldService {
     });
   }
 
+  createEnemiesForTown(townId) {
+    const town = this.getTown(townId);
+    if (!town) return [];
+    const enemyDefinitions = Array.isArray(town.enemies) ? town.enemies : [];
+
+    return enemyDefinitions.map((enemy, index) => {
+      const {
+        id,
+        areaId,
+        x,
+        y,
+        dir,
+        spriteName,
+        maxHp,
+        damage,
+        speed,
+        aggroRangeTiles,
+        attackRangeTiles,
+        attackCooldownMs,
+        attackWindupMs,
+        attackRecoveryMs,
+        respawnDelayMs,
+        ...customFields
+      } = enemy;
+
+      const spawnX = x * this.tileSize;
+      const spawnY = y * this.tileSize;
+      const resolvedMaxHp = Number.isFinite(maxHp) ? Math.max(1, maxHp) : 35;
+
+      return {
+        ...customFields,
+        id: id || `enemy-${index + 1}`,
+        name: enemy.name || `Enemy ${index + 1}`,
+        world: areaId,
+        x: spawnX,
+        y: spawnY,
+        spawnX,
+        spawnY,
+        width: this.tileSize,
+        height: this.tileSize,
+        dir: dir || "down",
+        sprite: spriteName ? this.getSprite(spriteName) : null,
+        maxHp: resolvedMaxHp,
+        hp: resolvedMaxHp,
+        damage: Number.isFinite(damage) ? Math.max(0, damage) : 8,
+        speed: Number.isFinite(speed) ? Math.max(0.4, speed) : 1.1,
+        aggroRange: (Number.isFinite(aggroRangeTiles) ? aggroRangeTiles : 5.5) * this.tileSize,
+        attackRange: (Number.isFinite(attackRangeTiles) ? attackRangeTiles : 1.1) * this.tileSize,
+        attackCooldownMs: Number.isFinite(attackCooldownMs) ? Math.max(120, attackCooldownMs) : 900,
+        attackWindupMs: Number.isFinite(attackWindupMs) ? Math.max(60, attackWindupMs) : 220,
+        attackRecoveryMs: Number.isFinite(attackRecoveryMs) ? Math.max(60, attackRecoveryMs) : 300,
+        respawnDelayMs: Number.isFinite(respawnDelayMs) ? Math.max(1000, respawnDelayMs) : 5000,
+        behaviorType: typeof enemy.behaviorType === "string" && enemy.behaviorType.length > 0
+          ? enemy.behaviorType
+          : "meleeChaser",
+        attackType: typeof enemy.attackType === "string" && enemy.attackType.length > 0
+          ? enemy.attackType
+          : "lightSlash",
+        respawnEnabled: enemy.respawnEnabled !== false,
+        countsForChallenge: Boolean(enemy.countsForChallenge),
+        challengeDefeatedCounted: false,
+        invulnerableUntil: 0,
+        hitStunUntil: 0,
+        state: "idle",
+        dead: false,
+        respawnAt: 0,
+        lastAttackAt: -Infinity,
+        attackStrikeAt: 0,
+        recoverUntil: 0,
+        pendingStrike: false
+      };
+    });
+  }
+
   getTrainingContent() {
     return this.content.training;
   }

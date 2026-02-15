@@ -14,6 +14,7 @@ export class InputManager {
     this.shouldHandleInput = shouldHandleInput || (() => true);
     this.keys = {};
     this.interactPressed = false;
+    this.attackPressed = false;
     this.initialized = false;
 
     this._onKeyDown = this._onKeyDown.bind(this);
@@ -42,6 +43,18 @@ export class InputManager {
     this.interactPressed = false;
   }
 
+  getAttackPressed() {
+    return this.attackPressed;
+  }
+
+  clearAttackPressed() {
+    this.attackPressed = false;
+  }
+
+  triggerAttackPressed() {
+    this.attackPressed = true;
+  }
+
   isMoving() {
     return MOVEMENT_KEYS.some((key) => Boolean(this.keys[key]));
   }
@@ -59,6 +72,13 @@ export class InputManager {
     if (key === " ") {
       if (!this.shouldHandleInput()) return;
       this.interactPressed = true;
+      e.preventDefault();
+      return;
+    }
+
+    if ((key === "j" || key === "k") && !e.repeat) {
+      if (!this.shouldHandleInput()) return;
+      this.attackPressed = true;
       e.preventDefault();
       return;
     }

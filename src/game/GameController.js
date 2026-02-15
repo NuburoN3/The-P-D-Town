@@ -34,6 +34,9 @@ export function createGameController({
 
     if (townId !== previousTownId) {
       state.reloadTownNPCs(townId);
+      if (typeof state.reloadTownEnemies === "function") {
+        state.reloadTownEnemies(townId);
+      }
     }
 
     syncMusicForCurrentArea();
@@ -41,13 +44,17 @@ export function createGameController({
   }
 
   function updatePlayerMovement() {
+    const blockingEntities = Array.isArray(state.enemies)
+      ? state.npcs.concat(state.enemies.filter((enemy) => !enemy.dead))
+      : state.npcs;
+
     movementSystem.updatePlayerMovement(
       {
         player: state.player,
         currentMap: state.getCurrentMap(),
         currentMapW: state.getCurrentMapW(),
         currentMapH: state.getCurrentMapH(),
-        npcs: state.npcs,
+        npcs: blockingEntities,
         currentAreaId: state.getCurrentAreaId()
       },
       {

@@ -57,7 +57,11 @@ export function createGameRuntime() {
 
   const gameFlags = {
     acceptedTraining: false,
-    completedTraining: false
+    completedTraining: false,
+    hanamiChallengeKills: 0,
+    hanamiChallengeTarget: 3,
+    hanamiChallengeCompleteAnnounced: false,
+    hanamiChallengePrepared: false
   };
 
   const playerInventory = {};
@@ -102,6 +106,7 @@ export function createGameRuntime() {
   const currentMapH = initialArea.height;
 
   const npcs = worldService.createNPCsForTown(currentTownId);
+  const enemies = worldService.createEnemiesForTown(currentTownId);
 
   const initialGameState =
     initialArea.kind === AREA_KINDS.OVERWORLD ? GAME_STATES.OVERWORLD : GAME_STATES.INTERIOR;
@@ -111,6 +116,8 @@ export function createGameRuntime() {
   const player = {
     x: initialSpawn.x,
     y: initialSpawn.y,
+    spawnX: initialSpawn.x,
+    spawnY: initialSpawn.y,
     speed: 2.2,
     dir: initialSpawn.dir,
     walking: false,
@@ -121,7 +128,26 @@ export function createGameRuntime() {
     desiredHeightTiles: PLAYER_SPRITE_HEIGHT_TILES,
     isTraining: false,
     handstandAnimTimer: 0,
-    handstandFrame: 0
+    handstandFrame: 0,
+    maxHp: 100,
+    hp: 100,
+    invulnerableUntil: 0,
+    invulnerableMs: 620,
+    attackState: "idle",
+    attackStartedAt: 0,
+    attackActiveAt: 0,
+    attackActiveUntil: 0,
+    attackRecoveryUntil: 0,
+    lastAttackAt: -Infinity,
+    attackCooldownMs: 290,
+    attackWindupMs: 70,
+    attackActiveMs: 110,
+    attackRecoveryMs: 160,
+    attackRange: TILE * 0.9,
+    attackHitRadius: TILE * 0.7,
+    attackDamage: 20,
+    equippedAttackId: "lightSlash",
+    requestedAttackId: null
   };
 
   const cam = { x: 0, y: 0 };
@@ -163,6 +189,7 @@ export function createGameRuntime() {
       currentMapW,
       currentMapH,
       npcs,
+      enemies,
       gameState,
       previousWorldState,
       player,
