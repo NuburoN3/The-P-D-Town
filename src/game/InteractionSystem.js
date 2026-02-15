@@ -284,6 +284,9 @@ export function createInteractionSystem({
     const playerCenterX = player.x + tileSize / 2;
     const playerCenterY = player.y + tileSize / 2;
 
+    let closestNpc = null;
+    let closestNpcDistance = Number.POSITIVE_INFINITY;
+
     for (const npc of npcs) {
       if (npc.world !== currentAreaId) continue;
 
@@ -293,19 +296,29 @@ export function createInteractionSystem({
       const dy = Math.abs(playerCenterY - npcCenterY);
 
       if (dx <= ui.INTERACT_REACH && dy <= ui.INTERACT_REACH) {
-        const relativeX = playerCenterX - npcCenterX;
-        const relativeY = playerCenterY - npcCenterY;
-
-        if (Math.abs(relativeX) >= Math.abs(relativeY)) {
-          npc.dir = relativeX < 0 ? "left" : "right";
-        } else {
-          npc.dir = relativeY < 0 ? "up" : "down";
+        const distance = Math.hypot(playerCenterX - npcCenterX, playerCenterY - npcCenterY);
+        if (distance < closestNpcDistance) {
+          closestNpc = npc;
+          closestNpcDistance = distance;
         }
-
-        handleNPCInteraction(npc);
-        clearInteractPressed();
-        return;
       }
+    }
+
+    if (closestNpc) {
+      const npcCenterX = closestNpc.x + closestNpc.width / 2;
+      const npcCenterY = closestNpc.y + closestNpc.height / 2;
+      const relativeX = playerCenterX - npcCenterX;
+      const relativeY = playerCenterY - npcCenterY;
+
+      if (Math.abs(relativeX) >= Math.abs(relativeY)) {
+        closestNpc.dir = relativeX < 0 ? "left" : "right";
+      } else {
+        closestNpc.dir = relativeY < 0 ? "up" : "down";
+      }
+
+      handleNPCInteraction(closestNpc);
+      clearInteractPressed();
+      return;
     }
 
     const inset = 5;
