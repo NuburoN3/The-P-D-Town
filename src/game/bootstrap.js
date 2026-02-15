@@ -49,7 +49,14 @@ export function createGameRuntime() {
       menuOpen: "assets/audio/PauseMenu_Sound.wav",
       menuMove: "assets/audio/collision_sound.wav",
       menuConfirm: "assets/audio/EnterDoor_Sound.wav",
-      menuSelect: "assets/audio/MenuSelect_Sound.wav"
+      menuSelect: "assets/audio/MenuSelect_Sound.wav",
+      attackSwing: "assets/audio/MenuSelect_Sound.wav",
+      enemyTelegraph: "assets/audio/collision_sound.wav",
+      hitImpact: "assets/audio/Item_Unlock.wav",
+      hurt: "assets/audio/collision_sound.wav",
+      saveGame: "assets/audio/EnterDoor_Sound.wav",
+      loadGame: "assets/audio/PauseMenu_Sound.wav",
+      uiError: "assets/audio/collision_sound.wav"
     },
     fadeDurationMs: 800
   });

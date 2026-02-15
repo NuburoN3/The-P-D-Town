@@ -14,6 +14,7 @@ import {
 } from "../core/constants.js";
 import { InputManager } from "../core/InputManager.js";
 import { CollisionService } from "../core/CollisionSystem.js";
+import { loadGameSnapshot, loadUserSettings, saveGameSnapshot, saveUserSettings } from "../core/Persistence.js";
 import { drawTile as drawTileSystem } from "../rendering/TileSystem.js";
 import { DialogueSystem } from "../game/DialogueSystem.js";
 import { renderGameFrame } from "../game/RenderSystem.js";
@@ -49,8 +50,34 @@ let { currentTownId, currentAreaId, currentMap, currentMapW, currentMapH, gameSt
 let previousGameState = GAME_STATES.OVERWORLD;
 let gameController = null;
 
+const userSettings = loadUserSettings();
+const settingsUiState = {
+  selected: 0,
+  awaitingRebindAction: null,
+  statusText: "",
+  statusUntil: 0
+};
+
+const SETTINGS_ITEMS = Object.freeze([
+  { id: "highContrastMenu", kind: "toggle", label: "High Contrast Menu" },
+  { id: "screenShake", kind: "toggle", label: "Screen Shake" },
+  { id: "reducedFlashes", kind: "toggle", label: "Reduced Flashes" },
+  { id: "textSpeedMultiplier", kind: "cycle", label: "Text Speed", values: [0.75, 1, 1.25, 1.5, 2] },
+  { id: "bind.moveUp", kind: "rebind", label: "Bind Move Up", action: "moveUp" },
+  { id: "bind.moveDown", kind: "rebind", label: "Bind Move Down", action: "moveDown" },
+  { id: "bind.moveLeft", kind: "rebind", label: "Bind Move Left", action: "moveLeft" },
+  { id: "bind.moveRight", kind: "rebind", label: "Bind Move Right", action: "moveRight" },
+  { id: "bind.interact", kind: "rebind", label: "Bind Interact", action: "interact" },
+  { id: "bind.attack", kind: "rebind", label: "Bind Attack", action: "attack" },
+  { id: "bind.inventory", kind: "rebind", label: "Bind Inventory", action: "inventory" },
+  { id: "bind.pause", kind: "rebind", label: "Bind Pause", action: "pause" },
+  { id: "saveGame", kind: "action", label: "Save Game" },
+  { id: "loadGame", kind: "action", label: "Load Game" }
+]);
+
 let interactionSystem = null;
 const input = new InputManager({
+  keyBindings: userSettings.keybindings,
   onToggleInventory: () => {
     if (interactionSystem) {
       interactionSystem.toggleInventory();
@@ -70,6 +97,7 @@ const collisionService = new CollisionService({ tileSize: TILE });
 
 const movementSystem = createMovementSystem({
   keys: input.keys,
+  getActionPressed: (action) => input.isActionPressed(action),
   tileSize: TILE,
   spriteFramesPerRow: SPRITE_FRAMES_PER_ROW,
   cameraZoom: CAMERA_ZOOM,
@@ -82,7 +110,7 @@ const pauseMenuState = {
   active: false,
   selected: 0,
   options: ["Inventory", "Attributes", "Settings", "Quit"],
-  highContrast: false,
+  highContrast: Boolean(userSettings.highContrastMenu),
   animationMode: "idle",
   animationStartedAt: 0,
   animationDurationMs: 170
@@ -97,6 +125,162 @@ const gamepadMenuState = {
 };
 const trainingContent = worldService.getTrainingContent();
 const vfxSystem = createVfxSystem();
+dialogue.setTextSpeedMultiplier(userSettings.textSpeedMultiplier);
+
+const combatFeedback = {
+  hitstopUntil: 0,
+  shakeUntil: 0,
+  shakeMagnitude: 0,
+  lastEnemyTelegraphAt: 0
+};
+
+const saveState = {
+  nextAutosaveAt: performance.now() + 14000
+};
+
+function persistUserSettings() {
+  saveUserSettings({
+    ...userSettings,
+    highContrastMenu: pauseMenuState.highContrast,
+    keybindings: input.getBindings()
+  });
+}
+
+function setSettingsStatus(text, durationMs = 1700) {
+  settingsUiState.statusText = text;
+  settingsUiState.statusUntil = performance.now() + durationMs;
+}
+
+function triggerHitstop(durationMs) {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return;
+  const now = performance.now();
+  combatFeedback.hitstopUntil = Math.max(combatFeedback.hitstopUntil, now + durationMs);
+}
+
+function triggerCameraShake(magnitude = 0, durationMs = 0) {
+  if (!userSettings.screenShake) return;
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return;
+  const now = performance.now();
+  combatFeedback.shakeUntil = Math.max(combatFeedback.shakeUntil, now + durationMs);
+  combatFeedback.shakeMagnitude = Math.max(combatFeedback.shakeMagnitude, magnitude);
+}
+
+function buildGameSnapshot() {
+  return {
+    version: 1,
+    world: {
+      townId: currentTownId,
+      areaId: currentAreaId
+    },
+    player: {
+      x: player.x,
+      y: player.y,
+      dir: player.dir,
+      hp: player.hp,
+      maxHp: player.maxHp,
+      equippedAttackId: player.equippedAttackId || "lightSlash"
+    },
+    gameFlags: { ...gameFlags },
+    playerStats: { ...playerStats },
+    playerInventory: { ...playerInventory }
+  };
+}
+
+function applyGameSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") return false;
+
+  const townId = snapshot.world?.townId;
+  const areaId = snapshot.world?.areaId;
+  const area = worldService.getArea(townId, areaId);
+  if (!area) return false;
+
+  currentTownId = townId;
+  currentAreaId = areaId;
+  currentMap = area.map;
+  currentMapW = area.width;
+  currentMapH = area.height;
+
+  const nextTownNPCs = worldService.createNPCsForTown(currentTownId);
+  npcs.splice(0, npcs.length, ...nextTownNPCs);
+  const nextTownEnemies = worldService.createEnemiesForTown(currentTownId);
+  enemies.splice(0, enemies.length, ...nextTownEnemies);
+
+  const px = Number.isFinite(snapshot.player?.x) ? snapshot.player.x : player.x;
+  const py = Number.isFinite(snapshot.player?.y) ? snapshot.player.y : player.y;
+  player.x = px;
+  player.y = py;
+  player.spawnX = px;
+  player.spawnY = py;
+  player.dir = snapshot.player?.dir || player.dir || "down";
+  player.maxHp = Number.isFinite(snapshot.player?.maxHp) ? Math.max(1, snapshot.player.maxHp) : player.maxHp;
+  player.hp = Number.isFinite(snapshot.player?.hp)
+    ? Math.max(0, Math.min(player.maxHp, snapshot.player.hp))
+    : player.hp;
+  player.equippedAttackId = snapshot.player?.equippedAttackId || player.equippedAttackId || "lightSlash";
+
+  if (snapshot.gameFlags && typeof snapshot.gameFlags === "object") {
+    Object.assign(gameFlags, snapshot.gameFlags);
+  }
+  if (snapshot.playerStats && typeof snapshot.playerStats === "object") {
+    Object.assign(playerStats, snapshot.playerStats);
+  }
+  if (snapshot.playerInventory && typeof snapshot.playerInventory === "object") {
+    for (const key of Object.keys(playerInventory)) {
+      delete playerInventory[key];
+    }
+    Object.assign(playerInventory, snapshot.playerInventory);
+  }
+
+  const resolvedState = worldService.getAreaKind(currentTownId, currentAreaId) === AREA_KINDS.OVERWORLD
+    ? GAME_STATES.OVERWORLD
+    : GAME_STATES.INTERIOR;
+  if (gameState !== GAME_STATES.TITLE_SCREEN) {
+    gameState = resolvedState;
+    previousWorldState = resolvedState;
+    previousGameState = resolvedState;
+  }
+
+  cam.initialized = false;
+  return true;
+}
+
+function performSaveGame() {
+  const ok = saveGameSnapshot(buildGameSnapshot());
+  if (ok) {
+    musicManager.playSfx("saveGame");
+    setSettingsStatus("Game saved.");
+  } else {
+    musicManager.playSfx("uiError");
+    setSettingsStatus("Save failed.");
+  }
+}
+
+function performLoadGame() {
+  const snapshot = loadGameSnapshot();
+  if (!snapshot) {
+    musicManager.playSfx("uiError");
+    setSettingsStatus("No save found.");
+    return;
+  }
+  const ok = applyGameSnapshot(snapshot);
+  if (!ok) {
+    musicManager.playSfx("uiError");
+    setSettingsStatus("Save data invalid.");
+    return;
+  }
+
+  if (gameController && typeof gameController.syncMusicForCurrentArea === "function") {
+    gameController.syncMusicForCurrentArea();
+  }
+
+  musicManager.playSfx("loadGame");
+  setSettingsStatus("Save loaded.");
+}
+
+const startupSnapshot = loadGameSnapshot();
+if (startupSnapshot) {
+  applyGameSnapshot(startupSnapshot);
+}
 const HANAMI_DOJO_UPSTAIRS_DOOR_TILE = Object.freeze({
   areaId: "hanamiDojo",
   x: 9,
@@ -326,10 +510,32 @@ function handlePlayerDefeated({ player: defeatedPlayer }) {
   playerDefeatSequence.destination = getMrHanamiRespawnDestination();
 }
 
+function handleCombatHitConfirmed(event) {
+  if (!event) return;
+  if (event.type === "entityDamaged") {
+    triggerHitstop(52);
+    triggerCameraShake(2.8, 120);
+    musicManager.playSfx("hitImpact");
+    return;
+  }
+
+  if (event.type === "playerDamaged") {
+    triggerHitstop(44);
+    triggerCameraShake(2.2, 140);
+    musicManager.playSfx("hurt");
+  }
+}
+
 const combatSystem = createCombatSystem({
   tileSize: TILE,
   eventHandlers: {
     onRequestVfx: (type, options) => vfxSystem.spawn(type, options),
+    onPlayerAttackStarted: () => {
+      musicManager.playSfx("attackSwing");
+    },
+    onHitConfirmed: (event) => {
+      handleCombatHitConfirmed(event);
+    },
     onEntityDefeated: (enemy, now) => {
       handleChallengeEnemyDefeat(enemy, now);
     },
@@ -338,7 +544,23 @@ const combatSystem = createCombatSystem({
     }
   }
 });
-const enemyAiSystem = createEnemyAISystem({ tileSize: TILE });
+const enemyAiSystem = createEnemyAISystem({
+  tileSize: TILE,
+  eventHandlers: {
+    onEnemyAttackWindupStarted: ({ enemy, now }) => {
+      if (now - combatFeedback.lastEnemyTelegraphAt > 120) {
+        musicManager.playSfx("enemyTelegraph");
+        combatFeedback.lastEnemyTelegraphAt = now;
+      }
+      vfxSystem.spawn("warningRing", {
+        x: enemy.x + TILE * 0.5,
+        y: enemy.y + TILE * 0.5,
+        size: TILE * 0.8,
+        durationMs: Math.max(180, enemy.attackWindupMs)
+      });
+    }
+  }
+});
 const gameplayStartState = gameState;
 const titleState = {
   startedAt: performance.now(),
@@ -383,6 +605,11 @@ function advanceDialogue() {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(value, max));
+}
+
+function normalizeInputKey(key) {
+  if (key === " ") return "space";
+  return String(key || "").toLowerCase();
 }
 
 function moveTitleSelection(direction) {
@@ -695,7 +922,73 @@ function movePauseMenuSelection(direction) {
 
 function toggleHighContrastMenu() {
   pauseMenuState.highContrast = !pauseMenuState.highContrast;
+  userSettings.highContrastMenu = pauseMenuState.highContrast;
+  persistUserSettings();
   musicManager.playSfx("menuConfirm");
+}
+
+function getSettingsItemByIndex(index) {
+  if (SETTINGS_ITEMS.length === 0) return null;
+  const safe = ((index % SETTINGS_ITEMS.length) + SETTINGS_ITEMS.length) % SETTINGS_ITEMS.length;
+  return SETTINGS_ITEMS[safe];
+}
+
+function moveSettingsSelection(direction) {
+  if (settingsUiState.awaitingRebindAction) return;
+  const total = SETTINGS_ITEMS.length;
+  settingsUiState.selected = (settingsUiState.selected + direction + total) % total;
+  musicManager.playSfx("menuMove");
+}
+
+function cycleSettingValue(settingId, values) {
+  const current = userSettings[settingId];
+  const index = values.indexOf(current);
+  const next = values[(index + 1 + values.length) % values.length];
+  userSettings[settingId] = next;
+  if (settingId === "textSpeedMultiplier") {
+    dialogue.setTextSpeedMultiplier(next);
+  }
+  persistUserSettings();
+}
+
+function activateSettingsItem() {
+  if (settingsUiState.awaitingRebindAction) return;
+  const item = getSettingsItemByIndex(settingsUiState.selected);
+  if (!item) return;
+
+  if (item.kind === "toggle") {
+    if (item.id === "highContrastMenu") {
+      toggleHighContrastMenu();
+      return;
+    }
+    userSettings[item.id] = !userSettings[item.id];
+    persistUserSettings();
+    musicManager.playSfx("menuConfirm");
+    return;
+  }
+
+  if (item.kind === "cycle") {
+    cycleSettingValue(item.id, item.values || []);
+    musicManager.playSfx("menuConfirm");
+    return;
+  }
+
+  if (item.kind === "rebind") {
+    settingsUiState.awaitingRebindAction = item.action;
+    settingsUiState.statusText = `Press a key for ${item.label}`;
+    settingsUiState.statusUntil = Number.POSITIVE_INFINITY;
+    musicManager.playSfx("menuSelect");
+    return;
+  }
+
+  if (item.id === "saveGame") {
+    performSaveGame();
+    return;
+  }
+
+  if (item.id === "loadGame") {
+    performLoadGame();
+  }
 }
 
 function selectPauseMenuOption() {
@@ -734,6 +1027,7 @@ function handleGamepadPauseAndMenuInput(now) {
     resetGamepadHeldStates();
     return;
   }
+  input.setInputMethod("gamepad");
 
   const buttons = pad.buttons || [];
   const axisY = Array.isArray(pad.axes) && pad.axes.length > 1 ? pad.axes[1] : 0;
@@ -798,11 +1092,25 @@ function handleGamepadPauseAndMenuInput(now) {
   gamepadMenuState.heldDirection = 0;
 
   if (gameState === GAME_STATES.SETTINGS) {
+    if (direction !== 0 && (direction !== gamepadMenuState.heldDirection || now >= gamepadMenuState.nextMoveAt)) {
+      moveSettingsSelection(direction);
+      gamepadMenuState.heldDirection = direction;
+      gamepadMenuState.nextMoveAt = now + 145;
+    } else if (direction === 0) {
+      gamepadMenuState.heldDirection = 0;
+    }
+
     if (confirmPressed && !gamepadMenuState.confirmHeld) {
-      toggleHighContrastMenu();
+      activateSettingsItem();
     }
     if ((backPressed && !gamepadMenuState.backHeld) || (startPressed && !gamepadMenuState.startHeld)) {
-      returnToPauseMenu();
+      if (settingsUiState.awaitingRebindAction) {
+        settingsUiState.awaitingRebindAction = null;
+        setSettingsStatus("Rebind cancelled.", 1200);
+        musicManager.playSfx("menuConfirm");
+      } else {
+        returnToPauseMenu();
+      }
     }
   } else if (gameState === GAME_STATES.INVENTORY || gameState === GAME_STATES.ATTRIBUTES) {
     if (
@@ -829,14 +1137,15 @@ function handleGamepadPauseAndMenuInput(now) {
 
 addEventListener("keydown", (e) => {
   if (!choiceState.active) return;
+  const key = normalizeInputKey(e.key);
 
-  if (!e.repeat && (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "w" || e.key === "s")) {
-    const direction = (e.key === "ArrowUp" || e.key === "w") ? -1 : 1;
+  if (!e.repeat && (key === "arrowup" || key === "arrowdown" || key === "w" || key === "s")) {
+    const direction = (key === "arrowup" || key === "w") ? -1 : 1;
     const total = choiceState.options.length;
     choiceState.selected = (choiceState.selected + direction + total) % total;
   }
 
-  if (e.key === " " && !e.repeat) {
+  if (input.matchesActionKey("interact", key) && !e.repeat) {
     confirmChoice();
     input.clearInteractPressed();
   }
@@ -844,7 +1153,34 @@ addEventListener("keydown", (e) => {
 
 addEventListener("keydown", (e) => {
   if (choiceState.active) return;
-  const key = e.key.toLowerCase();
+  const key = normalizeInputKey(e.key);
+
+  if (gameState === GAME_STATES.SETTINGS && settingsUiState.awaitingRebindAction && !e.repeat) {
+    if (key === "escape") {
+      settingsUiState.awaitingRebindAction = null;
+      setSettingsStatus("Rebind cancelled.", 1200);
+      musicManager.playSfx("menuConfirm");
+      e.preventDefault();
+      return;
+    }
+
+    const result = input.setPrimaryBinding(settingsUiState.awaitingRebindAction, key);
+    if (result.ok) {
+      persistUserSettings();
+      const bindingName = InputManager.toDisplayKeyName(input.getPrimaryBinding(settingsUiState.awaitingRebindAction));
+      setSettingsStatus(`Bound to ${bindingName}.`, 1300);
+      musicManager.playSfx("menuConfirm");
+    } else if (result.reason === "primary-conflict") {
+      musicManager.playSfx("uiError");
+      setSettingsStatus("Key already used by another action.", 1700);
+    } else {
+      musicManager.playSfx("uiError");
+      setSettingsStatus("Invalid key.", 1700);
+    }
+    settingsUiState.awaitingRebindAction = null;
+    e.preventDefault();
+    return;
+  }
 
   if (gameState === GAME_STATES.TITLE_SCREEN) {
     if (!e.repeat && (key === "arrowup" || key === "w")) {
@@ -857,7 +1193,7 @@ addEventListener("keydown", (e) => {
       e.preventDefault();
       return;
     }
-    if (!e.repeat && (key === " " || key === "enter")) {
+    if (!e.repeat && (key === "space" || key === "enter")) {
       confirmTitleSelection();
       e.preventDefault();
       return;
@@ -877,21 +1213,27 @@ addEventListener("keydown", (e) => {
       const direction = (key === "arrowup" || key === "w") ? -1 : 1;
       movePauseMenuSelection(direction);
     }
-    if ((key === "enter" || key === "escape") && !e.repeat) {
+    if ((key === "enter" || key === "escape" || input.matchesActionKey("pause", key)) && !e.repeat) {
       resumeFromPauseMenu();
       return;
     }
-    if (key === " " && !e.repeat) {
+    if (key === "space" && !e.repeat) {
       selectPauseMenuOption();
     }
     return;
   }
 
   if (gameState === GAME_STATES.SETTINGS) {
-    if (key === " " && !e.repeat) {
-      toggleHighContrastMenu();
+    if (!e.repeat && (key === "arrowup" || key === "w")) {
+      moveSettingsSelection(-1);
       e.preventDefault();
-    } else if ((key === "enter" || key === "escape") && !e.repeat) {
+    } else if (!e.repeat && (key === "arrowdown" || key === "s")) {
+      moveSettingsSelection(1);
+      e.preventDefault();
+    } else if (!e.repeat && (key === "space" || key === "enter")) {
+      activateSettingsItem();
+      e.preventDefault();
+    } else if ((key === "escape" || input.matchesActionKey("pause", key)) && !e.repeat) {
       returnToPauseMenu();
       e.preventDefault();
     }
@@ -899,14 +1241,14 @@ addEventListener("keydown", (e) => {
   }
 
   if (gameState === GAME_STATES.INVENTORY || gameState === GAME_STATES.ATTRIBUTES) {
-    if ((key === "enter" || key === "escape") && !e.repeat) {
+    if ((key === "enter" || key === "escape" || input.matchesActionKey("pause", key)) && !e.repeat) {
       returnToPauseMenu();
       e.preventDefault();
     }
     return;
   }
 
-  if ((key === "enter" || key === "escape") && !e.repeat && isFreeExploreState(gameState)) {
+  if ((key === "enter" || key === "escape" || input.matchesActionKey("pause", key)) && !e.repeat && isFreeExploreState(gameState)) {
     openPauseMenu();
   }
 });
@@ -940,7 +1282,34 @@ function drawTile(type, x, y, tileX, tileY) {
   );
 }
 
+function computeRenderCamera(now) {
+  const renderCam = {
+    x: cam.x,
+    y: cam.y
+  };
+
+  if (!isFreeExploreState(gameState)) return renderCam;
+
+  const mood = worldService.getAreaMoodPreset(currentTownId, currentAreaId);
+  const swayStrength = mood === "goldenDawn" ? 0.85 : mood === "amberLounge" ? 0.45 : 0.32;
+  renderCam.x += Math.sin(now * 0.00037) * swayStrength;
+  renderCam.y += Math.cos(now * 0.00029) * swayStrength * 0.85;
+
+  if (userSettings.screenShake && now < combatFeedback.shakeUntil) {
+    const t = 1 - Math.max(0, (combatFeedback.shakeUntil - now) / 220);
+    const amplitude = combatFeedback.shakeMagnitude * (1 - t);
+    renderCam.x += (Math.random() * 2 - 1) * amplitude;
+    renderCam.y += (Math.random() * 2 - 1) * amplitude;
+  } else if (now >= combatFeedback.shakeUntil) {
+    combatFeedback.shakeMagnitude = 0;
+  }
+
+  return renderCam;
+}
+
 function render() {
+  const now = performance.now();
+  const renderCam = computeRenderCamera(now);
   renderGameFrame({
     ctx,
     canvas,
@@ -978,7 +1347,12 @@ function render() {
       npcs,
       enemies,
       gameFlags,
-      cam,
+      cam: renderCam,
+      inputPromptMode: input.getInputMethod(),
+      keyBindings: input.getBindings(),
+      settingsUiState,
+      settingsItems: SETTINGS_ITEMS,
+      userSettings,
       vfxEffects: vfxSystem.effects,
       trainingPopup,
       playerStats,
@@ -993,48 +1367,70 @@ function render() {
 
 gameController.syncMusicForCurrentArea();
 
+function maybeAutosave(now) {
+  if (now < saveState.nextAutosaveAt) return;
+  saveState.nextAutosaveAt = now + 14000;
+
+  if (!isFreeExploreState(gameState) || doorSequence.active || playerDefeatSequence.active) return;
+  saveGameSnapshot(buildGameSnapshot());
+}
+
 function loop() {
   const now = performance.now();
   handleGamepadPauseAndMenuInput(now);
+  if (
+    settingsUiState.statusText &&
+    Number.isFinite(settingsUiState.statusUntil) &&
+    now >= settingsUiState.statusUntil
+  ) {
+    settingsUiState.statusText = "";
+  }
+
+  const hitstopActive = now < combatFeedback.hitstopUntil;
 
   if (gameState === GAME_STATES.TITLE_SCREEN) {
     updateTitleScreen(now);
   } else {
     updatePlayerDefeatSequence(now);
-    gameController.update();
-    prepareHanamiChallengeEnemies();
+    if (!hitstopActive) {
+      gameController.update();
+      prepareHanamiChallengeEnemies();
 
-    enemyAiSystem.update({
-      now,
-      gameState,
-      isDialogueActive: isDialogueActive(),
-      choiceActive: choiceState.active,
-      enemies,
-      player,
-      currentAreaId,
-      currentMap,
-      currentMapW,
-      currentMapH,
-      collidesAt: (...args) => collisionService.collides(...args)
-    });
+      enemyAiSystem.update({
+        now,
+        gameState,
+        isDialogueActive: isDialogueActive(),
+        choiceActive: choiceState.active,
+        enemies,
+        player,
+        currentAreaId,
+        currentMap,
+        currentMapW,
+        currentMapH,
+        collidesAt: (...args) => collisionService.collides(...args)
+      });
 
-    combatSystem.update({
-      now,
-      gameState,
-      isDialogueActive: isDialogueActive(),
-      choiceActive: choiceState.active,
-      attackPressed: input.getAttackPressed(),
-      requestedAttackId: player.requestedAttackId || player.equippedAttackId || null,
-      player,
-      enemies,
-      currentAreaId
-    });
+      combatSystem.update({
+        now,
+        gameState,
+        isDialogueActive: isDialogueActive(),
+        choiceActive: choiceState.active,
+        attackPressed: input.getAttackPressed(),
+        requestedAttackId: player.requestedAttackId || player.equippedAttackId || null,
+        player,
+        enemies,
+        currentAreaId
+      });
 
-    updateFountainHealing(now);
+      updateFountainHealing(now);
+    }
     input.clearAttackPressed();
+    maybeAutosave(now);
   }
 
-  vfxSystem.update(now);
+  if (!hitstopActive) {
+    vfxSystem.update(now);
+  }
   render();
   requestAnimationFrame(loop);
 }

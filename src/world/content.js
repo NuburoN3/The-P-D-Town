@@ -402,6 +402,7 @@ export const GAME_CONTENT = {
         {
           id: "hanamiChallengeFighterA",
           name: "Dojo Challenger A",
+          archetypeId: "dojoFighter",
           areaId: "hanamiDojoUpstairs",
           x: 3,
           y: 2,
@@ -423,6 +424,7 @@ export const GAME_CONTENT = {
         {
           id: "hanamiChallengeFighterB",
           name: "Dojo Challenger B",
+          archetypeId: "dojoFighter",
           areaId: "hanamiDojoUpstairs",
           x: 8,
           y: 2,
@@ -444,6 +446,7 @@ export const GAME_CONTENT = {
         {
           id: "hanamiChallengeFighterC",
           name: "Dojo Challenger C",
+          archetypeId: "dojoFighter",
           areaId: "hanamiDojoUpstairs",
           x: 6,
           y: 5,

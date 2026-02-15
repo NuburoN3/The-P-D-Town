@@ -11,6 +11,24 @@ function hash01(seed) {
   return value - Math.floor(value);
 }
 
+function keyToDisplayName(key) {
+  if (typeof key !== "string" || key.length === 0) return "-";
+  if (key === "space") return "Space";
+  if (key === "arrowup") return "Up Arrow";
+  if (key === "arrowdown") return "Down Arrow";
+  if (key === "arrowleft") return "Left Arrow";
+  if (key === "arrowright") return "Right Arrow";
+  if (key === "escape") return "Esc";
+  if (key === "enter") return "Enter";
+  return key.length === 1 ? key.toUpperCase() : key;
+}
+
+function getPrimaryBindingLabel(state, action) {
+  const keys = state.keyBindings?.[action];
+  if (!Array.isArray(keys) || keys.length === 0) return "-";
+  return keyToDisplayName(keys[0]);
+}
+
 const MOOD_PRESETS = Object.freeze({
   goldenDawn: {
     topTint: "rgba(255, 223, 159, 0.13)",
@@ -326,11 +344,39 @@ function drawEnemies(ctx, state, canvas, tileSize) {
     }
 
     if (enemy.state === "attackWindup") {
-      const pulse = 0.5 + Math.sin(performance.now() * 0.02) * 0.5;
+      const now = performance.now();
+      const totalWindup = Math.max(1, enemy.attackWindupMs || 1);
+      const remaining = Math.max(0, (enemy.attackStrikeAt || now) - now);
+      const windupProgress = Math.max(0, Math.min(1, 1 - remaining / totalWindup));
+      const centerX = ex + tileSize / 2;
+      const centerY = ey + tileSize / 2;
+
+      let facingAngle = Math.PI * 0.5;
+      if (enemy.dir === "up") facingAngle = -Math.PI * 0.5;
+      else if (enemy.dir === "left") facingAngle = Math.PI;
+      else if (enemy.dir === "right") facingAngle = 0;
+
+      const arcWidth = Math.PI * 0.55;
+      ctx.fillStyle = `rgba(255, 138, 108, ${0.12 + windupProgress * 0.2})`;
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.arc(centerX, centerY, tileSize * (0.9 + windupProgress * 0.22), facingAngle - arcWidth, facingAngle + arcWidth);
+      ctx.closePath();
+      ctx.fill();
+
+      const pulse = 0.5 + Math.sin(now * 0.02) * 0.5;
       ctx.strokeStyle = `rgba(255, 154, 120, ${0.35 + pulse * 0.4})`;
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(ex + tileSize / 2, ey + tileSize / 2, tileSize * 0.62, 0, Math.PI * 2);
+      ctx.arc(centerX, centerY, tileSize * (0.56 + windupProgress * 0.14), 0, Math.PI * 2);
+      ctx.stroke();
+
+      const ringProgressStart = -Math.PI * 0.5;
+      const ringProgressEnd = ringProgressStart + Math.PI * 2 * windupProgress;
+      ctx.strokeStyle = "rgba(255, 232, 173, 0.92)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, tileSize * 0.68, ringProgressStart, ringProgressEnd);
       ctx.stroke();
     }
 
@@ -810,7 +856,7 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
   ctx.font = FONT_12;
   ctx.fillStyle = highContrast ? "#d9f2ff" : "#5f3b19";
   ctx.fillText("W/S or Arrows: Move", menuX + 16, menuY + menuH - 52);
-  ctx.fillText("Space: Select   Enter/Esc: Resume", menuX + 16, menuY + menuH - 32);
+  ctx.fillText(`Space: Select   ${getPrimaryBindingLabel(state, "pause")}: Resume`, menuX + 16, menuY + menuH - 32);
   ctx.fillText("Pad: D-Pad/Stick Move   A Select   B/Start Resume", menuX + 16, menuY + menuH - 12);
 }
 
@@ -861,15 +907,15 @@ function drawAttributesOverlay(ctx, state, canvas, ui, colors) {
 }
 
 function drawSettingsOverlay(ctx, state, canvas, ui, colors) {
-  const { gameState, pauseMenuState } = state;
+  const { gameState, pauseMenuState, settingsUiState, settingsItems, userSettings } = state;
   if (gameState !== GAME_STATES.SETTINGS) return;
 
   const highContrast = Boolean(pauseMenuState?.highContrast);
   ctx.fillStyle = highContrast ? "rgba(0,0,0,0.7)" : colors.INVENTORY_OVERLAY;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const boxW = ui.INVENTORY_BOX_WIDTH;
-  const boxH = ui.INVENTORY_BOX_HEIGHT;
+  const boxW = Math.min(canvas.width - 60, 690);
+  const boxH = Math.min(canvas.height - 60, 470);
   const boxX = (canvas.width - boxW) / 2;
   const boxY = (canvas.height - boxH) / 2;
 
@@ -881,20 +927,77 @@ function drawSettingsOverlay(ctx, state, canvas, ui, colors) {
   const labelColor = highContrast ? "#f2fbff" : "#1f1203";
   const valueOnColor = highContrast ? "#90e4ff" : "#27632a";
   const valueOffColor = highContrast ? "#ffd57c" : "#7a3f1d";
+  const entries = Array.isArray(settingsItems) ? settingsItems : [];
+  const selected = Number.isFinite(settingsUiState?.selected) ? settingsUiState.selected : 0;
+  const statusText = settingsUiState?.statusText || "";
+  const awaitingRebindAction = settingsUiState?.awaitingRebindAction || null;
 
-  ctx.font = FONT_20;
-  ctx.fillStyle = labelColor;
-  ctx.fillText("High Contrast Menu", boxX + 24, boxY + 96);
-
-  const statusText = pauseMenuState?.highContrast ? "ON" : "OFF";
-  ctx.fillStyle = pauseMenuState?.highContrast ? valueOnColor : valueOffColor;
-  ctx.fillText(statusText, boxX + boxW - 78, boxY + 96);
+  const listX = boxX + 24;
+  const listY = boxY + 76;
+  const rowH = 28;
+  const visibleRows = Math.max(8, Math.floor((boxH - 170) / rowH));
+  const scrollStart = Math.max(0, Math.min(selected - Math.floor(visibleRows / 2), Math.max(0, entries.length - visibleRows)));
+  const visibleEnd = Math.min(entries.length, scrollStart + visibleRows);
 
   ctx.font = FONT_16;
+  for (let i = scrollStart; i < visibleEnd; i++) {
+    const item = entries[i];
+    const rowY = listY + (i - scrollStart) * rowH;
+    const isSelected = i === selected;
+    const isRebindingThis = awaitingRebindAction && item?.action === awaitingRebindAction;
+
+    if (isSelected) {
+      ctx.fillStyle = highContrast ? "rgba(145, 214, 255, 0.25)" : "rgba(255, 228, 164, 0.35)";
+      ctx.fillRect(listX - 8, rowY - 18, boxW - 48, 24);
+    }
+
+    ctx.fillStyle = labelColor;
+    const prefix = isSelected ? "> " : "  ";
+    ctx.fillText(`${prefix}${item?.label || "Unknown setting"}`, listX, rowY);
+
+    let valueText = "";
+    let valueColor = valueOffColor;
+    if (item?.kind === "toggle") {
+      const enabled = item.id === "highContrastMenu"
+        ? Boolean(pauseMenuState?.highContrast)
+        : Boolean(userSettings?.[item.id]);
+      valueText = enabled ? "ON" : "OFF";
+      valueColor = enabled ? valueOnColor : valueOffColor;
+    } else if (item?.kind === "cycle") {
+      if (item.id === "textSpeedMultiplier") {
+        const multiplier = Number.isFinite(userSettings?.textSpeedMultiplier) ? userSettings.textSpeedMultiplier : 1;
+        valueText = `${Math.round(multiplier * 100)}%`;
+      }
+      valueColor = highContrast ? "#cfeeff" : "#50320f";
+    } else if (item?.kind === "rebind") {
+      valueText = isRebindingThis ? "[Press key...]" : getPrimaryBindingLabel(state, item.action);
+      valueColor = isRebindingThis
+        ? (highContrast ? "#90e4ff" : "#245b92")
+        : (highContrast ? "#dbeffd" : "#5a3718");
+    } else if (item?.kind === "action") {
+      valueText = "Run";
+      valueColor = highContrast ? "#dbeffd" : "#5a3718";
+    }
+
+    if (valueText) {
+      ctx.fillStyle = valueColor;
+      const valueWidth = ctx.measureText(valueText).width;
+      ctx.fillText(valueText, boxX + boxW - 24 - valueWidth, rowY);
+    }
+  }
+
+  const instructionsY = boxY + boxH - 74;
+  ctx.font = FONT_12;
   ctx.fillStyle = labelColor;
-  ctx.fillText("Space or Gamepad A: Toggle", boxX + 24, boxY + 136);
-  ctx.fillText("Enter/Esc or Gamepad B/Start: Back", boxX + 24, boxY + 162);
-  ctx.fillText("This affects pause menu readability and contrast.", boxX + 24, boxY + 198);
+  ctx.fillText("W/S or Arrows: Navigate", boxX + 24, instructionsY);
+  ctx.fillText("Space/Enter or Gamepad A: Apply/Toggle", boxX + 24, instructionsY + 18);
+  ctx.fillText("Esc or Gamepad B/Start: Back", boxX + 24, instructionsY + 36);
+
+  if (statusText) {
+    ctx.font = FONT_16;
+    ctx.fillStyle = highContrast ? "#ddf5ff" : "#4e3213";
+    ctx.fillText(statusText, boxX + 24, boxY + boxH - 16);
+  }
 }
 
 function drawBarMinigameOverlay(ctx, state, canvas, colors) {
@@ -969,10 +1072,11 @@ function drawCombatHud(ctx, state, colors) {
   if (!state.player || !Number.isFinite(state.player.maxHp)) return;
 
   const showChallenge = Boolean(state.gameFlags?.acceptedTraining);
+  const promptMode = state.inputPromptMode === "gamepad" ? "gamepad" : "keyboard";
   const panelX = 14;
   const panelY = 14;
   const panelW = 224;
-  const panelH = showChallenge ? 76 : 54;
+  const panelH = showChallenge ? 94 : 72;
   drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors);
 
   const hpRatio = Math.max(0, Math.min(1, state.player.hp / Math.max(1, state.player.maxHp)));
@@ -1001,6 +1105,12 @@ function drawCombatHud(ctx, state, colors) {
       : `Mr. Hanami challenge: ${kills}/${target}`;
     drawUiText(ctx, challengeText, panelX + 12, panelY + 48, colors);
   }
+
+  ctx.font = FONT_12;
+  const promptText = promptMode === "gamepad"
+    ? "A Interact  X Attack  Start Menu"
+    : `${getPrimaryBindingLabel(state, "interact")} Interact  ${getPrimaryBindingLabel(state, "attack")} Attack  ${getPrimaryBindingLabel(state, "pause")} Menu`;
+  drawUiText(ctx, promptText, panelX + 12, panelY + panelH - 10, colors);
 }
 
 function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
@@ -1038,7 +1148,8 @@ function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
     ctx.globalAlpha = alpha * 0.95;
     ctx.font = FONT_16;
 
-    const hintText = "New item received - press I to view your inventory";
+    const inventoryKey = getPrimaryBindingLabel(state, "inventory");
+    const hintText = `New item received - press ${inventoryKey} to view your inventory`;
     const padding = 8;
     const textW = ctx.measureText(hintText).width;
     const boxW = textW + padding * 2;
@@ -1054,6 +1165,8 @@ function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
 
 function drawAtmosphere(ctx, canvas, colors, state) {
   const isOverworld = state.currentAreaKind === AREA_KINDS.OVERWORLD;
+  const reducedFlashes = Boolean(state.userSettings?.reducedFlashes);
+  const intensity = reducedFlashes ? 0.58 : 1;
 
   if (isOverworld) {
     const topLight = ctx.createLinearGradient(0, 0, 0, canvas.height * 0.65);
@@ -1070,7 +1183,7 @@ function drawAtmosphere(ctx, canvas, colors, state) {
   }
 
   const now = performance.now() * 0.001;
-  const particleCount = isOverworld ? 42 : 18;
+  const particleCount = Math.round((isOverworld ? 42 : 18) * intensity);
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
 
@@ -1083,7 +1196,8 @@ function drawAtmosphere(ctx, canvas, colors, state) {
 
     const x = xBase + Math.sin(now * (0.8 + hash01(seed + 2.4)) + seed) * (isOverworld ? 20 : 10);
     const y = yBase + Math.sin(now * (0.75 + hash01(seed + 3.6)) + seed * 1.3) * (isOverworld ? 16 : 7);
-    const alpha = isOverworld ? 0.07 + hash01(seed + 4.1) * 0.16 : 0.04 + hash01(seed + 4.1) * 0.08;
+    const alphaBase = isOverworld ? 0.07 + hash01(seed + 4.1) * 0.16 : 0.04 + hash01(seed + 4.1) * 0.08;
+    const alpha = alphaBase * intensity;
     const size = isOverworld ? 1.4 + hash01(seed + 5.5) * 2.6 : 1 + hash01(seed + 5.5) * 1.6;
 
     ctx.save();
@@ -1118,6 +1232,8 @@ function drawWorldVfx(ctx, state) {
   const effects = Array.isArray(state.vfxEffects) ? state.vfxEffects : null;
   if (!effects || effects.length === 0) return;
 
+  const reducedFlashes = Boolean(state.userSettings?.reducedFlashes);
+  const flashScale = reducedFlashes ? 0.58 : 1;
   const now = performance.now();
   for (const effect of effects) {
     const age = now - effect.startedAt;
@@ -1131,7 +1247,7 @@ function drawWorldVfx(ctx, state) {
     const glowSize = baseSize * (1.2 + t * 1.1);
 
     ctx.save();
-    ctx.globalAlpha = Math.max(0.03, inv * 0.95);
+    ctx.globalAlpha = Math.max(0.03, inv * 0.95 * flashScale);
     const glow = ctx.createRadialGradient(x, y, 0, x, y, glowSize);
     glow.addColorStop(0, effect.glowColor || "rgba(255,255,255,0.34)");
     glow.addColorStop(1, "rgba(255,255,255,0)");
@@ -1196,6 +1312,13 @@ function drawWorldVfx(ctx, state) {
         ctx.lineTo(x + Math.cos(angle) * outer, y + Math.sin(angle) * outer);
         ctx.stroke();
       }
+    } else if (effect.type === "warningRing") {
+      const pulse = 0.5 + Math.sin(t * Math.PI * 2.6) * 0.5;
+      ctx.strokeStyle = effect.color || `rgba(255, 163, 131, ${0.46 + pulse * 0.24})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, baseSize * (0.7 + t * 0.45), 0, Math.PI * 2);
+      ctx.stroke();
     } else if (effect.type === "damageText") {
       ctx.font = FONT_16;
       ctx.textAlign = "center";
@@ -1317,11 +1440,11 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
     ctx.font = FONT_22;
     drawUiText(ctx, "How To Play", helpX + 20, helpY + 36, colors);
     ctx.font = FONT_16;
-    drawUiText(ctx, "Move: W A S D or Arrow Keys", helpX + 20, helpY + 72, colors);
-    drawUiText(ctx, "Interact / Advance: Space", helpX + 20, helpY + 96, colors);
-    drawUiText(ctx, "Attack: J (or K)", helpX + 20, helpY + 120, colors);
-    drawUiText(ctx, "Pause Menu: Enter or Esc", helpX + 20, helpY + 144, colors);
-    drawUiText(ctx, "Inventory: I", helpX + 20, helpY + 168, colors);
+    drawUiText(ctx, `Move: ${getPrimaryBindingLabel(state, "moveUp")} ${getPrimaryBindingLabel(state, "moveLeft")} ${getPrimaryBindingLabel(state, "moveDown")} ${getPrimaryBindingLabel(state, "moveRight")} or arrows`, helpX + 20, helpY + 72, colors);
+    drawUiText(ctx, `Interact / Advance: ${getPrimaryBindingLabel(state, "interact")}`, helpX + 20, helpY + 96, colors);
+    drawUiText(ctx, `Attack: ${getPrimaryBindingLabel(state, "attack")}`, helpX + 20, helpY + 120, colors);
+    drawUiText(ctx, `Pause Menu: ${getPrimaryBindingLabel(state, "pause")}`, helpX + 20, helpY + 144, colors);
+    drawUiText(ctx, `Inventory: ${getPrimaryBindingLabel(state, "inventory")}`, helpX + 20, helpY + 168, colors);
     drawUiText(ctx, "Gamepad: Left Stick + A/X + Start", helpX + 20, helpY + 192, colors);
     ctx.font = FONT_12;
     drawUiText(ctx, "Press ESC/B to close this panel", helpX + 20, helpY + 218, colors);

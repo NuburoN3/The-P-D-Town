@@ -7,6 +7,7 @@ import { GAME_CONTENT } from "./content.js";
 import { assertValidGameContent } from "./validateContent.js";
 import { BUILDING_TYPES } from "./buildingRenderers.js";
 import { isFountainSolidTile, isFountainWaterTile as isFountainWaterTileInBuilding } from "./fountainGeometry.js";
+import { ENEMY_ARCHETYPES } from "./enemyArchetypes.js";
 
 function keyForTile(x, y) {
   return `${x},${y}`;
@@ -253,6 +254,15 @@ export class WorldService {
     const enemyDefinitions = Array.isArray(town.enemies) ? town.enemies : [];
 
     return enemyDefinitions.map((enemy, index) => {
+      const archetypeId = typeof enemy.archetypeId === "string" ? enemy.archetypeId : null;
+      const archetypeDefaults = archetypeId && ENEMY_ARCHETYPES[archetypeId]
+        ? ENEMY_ARCHETYPES[archetypeId]
+        : null;
+      const resolved = {
+        ...(archetypeDefaults || {}),
+        ...enemy
+      };
+
       const {
         id,
         areaId,
@@ -269,8 +279,9 @@ export class WorldService {
         attackWindupMs,
         attackRecoveryMs,
         respawnDelayMs,
+        archetypeId: resolvedArchetypeId,
         ...customFields
-      } = enemy;
+      } = resolved;
 
       const spawnX = x * this.tileSize;
       const spawnY = y * this.tileSize;
@@ -299,14 +310,15 @@ export class WorldService {
         attackWindupMs: Number.isFinite(attackWindupMs) ? Math.max(60, attackWindupMs) : 220,
         attackRecoveryMs: Number.isFinite(attackRecoveryMs) ? Math.max(60, attackRecoveryMs) : 300,
         respawnDelayMs: Number.isFinite(respawnDelayMs) ? Math.max(1000, respawnDelayMs) : 5000,
-        behaviorType: typeof enemy.behaviorType === "string" && enemy.behaviorType.length > 0
-          ? enemy.behaviorType
+        behaviorType: typeof resolved.behaviorType === "string" && resolved.behaviorType.length > 0
+          ? resolved.behaviorType
           : "meleeChaser",
-        attackType: typeof enemy.attackType === "string" && enemy.attackType.length > 0
-          ? enemy.attackType
+        attackType: typeof resolved.attackType === "string" && resolved.attackType.length > 0
+          ? resolved.attackType
           : "lightSlash",
-        respawnEnabled: enemy.respawnEnabled !== false,
-        countsForChallenge: Boolean(enemy.countsForChallenge),
+        archetypeId: resolvedArchetypeId || null,
+        respawnEnabled: resolved.respawnEnabled !== false,
+        countsForChallenge: Boolean(resolved.countsForChallenge),
         challengeDefeatedCounted: false,
         invulnerableUntil: 0,
         hitStunUntil: 0,

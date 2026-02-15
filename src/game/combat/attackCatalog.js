@@ -15,6 +15,7 @@ export function createDefaultAttackCatalog(tileSize) {
     range: tileSize * 0.9,
     hitRadius: tileSize * 0.7,
     damage: 20,
+    hitstopMs: 48,
     vfx: {
       type: "attackSlash",
       durationMs: 190,
@@ -36,8 +37,72 @@ export function createDefaultAttackCatalog(tileSize) {
     }
   };
 
+  const heavySlash = {
+    id: "heavySlash",
+    cooldownMs: 460,
+    windupMs: 120,
+    activeMs: 130,
+    recoveryMs: 220,
+    range: tileSize * 1.02,
+    hitRadius: tileSize * 0.82,
+    damage: 34,
+    hitstopMs: 72,
+    vfx: {
+      type: "attackSlash",
+      durationMs: 250,
+      sizeOffset: 14
+    },
+    getAttackCenter(attacker) {
+      const facing = directionToVector(attacker.dir);
+      return {
+        x: attacker.x + tileSize / 2 + facing.x * this.range,
+        y: attacker.y + tileSize / 2 + facing.y * this.range
+      };
+    },
+    getVfxOrigin(attacker) {
+      const facing = directionToVector(attacker.dir);
+      return {
+        x: attacker.x + tileSize / 2 + facing.x * (this.range * 0.58),
+        y: attacker.y + tileSize / 2 + facing.y * (this.range * 0.58)
+      };
+    }
+  };
+
+  const chiBolt = {
+    id: "chiBolt",
+    cooldownMs: 540,
+    windupMs: 100,
+    activeMs: 100,
+    recoveryMs: 180,
+    range: tileSize * 2.8,
+    hitRadius: tileSize * 0.65,
+    damage: 16,
+    hitstopMs: 40,
+    vfx: {
+      type: "attackSlash",
+      durationMs: 180,
+      sizeOffset: 6
+    },
+    getAttackCenter(attacker) {
+      const facing = directionToVector(attacker.dir);
+      return {
+        x: attacker.x + tileSize / 2 + facing.x * this.range,
+        y: attacker.y + tileSize / 2 + facing.y * this.range
+      };
+    },
+    getVfxOrigin(attacker) {
+      const facing = directionToVector(attacker.dir);
+      return {
+        x: attacker.x + tileSize / 2 + facing.x * (this.range * 0.4),
+        y: attacker.y + tileSize / 2 + facing.y * (this.range * 0.4)
+      };
+    }
+  };
+
   return {
-    [lightSlash.id]: lightSlash
+    [lightSlash.id]: lightSlash,
+    [heavySlash.id]: heavySlash,
+    [chiBolt.id]: chiBolt
   };
 }
 
