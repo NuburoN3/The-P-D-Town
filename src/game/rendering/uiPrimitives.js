@@ -1,8 +1,8 @@
-export const FONT_12 = "600 12px 'Trebuchet MS', 'Segoe UI', sans-serif";
-export const FONT_16 = "600 16px 'Trebuchet MS', 'Segoe UI', sans-serif";
-export const FONT_20 = "600 20px 'Trebuchet MS', 'Segoe UI', sans-serif";
-export const FONT_22 = "700 22px 'Trebuchet MS', 'Segoe UI', sans-serif";
-export const FONT_28 = "700 28px 'Palatino Linotype', 'Book Antiqua', serif";
+export const FONT_12 = "600 12px 'Spectral', 'Garamond', 'Trebuchet MS', serif";
+export const FONT_16 = "600 16px 'Spectral', 'Garamond', 'Trebuchet MS', serif";
+export const FONT_20 = "600 20px 'Spectral', 'Garamond', 'Trebuchet MS', serif";
+export const FONT_22 = "700 22px 'Cinzel', 'Palatino Linotype', 'Book Antiqua', serif";
+export const FONT_28 = "700 28px 'Cinzel', 'Palatino Linotype', 'Book Antiqua', serif";
 
 export function keyToDisplayName(key) {
   if (typeof key !== "string" || key.length === 0) return "-";
@@ -97,6 +97,41 @@ export function drawUiText(ctx, text, x, y, colors) {
   ctx.fillText(text, x + 1, y + 1);
   ctx.fillStyle = colors.TEXT;
   ctx.fillText(text, x, y);
+}
+
+export function drawControlChip(ctx, label, x, y, colors, { highlighted = false } = {}) {
+  const text = String(label || "-");
+  const padX = 6;
+  const padY = 3;
+  const textW = Math.ceil(ctx.measureText(text).width);
+  const chipW = textW + padX * 2;
+  const chipH = 16;
+
+  const gradient = ctx.createLinearGradient(x, y, x, y + chipH);
+  if (highlighted) {
+    gradient.addColorStop(0, "rgba(255, 225, 156, 0.95)");
+    gradient.addColorStop(1, "rgba(180, 125, 61, 0.95)");
+  } else {
+    gradient.addColorStop(0, "rgba(230, 239, 248, 0.95)");
+    gradient.addColorStop(1, "rgba(130, 151, 174, 0.95)");
+  }
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(x, y, chipW, chipH);
+  ctx.strokeStyle = highlighted ? "rgba(72, 45, 19, 0.85)" : "rgba(31, 43, 56, 0.85)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, chipW - 1, chipH - 1);
+
+  const oldAlign = ctx.textAlign;
+  const oldBase = ctx.textBaseline;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = highlighted ? "rgba(55, 34, 18, 0.95)" : "rgba(20, 35, 50, 0.96)";
+  ctx.fillText(text, x + chipW / 2, y + chipH / 2 + 0.5);
+  ctx.textAlign = oldAlign;
+  ctx.textBaseline = oldBase;
+
+  return chipW;
 }
 
 export function drawFantasySelectorIcon(ctx, x, y, { highContrast = false, pulse = 0 } = {}) {

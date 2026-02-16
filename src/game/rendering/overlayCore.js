@@ -1,5 +1,5 @@
 import { GAME_STATES } from "../../core/constants.js";
-import { FONT_12, FONT_20, drawSkinnedPanel, drawUiText } from "./uiPrimitives.js";
+import { FONT_12, FONT_20, drawControlChip, drawSkinnedPanel, drawUiText, getPrimaryBindingLabel } from "./uiPrimitives.js";
 
 export function drawTrainingPopup(ctx, state, canvas, ui, colors, tileSize) {
   const { trainingPopup, player, cam, playerStats } = state;
@@ -143,7 +143,14 @@ export function drawTextbox(ctx, state, canvas, ui, colors, dialogue) {
   }
 
   ctx.font = FONT_12;
-  drawUiText(ctx, "Attack: fast skip text", boxX + boxW - 154, boxY + boxHeight - 10, colors);
+  const skipKey = state.inputPromptMode === "gamepad" ? "X" : getPrimaryBindingLabel(state, "attack");
+  const skipLabel = "Fast skip text";
+  const skipTextW = ctx.measureText(skipLabel).width;
+  const chipW = Math.ceil(ctx.measureText(skipKey).width) + 12;
+  const hintX = boxX + boxW - (chipW + skipTextW + 22);
+  const hintY = boxY + boxHeight - 18;
+  const renderedChipW = drawControlChip(ctx, skipKey, hintX, hintY, colors, { highlighted: true });
+  drawUiText(ctx, skipLabel, hintX + renderedChipW + 8, boxY + boxHeight - 10, colors);
 }
 
 export function drawDoorTransition(ctx, state, canvas, tileSize, cameraZoom) {

@@ -34,6 +34,8 @@ export function createGameRenderer({
   playerStats,
   playerInventory,
   objectiveState,
+  uiMotionState,
+  minimapDiscoveryState,
   itemAlert,
   inventoryHint,
   saveNoticeState,
@@ -74,7 +76,7 @@ export function createGameRenderer({
     return "";
   }
 
-  function buildMinimapState(currentMap, currentMapW, currentMapH) {
+  function buildMinimapState(currentMap, currentMapW, currentMapH, currentTownId, currentAreaId) {
     const doorTiles = [];
     for (let y = 0; y < currentMapH; y++) {
       const row = currentMap[y];
@@ -86,13 +88,36 @@ export function createGameRenderer({
       }
     }
 
+    const discoveryKey = `${currentTownId}:${currentAreaId}`;
+    const discoveredMap = minimapDiscoveryState?.discoveredDoors?.[discoveryKey] || {};
+    const discoveredDoorTiles = Object.keys(discoveredMap).map((key) => {
+      const [xRaw, yRaw] = key.split(",");
+      return {
+        x: Number.parseInt(xRaw, 10),
+        y: Number.parseInt(yRaw, 10)
+      };
+    }).filter((entry) => Number.isFinite(entry.x) && Number.isFinite(entry.y));
+
+    const objectiveMarker = objectiveState?.marker &&
+      objectiveState.marker.townId === currentTownId &&
+      objectiveState.marker.areaId === currentAreaId
+      ? {
+        x: objectiveState.marker.tileX,
+        y: objectiveState.marker.tileY,
+        label: objectiveState.marker.label || "Objective"
+      }
+      : null;
+
     return {
       map: currentMap,
       width: currentMapW,
       height: currentMapH,
       playerTileX: Math.floor((player.x + tileSize * 0.5) / tileSize),
       playerTileY: Math.floor((player.y + tileSize * 0.5) / tileSize),
-      doorTiles
+      doorTiles,
+      discoveredDoorTiles,
+      objectiveMarker,
+      revealStartedAt: Number.isFinite(uiMotionState?.minimapRevealAt) ? uiMotionState.minimapRevealAt : performance.now()
     };
   }
 
@@ -169,7 +194,7 @@ export function createGameRenderer({
     const currentMapW = getCurrentMapW();
     const currentMapH = getCurrentMapH();
     const gameState = getGameState();
-    const minimap = buildMinimapState(currentMap, currentMapW, currentMapH);
+    const minimap = buildMinimapState(currentMap, currentMapW, currentMapH, currentTownId, currentAreaId);
     const doorHintText = buildDoorHintText(currentTownId, currentAreaId, currentMap);
     const currentTown = worldService.getTown(currentTownId);
     const currentArea = worldService.getArea(currentTownId, currentAreaId);

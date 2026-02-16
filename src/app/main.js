@@ -37,6 +37,7 @@ import { createSaveLoadCoordinator } from "./saveLoadCoordinator.js";
 import { createGameRenderer } from "./gameRenderer.js";
 import { createInputBindings } from "./inputBindings.js";
 import { createMenuStateController } from "./menuStateController.js";
+import { normalizeGlobalStoryFlags, normalizeTownProgress } from "../game/progression/progressDefaults.js";
 
 const { canvas, ctx, assets, worldService, musicManager, state } = createGameRuntime();
 
@@ -174,7 +175,16 @@ const combatFeedback = {
 const objectiveState = {
   id: "",
   text: "",
-  updatedAt: 0
+  updatedAt: 0,
+  marker: null
+};
+
+const uiMotionState = {
+  minimapRevealAt: performance.now()
+};
+
+const minimapDiscoveryState = {
+  discoveredDoors: {}
 };
 
 const saveNoticeState = {
@@ -229,20 +239,60 @@ function pushSaveNotice({ text, type = "save", durationMs = 1700 }) {
 function getTownProgressForCurrentTown() {
   const townId = currentTownId;
   if (!gameFlags.townProgress[townId]) {
-    gameFlags.townProgress[townId] = {
-      enduranceUnlocked: false,
-      membershipAwarded: false,
-      challengeKills: 0,
-      challengeTarget: 3,
-      challengeCompleteAnnounced: false,
-      challengePrepared: false
+    gameFlags.townProgress[townId] = {};
+  }
+  normalizeGlobalStoryFlags(gameFlags);
+  const normalized = normalizeTownProgress(gameFlags.townProgress[townId]);
+  const configuredBogTarget = Number.isFinite(trainingContent?.bogQuest?.targetKills)
+    ? Math.max(1, Math.round(trainingContent.bogQuest.targetKills))
+    : normalized.bogQuestTarget;
+  normalized.bogQuestTarget = configuredBogTarget;
+  normalized.bogQuestKills = Math.max(0, Math.min(normalized.bogQuestTarget, normalized.bogQuestKills));
+  gameFlags.townProgress[townId] = normalized;
+  return normalized;
+}
+
+function getRumorCluesFound(tp) {
+  return Number(tp.rumorCluePiazza) + Number(tp.rumorClueChapel) + Number(tp.rumorClueBar);
+}
+
+function getBogQuestTarget(tp) {
+  if (Number.isFinite(tp?.bogQuestTarget) && tp.bogQuestTarget > 0) {
+    return Math.round(tp.bogQuestTarget);
+  }
+  if (Number.isFinite(trainingContent?.bogQuest?.targetKills)) {
+    return Math.max(1, Math.round(trainingContent.bogQuest.targetKills));
+  }
+  return 3;
+}
+
+function getNextMissingRumorClue(tp) {
+  if (!tp.rumorCluePiazza) {
+    return {
+      objectiveId: "rumor-clue-piazza",
+      text: "Objective: Investigate the piazza watchers about the northern threat."
     };
   }
-  return gameFlags.townProgress[townId];
+  if (!tp.rumorClueChapel) {
+    return {
+      objectiveId: "rumor-clue-chapel",
+      text: "Objective: Ask the chapel priest what changed before Taiko vanished."
+    };
+  }
+  if (!tp.rumorClueBar) {
+    return {
+      objectiveId: "rumor-clue-bar",
+      text: "Objective: Ask bar regulars what they heard before the mountain darkened."
+    };
+  }
+  return null;
 }
 
 function deriveObjective() {
   const tp = getTownProgressForCurrentTown();
+  const rumorClues = getRumorCluesFound(tp);
+  const bogTarget = getBogQuestTarget(tp);
+  const bogKills = Number.isFinite(tp.bogQuestKills) ? tp.bogQuestKills : 0;
 
   if (!gameFlags.acceptedTraining) {
     return {
@@ -260,10 +310,31 @@ function deriveObjective() {
     };
   }
 
-  if (gameFlags.completedTraining && !tp.enduranceUnlocked) {
+  if (gameFlags.completedTraining && !tp.rumorQuestOffered) {
     return {
       id: "report-to-hanami",
       text: "Objective: Return to Mr. Hanami for your next challenge."
+    };
+  }
+
+  if (tp.rumorQuestActive && !tp.rumorQuestCompleted) {
+    const nextClue = getNextMissingRumorClue(tp);
+    if (nextClue) {
+      return {
+        id: nextClue.objectiveId,
+        text: `${nextClue.text} (${rumorClues}/3 clues).`
+      };
+    }
+    return {
+      id: "rumor-report-hanami",
+      text: "Objective: Report your rumor findings to Mr. Hanami."
+    };
+  }
+
+  if (tp.rumorQuestCompleted && !tp.rumorQuestReported) {
+    return {
+      id: "rumor-report-hanami",
+      text: "Objective: Report your rumor findings to Mr. Hanami."
     };
   }
 
@@ -281,18 +352,158 @@ function deriveObjective() {
     };
   }
 
+  if (tp.membershipAwarded && !tp.bogQuestOffered) {
+    return {
+      id: "south-path",
+      text: "Objective: Follow the southern path into Bogland and meet Mr. Hanami."
+    };
+  }
+
+  if (tp.bogQuestOffered && !tp.bogQuestActive && !tp.bogQuestCompleted) {
+    return {
+      id: "bogland-accept",
+      text: "Objective: Speak to Mr. Hanami in Bogland when you are ready for the swamp trial."
+    };
+  }
+
+  if (tp.bogQuestActive && !tp.bogQuestCompleted) {
+    return {
+      id: "bogland-cleansing",
+      text: `Objective: Defeat Bogland stalkers (${bogKills}/${bogTarget}).`
+    };
+  }
+
+  if (tp.bogQuestCompleted && !tp.bogQuestReported) {
+    return {
+      id: "bogland-report-hanami",
+      text: "Objective: Report to Mr. Hanami in Bogland."
+    };
+  }
+
+  if (tp.bogQuestReported) {
+    return {
+      id: "taiko-preparation",
+      text: "Objective: Return to Hanami Town and prepare for the road toward Taiko."
+    };
+  }
+
+  if (gameFlags.completedTraining && !tp.enduranceUnlocked) {
+    return {
+      id: "choose-next-route",
+      text: "Objective: Speak with Mr. Hanami to begin endurance training or continue the investigation."
+    };
+  }
+
   return {
-    id: "south-path",
-    text: "Objective: Follow the southern path and meet Mr. Hanami."
+    id: "town-discipline",
+    text: "Objective: Continue building your discipline and speak with Mr. Hanami for guidance."
   };
+}
+
+function resolveObjectiveMarker(objectiveId) {
+  const markers = {
+    "talk-hanami": [
+      { townId: "hanamiTown", areaId: "overworld", tileX: 41, tileY: 10, label: "Dojo entrance" },
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
+    ],
+    "dojo-upstairs-challenge": [
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 9, tileY: 3, label: "Upstairs challenge" },
+      { townId: "hanamiTown", areaId: "hanamiDojoUpstairs", tileX: 6, tileY: 5, label: "Challenge room" }
+    ],
+    "report-to-hanami": [
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
+    ],
+    "choose-next-route": [
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
+    ],
+    "rumor-clue-piazza": [
+      { townId: "hanamiTown", areaId: "overworld", tileX: 31, tileY: 16, label: "Mina in the piazza" }
+    ],
+    "rumor-clue-chapel": [
+      { townId: "hanamiTown", areaId: "hanamiChurch", tileX: 6, tileY: 3, label: "Priest Miki" }
+    ],
+    "rumor-clue-bar": [
+      { townId: "hanamiTown", areaId: "hanamiBar", tileX: 4, tileY: 7, label: "Tomo at the bar" }
+    ],
+    "rumor-report-hanami": [
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
+    ],
+    "endurance-training": [
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 4, tileY: 5, label: "Training mat" }
+    ],
+    "collect-membership": [
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
+    ],
+    "south-path": [
+      { townId: "hanamiTown", areaId: "overworld", tileX: 28, tileY: 42, label: "Bogland gate" }
+    ],
+    "bogland-accept": [
+      { townId: "hanamiTown", areaId: "bogland", tileX: 28, tileY: 6, label: "Mr. Hanami" }
+    ],
+    "bogland-cleansing": [
+      { townId: "hanamiTown", areaId: "bogland", tileX: 28, tileY: 24, label: "Corrupted bog zone" }
+    ],
+    "bogland-report-hanami": [
+      { townId: "hanamiTown", areaId: "bogland", tileX: 28, tileY: 6, label: "Mr. Hanami" }
+    ],
+    "taiko-preparation": [
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
+    ],
+    "town-discipline": [
+      { townId: "hanamiTown", areaId: "overworld", tileX: 28, tileY: 29, label: "Town center" }
+    ]
+  };
+
+  const options = markers[objectiveId];
+  if (!Array.isArray(options)) return null;
+  return options.find((marker) => marker.townId === currentTownId && marker.areaId === currentAreaId) || null;
+}
+
+function getAreaDoorDiscoveryKey(townId, areaId) {
+  return `${townId}:${areaId}`;
+}
+
+function markNearbyDoorsDiscovered() {
+  const key = getAreaDoorDiscoveryKey(currentTownId, currentAreaId);
+  if (!minimapDiscoveryState.discoveredDoors[key]) {
+    minimapDiscoveryState.discoveredDoors[key] = {};
+  }
+  const discovered = minimapDiscoveryState.discoveredDoors[key];
+
+  const playerTx = Math.floor((player.x + TILE * 0.5) / TILE);
+  const playerTy = Math.floor((player.y + TILE * 0.5) / TILE);
+  const radius = 7;
+
+  for (let ty = Math.max(0, playerTy - radius); ty <= Math.min(currentMapH - 1, playerTy + radius); ty++) {
+    const row = currentMap[ty];
+    if (!row) continue;
+    for (let tx = Math.max(0, playerTx - radius); tx <= Math.min(currentMapW - 1, playerTx + radius); tx++) {
+      if (row[tx] !== TILE_TYPES.DOOR) continue;
+      if (isConditionallyHiddenDoor(tx, ty)) continue;
+      discovered[`${tx},${ty}`] = true;
+    }
+  }
 }
 
 function syncObjectiveState(now = performance.now()) {
   const next = deriveObjective();
-  if (objectiveState.id === next.id && objectiveState.text === next.text) return;
+  const nextMarker = resolveObjectiveMarker(next.id);
+  const markerUnchanged = (
+    (objectiveState.marker == null && nextMarker == null) ||
+    (
+      objectiveState.marker &&
+      nextMarker &&
+      objectiveState.marker.townId === nextMarker.townId &&
+      objectiveState.marker.areaId === nextMarker.areaId &&
+      objectiveState.marker.tileX === nextMarker.tileX &&
+      objectiveState.marker.tileY === nextMarker.tileY
+    )
+  );
+  if (objectiveState.id === next.id && objectiveState.text === next.text && markerUnchanged) return;
   objectiveState.id = next.id;
   objectiveState.text = next.text;
   objectiveState.updatedAt = now;
+  objectiveState.marker = nextMarker;
 }
 
 function showNextCombatReward(now = performance.now()) {
@@ -349,6 +560,7 @@ function grantCombatXpAndCollectSummary(enemy, now) {
 
 function updateRuntimeUi(now) {
   syncObjectiveState(now);
+  markNearbyDoorsDiscovered();
 
   if (saveNoticeState.active && now - saveNoticeState.startedAt >= saveNoticeState.durationMs) {
     saveNoticeState.active = false;
@@ -404,7 +616,11 @@ const {
   getGameController,
   setSettingsStatus,
   musicManager,
-  onSaveNotice: pushSaveNotice
+  onSaveNotice: pushSaveNotice,
+  onAfterRestore: () => {
+    uiMotionState.minimapRevealAt = performance.now();
+    syncObjectiveState(performance.now());
+  }
 });
 
 applyTitlePreviewSnapshot();
@@ -490,9 +706,16 @@ const combatSystem = createCombatSystem({
       if (challengeOutcome?.challengeProgressText) {
         reward.lines.push(`Challenge: ${challengeOutcome.challengeProgressText}`);
       }
+      if (challengeOutcome?.bogProgressText) {
+        reward.lines.push(`Bog trial: ${challengeOutcome.bogProgressText}`);
+      }
       if (challengeOutcome?.completedNow) {
         reward.lines.push("Objective updated: return to Mr. Hanami.");
         performAutoSave("Challenge complete");
+      }
+      if (challengeOutcome?.bogCompletedNow) {
+        reward.lines.push("Objective updated: report to Mr. Hanami in Bogland.");
+        performAutoSave("Bog trial complete");
       }
       queueCombatReward(reward);
       syncObjectiveState(now);
@@ -723,6 +946,7 @@ gameController = createGameController({
     onAreaChanged: ({ previousTownId, previousAreaId, townId, areaId }) => {
       if (previousTownId !== townId || previousAreaId !== areaId) {
         performAutoSave("Area transition");
+        uiMotionState.minimapRevealAt = performance.now();
       }
       syncObjectiveState(performance.now());
     }
@@ -827,6 +1051,8 @@ const { render } = createGameRenderer({
   playerStats,
   playerInventory,
   objectiveState,
+  uiMotionState,
+  minimapDiscoveryState,
   itemAlert,
   inventoryHint,
   saveNoticeState,

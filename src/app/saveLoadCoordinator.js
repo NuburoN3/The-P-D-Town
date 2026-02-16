@@ -9,7 +9,8 @@ export function createSaveLoadCoordinator({
   getGameController,
   setSettingsStatus,
   musicManager,
-  onSaveNotice = null
+  onSaveNotice = null,
+  onAfterRestore = null
 }) {
   const newGameBaselineSnapshot = buildGameSnapshot(getSaveLoadContext());
   let lastAutoSaveAt = 0;
@@ -52,6 +53,9 @@ export function createSaveLoadCoordinator({
     musicManager.playSfx("loadGame");
     setSettingsStatus(successMessage);
     pushSaveNotice(successMessage, "load", 1700);
+    if (typeof onAfterRestore === "function") {
+      onAfterRestore();
+    }
     return true;
   }
 

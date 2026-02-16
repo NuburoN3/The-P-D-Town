@@ -1,3 +1,5 @@
+import { normalizeTownProgress } from "../progression/progressDefaults.js";
+
 export function playerTilePosition(player, tileSize) {
   return {
     x: Math.floor((player.x + tileSize / 2) / tileSize),
@@ -6,15 +8,8 @@ export function playerTilePosition(player, tileSize) {
 }
 
 export function getTownProgress(gameFlags, townId) {
-  if (!gameFlags.townProgress[townId]) {
-    gameFlags.townProgress[townId] = {
-      enduranceUnlocked: false,
-      membershipAwarded: false,
-      challengeKills: 0,
-      challengeTarget: 3,
-      challengeCompleteAnnounced: false,
-      challengePrepared: false
-    };
-  }
-  return gameFlags.townProgress[townId];
+  const raw = gameFlags.townProgress[townId];
+  const normalized = normalizeTownProgress(raw);
+  gameFlags.townProgress[townId] = normalized;
+  return normalized;
 }

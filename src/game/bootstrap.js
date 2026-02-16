@@ -11,6 +11,7 @@ import {
   initializeBuildingRenderers,
   createWorldService
 } from "../WorldManager.js";
+import { createDefaultTownProgress } from "./progression/progressDefaults.js";
 
 export function createGameRuntime() {
   const canvas = document.getElementById("game");
@@ -65,15 +66,10 @@ export function createGameRuntime() {
   const gameFlags = {
     acceptedTraining: false,
     completedTraining: false,
+    taikoHouseUnlocked: false,
+    townRumorResolved: false,
     townProgress: {
-      hanamiTown: {
-        enduranceUnlocked: false,
-        membershipAwarded: false,
-        challengeKills: 0,
-        challengeTarget: 3,
-        challengeCompleteAnnounced: false,
-        challengePrepared: false
-      }
+      hanamiTown: createDefaultTownProgress()
     }
   };
 

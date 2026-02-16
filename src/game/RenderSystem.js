@@ -9,6 +9,7 @@ import {
   getPrimaryBindingLabel,
   drawSkinnedPanel,
   drawUiText,
+  drawControlChip,
   drawFantasySelectorIcon
 } from "./rendering/uiPrimitives.js";
 import { drawEntitiesLayer } from "./rendering/entitiesLayer.js";
@@ -48,6 +49,70 @@ const PAUSE_OPTION_SUBTITLES = Object.freeze({
   Load: "Restore your last manual save",
   Quit: "Leave P-D Town for now"
 });
+
+const MOOD_UI_PRESETS = Object.freeze({
+  goldenDawn: {
+    PANEL_SURFACE_TOP: "#4f5439",
+    PANEL_SURFACE_BOTTOM: "#2c2f22",
+    PANEL_INNER: "#5e6447",
+    PANEL_BORDER_LIGHT: "#ecd9a8",
+    PANEL_BORDER_DARK: "#6f5b34",
+    PANEL_ACCENT: "#e2c67f"
+  },
+  inkQuiet: {
+    PANEL_SURFACE_TOP: "#2a3949",
+    PANEL_SURFACE_BOTTOM: "#151f2c",
+    PANEL_INNER: "#35495e",
+    PANEL_BORDER_LIGHT: "#b8d7ec",
+    PANEL_BORDER_DARK: "#3f5873",
+    PANEL_ACCENT: "#8ec7ec"
+  },
+  amberLounge: {
+    PANEL_SURFACE_TOP: "#5a3f2f",
+    PANEL_SURFACE_BOTTOM: "#352219",
+    PANEL_INNER: "#704f3b",
+    PANEL_BORDER_LIGHT: "#efc08a",
+    PANEL_BORDER_DARK: "#6f4325",
+    PANEL_ACCENT: "#e2a96c"
+  }
+});
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function easeOutCubic(value) {
+  const t = clamp01(value);
+  return 1 - ((1 - t) ** 3);
+}
+
+function easeInCubic(value) {
+  const t = clamp01(value);
+  return t * t * t;
+}
+
+function easeOutBack(value) {
+  const t = clamp01(value);
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * ((t - 1) ** 3) + c1 * ((t - 1) ** 2);
+}
+
+function getFacingAngle(dir) {
+  if (dir === "up") return -Math.PI * 0.5;
+  if (dir === "left") return Math.PI;
+  if (dir === "right") return 0;
+  return Math.PI * 0.5;
+}
+
+function deriveUiColors(colors, moodPreset) {
+  const moodOverrides = MOOD_UI_PRESETS[moodPreset];
+  if (!moodOverrides) return colors;
+  return {
+    ...colors,
+    ...moodOverrides
+  };
+}
 
 function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
   const { gameState, pauseMenuState } = state;
@@ -438,11 +503,10 @@ function drawCombatHud(ctx, state, colors) {
   if (!state.player || !Number.isFinite(state.player.maxHp)) return;
 
   const showChallenge = Boolean(state.gameFlags?.acceptedTraining);
-  const promptMode = state.inputPromptMode === "gamepad" ? "gamepad" : "keyboard";
   const panelX = 14;
-  const panelY = 14;
   const panelW = 224;
-  const panelH = showChallenge ? 94 : 72;
+  const panelH = showChallenge ? 62 : 46;
+  const panelY = 14;
   drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors);
 
   const hpRatio = Math.max(0, Math.min(1, state.player.hp / Math.max(1, state.player.maxHp)));
@@ -472,12 +536,6 @@ function drawCombatHud(ctx, state, colors) {
       : `Challenge: ${kills}/${target}`;
     drawUiText(ctx, challengeText, panelX + 12, panelY + 48, colors);
   }
-
-  ctx.font = FONT_12;
-  const promptText = promptMode === "gamepad"
-    ? "A Interact  X Attack  Start Menu"
-    : `${getPrimaryBindingLabel(state, "interact")} Interact  ${getPrimaryBindingLabel(state, "attack")} Attack  ${getPrimaryBindingLabel(state, "pause")} Menu`;
-  drawUiText(ctx, promptText, panelX + 12, panelY + panelH - 10, colors);
 }
 
 function drawObjectiveTracker(ctx, state, colors) {
@@ -485,10 +543,19 @@ function drawObjectiveTracker(ctx, state, colors) {
   const objectiveText = state.objectiveState?.text;
   if (!objectiveText) return;
 
-  const panelX = 248;
-  const panelY = 14;
-  const panelW = Math.min(420, ctx.canvas.width - panelX - 14);
-  const panelH = 72;
+  const now = performance.now();
+  const updatedAt = Number.isFinite(state.objectiveState?.updatedAt) ? state.objectiveState.updatedAt : 0;
+  const revealRatio = updatedAt > 0 ? easeOutBack((now - updatedAt) / 360) : 1;
+  const revealAlpha = Math.max(0.42, Math.min(1, revealRatio));
+  const revealOffsetY = Math.round((1 - revealRatio) * 12);
+  const panelH = 80;
+  const panelW = Math.min(420, ctx.canvas.width - 28);
+  const panelX = 14;
+  const bottomReserve = state.doorHintText ? 54 : 14;
+  const panelY = Math.max(14, ctx.canvas.height - panelH - bottomReserve) + revealOffsetY;
+
+  ctx.save();
+  ctx.globalAlpha = revealAlpha;
   drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors);
 
   ctx.font = FONT_12;
@@ -513,6 +580,13 @@ function drawObjectiveTracker(ctx, state, colors) {
   for (let i = 0; i < lines.length; i++) {
     drawUiText(ctx, lines[i], panelX + 10, panelY + 39 + i * 18, colors);
   }
+
+  const markerLabel = state.objectiveState?.marker?.label;
+  if (markerLabel) {
+    ctx.font = FONT_12;
+    drawUiText(ctx, `Target: ${markerLabel}`, panelX + 10, panelY + panelH - 8, colors);
+  }
+  ctx.restore();
 }
 
 function drawSaveNotice(ctx, state, colors) {
@@ -521,10 +595,12 @@ function drawSaveNotice(ctx, state, colors) {
 
   const elapsed = performance.now() - notice.startedAt;
   const duration = Math.max(1, notice.durationMs || 1600);
+  const fadeIn = easeOutCubic(elapsed / 180);
   const fadeOutStart = duration - 260;
-  const alpha = elapsed > fadeOutStart
-    ? Math.max(0, 1 - (elapsed - fadeOutStart) / 260)
-    : 1;
+  const fadeOut = elapsed > fadeOutStart
+    ? easeInCubic((elapsed - fadeOutStart) / 260)
+    : 0;
+  const alpha = fadeIn * (1 - fadeOut);
   if (alpha <= 0) return;
 
   ctx.save();
@@ -534,7 +610,7 @@ function drawSaveNotice(ctx, state, colors) {
   const boxW = Math.max(140, textWidth + 26);
   const boxH = 32;
   const boxX = Math.round((ctx.canvas.width - boxW) / 2);
-  const boxY = 10;
+  const boxY = 10 + Math.round((1 - fadeIn) * -16 + fadeOut * -10);
   drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors);
   drawUiText(ctx, notice.text, boxX + 12, boxY + 20, colors);
   ctx.restore();
@@ -544,10 +620,28 @@ function drawCombatRewardPanel(ctx, state, colors) {
   const panel = state.combatRewardPanel;
   if (!panel?.active || !isFreeExploreState(state.gameState)) return;
 
+  const elapsed = performance.now() - panel.startedAt;
+  const duration = Math.max(1, panel.durationMs || 2200);
+  const introRatio = easeOutBack(elapsed / 220);
+  const outroStart = Math.max(200, duration - 320);
+  const outroRatio = elapsed > outroStart ? easeInCubic((elapsed - outroStart) / 320) : 0;
+  const alpha = introRatio * (1 - outroRatio);
+  if (alpha <= 0.01) return;
+
   const boxW = Math.min(420, ctx.canvas.width - 48);
   const boxH = 108;
   const boxX = Math.round((ctx.canvas.width - boxW) / 2);
   const boxY = 52;
+  const centerX = boxX + boxW * 0.5;
+  const centerY = boxY + boxH * 0.5;
+  const scale = 0.97 + 0.03 * introRatio;
+  const offsetY = Math.round((1 - introRatio) * -14 + outroRatio * -10);
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(centerX, centerY + offsetY);
+  ctx.scale(scale, scale);
+  ctx.translate(-centerX, -centerY);
   drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors, { titleBand: true });
 
   ctx.font = FONT_20;
@@ -558,6 +652,7 @@ function drawCombatRewardPanel(ctx, state, colors) {
   for (let i = 0; i < Math.min(lines.length, 4); i++) {
     drawUiText(ctx, String(lines[i]), boxX + 16, boxY + 56 + i * 14, colors);
   }
+  ctx.restore();
 }
 
 function drawMinimap(ctx, state, colors) {
@@ -565,10 +660,17 @@ function drawMinimap(ctx, state, colors) {
   const minimap = state.minimap;
   if (!minimap?.map || !Number.isFinite(minimap.width) || !Number.isFinite(minimap.height)) return;
 
+  const now = performance.now();
+  const revealRatio = easeOutCubic((now - (minimap.revealStartedAt || now)) / 320);
+  const revealAlpha = Math.max(0.45, revealRatio);
+  const panelSlideOffset = Math.round((1 - revealRatio) * 24);
+
   const panelW = 156;
   const panelH = 126;
-  const panelX = ctx.canvas.width - panelW - 14;
+  const panelX = ctx.canvas.width - panelW - 14 + panelSlideOffset;
   const panelY = 14;
+  ctx.save();
+  ctx.globalAlpha = revealAlpha;
   drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors, { titleBand: true });
 
   ctx.font = FONT_12;
@@ -583,6 +685,8 @@ function drawMinimap(ctx, state, colors) {
   const drawH = Math.floor(minimap.height * cell);
   const offsetX = mapX + Math.floor((mapW - drawW) / 2);
   const offsetY = mapY + Math.floor((mapH - drawH) / 2);
+  const discoveredDoors = Array.isArray(minimap.discoveredDoorTiles) ? minimap.discoveredDoorTiles : [];
+  const discoveredSet = new Set(discoveredDoors.map((entry) => `${entry.x},${entry.y}`));
 
   ctx.fillStyle = "rgba(12, 16, 20, 0.8)";
   ctx.fillRect(offsetX, offsetY, drawW, drawH);
@@ -600,29 +704,72 @@ function drawMinimap(ctx, state, colors) {
       } else if (tile === TILE_TYPES.HILL) {
         color = "rgba(122, 102, 77, 0.78)";
       } else if (tile === TILE_TYPES.DOOR) {
-        color = "rgba(255, 194, 132, 0.9)";
+        color = discoveredSet.has(`${x},${y}`)
+          ? "rgba(255, 194, 132, 0.92)"
+          : "rgba(139, 120, 94, 0.48)";
       }
       ctx.fillStyle = color;
       ctx.fillRect(offsetX + x * cell, offsetY + y * cell, Math.ceil(cell), Math.ceil(cell));
     }
   }
 
+  ctx.strokeStyle = "rgba(255,255,255,0.2)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(offsetX + 0.5, offsetY + 0.5, drawW - 1, drawH - 1);
+
   const doors = Array.isArray(minimap.doorTiles) ? minimap.doorTiles : [];
-  ctx.fillStyle = "rgba(255, 206, 151, 0.95)";
   for (const door of doors) {
-    ctx.fillRect(offsetX + door.x * cell, offsetY + door.y * cell, Math.ceil(cell), Math.ceil(cell));
+    const discovered = discoveredSet.has(`${door.x},${door.y}`);
+    const markerSize = discovered ? Math.max(2, Math.ceil(cell)) : Math.max(1, Math.floor(cell * 0.5));
+    const markerOffset = discovered ? 0 : (cell - markerSize) * 0.5;
+    ctx.fillStyle = discovered
+      ? "rgba(255, 215, 157, 0.98)"
+      : "rgba(140, 138, 128, 0.6)";
+    ctx.fillRect(
+      offsetX + door.x * cell + markerOffset,
+      offsetY + door.y * cell + markerOffset,
+      markerSize,
+      markerSize
+    );
+  }
+
+  const playerCenterX = offsetX + minimap.playerTileX * cell + cell * 0.5;
+  const playerCenterY = offsetY + minimap.playerTileY * cell + cell * 0.5;
+  const facingAngle = getFacingAngle(state.player?.dir);
+  const coneRadius = Math.max(4, cell * 3.2);
+
+  ctx.fillStyle = "rgba(255, 146, 118, 0.24)";
+  ctx.beginPath();
+  ctx.moveTo(playerCenterX, playerCenterY);
+  ctx.arc(playerCenterX, playerCenterY, coneRadius, facingAngle - 0.32, facingAngle + 0.32);
+  ctx.closePath();
+  ctx.fill();
+
+  if (minimap.objectiveMarker) {
+    const markerX = offsetX + minimap.objectiveMarker.x * cell + cell * 0.5;
+    const markerY = offsetY + minimap.objectiveMarker.y * cell + cell * 0.5;
+    const pulse = 0.5 + Math.sin(now * 0.01) * 0.5;
+    ctx.strokeStyle = `rgba(255, 244, 184, ${0.65 + pulse * 0.3})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(markerX, markerY, Math.max(3, cell * (0.6 + pulse * 0.35)), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255, 235, 158, 0.95)";
+    ctx.fillRect(markerX - 1, markerY - 1, 3, 3);
   }
 
   ctx.fillStyle = "rgba(255, 116, 116, 0.98)";
   ctx.fillRect(
-    offsetX + minimap.playerTileX * cell - 1,
-    offsetY + minimap.playerTileY * cell - 1,
+    playerCenterX - Math.max(1, Math.floor(cell * 0.5)),
+    playerCenterY - Math.max(1, Math.floor(cell * 0.5)),
     Math.max(2, Math.ceil(cell) + 1),
     Math.max(2, Math.ceil(cell) + 1)
   );
 
   ctx.font = FONT_12;
-  drawUiText(ctx, `${state.currentTownName || ""} / ${state.currentAreaName || ""}`, panelX + 10, panelY + panelH - 4, colors);
+  const areaLabel = `${state.currentTownName || ""} / ${state.currentAreaName || ""}`;
+  drawUiText(ctx, areaLabel, panelX + 10, panelY + panelH - 4, colors);
+  ctx.restore();
 }
 
 function drawDoorHint(ctx, state, colors, dialogue) {
@@ -631,14 +778,27 @@ function drawDoorHint(ctx, state, colors, dialogue) {
   const text = state.doorHintText;
   if (!text) return;
 
+  const interactKey = state.inputPromptMode === "gamepad" ? "A" : getPrimaryBindingLabel(state, "interact");
+  const destinationText = text.startsWith("Door:") ? text.slice(5).trim() : text;
+
   ctx.font = FONT_12;
-  const textW = ctx.measureText(text).width;
-  const boxW = Math.max(120, textW + 20);
-  const boxH = 24;
+  const textW = ctx.measureText(destinationText).width;
+  const chipW = Math.ceil(ctx.measureText(interactKey).width) + 12;
+  const instructionText = "Enter";
+  const instructionW = ctx.measureText(instructionText).width;
+  const boxW = Math.max(160, chipW + instructionW + textW + 36);
+  const boxH = 30;
   const boxX = Math.round((ctx.canvas.width - boxW) / 2);
-  const boxY = ctx.canvas.height - 52;
+  const boxY = ctx.canvas.height - 58;
   drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors);
-  drawUiText(ctx, text, boxX + 10, boxY + 16, colors);
+
+  const chipX = boxX + 10;
+  const chipY = boxY + 7;
+  const renderedChipW = drawControlChip(ctx, interactKey, chipX, chipY, colors, { highlighted: true });
+  let textX = chipX + renderedChipW + 8;
+  drawUiText(ctx, instructionText, textX, boxY + 19, colors);
+  textX += instructionW + 8;
+  drawUiText(ctx, destinationText, textX, boxY + 19, colors);
 }
 
 function drawCombatDamageFlash(ctx, state) {
@@ -1087,8 +1247,9 @@ export function renderGameFrame({
   drawDoorTransition(ctx, state, canvas, tileSize, cameraZoom);
   ctx.restore();
 
-  drawItemNotifications(ctx, state, cameraZoom, tileSize, colors);
-  drawSaveNotice(ctx, state, colors);
+  const uiColors = deriveUiColors(colors, state.moodPreset);
+  drawItemNotifications(ctx, state, cameraZoom, tileSize, uiColors);
+  drawSaveNotice(ctx, state, uiColors);
   drawAtmosphere(ctx, canvas, colors, state);
   drawMoodGrading(ctx, canvas, state);
   drawCombatDamageFlash(ctx, state);
@@ -1096,19 +1257,19 @@ export function renderGameFrame({
     drawTitleScreenOverlay(ctx, canvas, state, colors);
     return;
   }
-  drawCombatHud(ctx, state, colors);
-  drawObjectiveTracker(ctx, state, colors);
-  drawMinimap(ctx, state, colors);
-  drawDoorHint(ctx, state, colors, dialogue);
-  drawCombatRewardPanel(ctx, state, colors);
+  drawCombatHud(ctx, state, uiColors);
+  drawObjectiveTracker(ctx, state, uiColors);
+  drawMinimap(ctx, state, uiColors);
+  drawDoorHint(ctx, state, uiColors, dialogue);
+  drawCombatRewardPanel(ctx, state, uiColors);
   if (typeof drawCustomOverlays === "function") {
-    drawCustomOverlays({ ctx, canvas, colors, ui, state });
+    drawCustomOverlays({ ctx, canvas, colors: uiColors, ui, state });
   }
-  drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSprite);
-  drawPauseMenuOverlay(ctx, state, canvas, ui, colors);
-  drawAttributesOverlay(ctx, state, canvas, ui, colors);
-  drawSettingsOverlay(ctx, state, canvas, ui, colors);
-  drawTextbox(ctx, state, canvas, ui, colors, dialogue);
+  drawInventoryOverlay(ctx, state, canvas, ui, uiColors, getItemSprite);
+  drawPauseMenuOverlay(ctx, state, canvas, ui, uiColors);
+  drawAttributesOverlay(ctx, state, canvas, ui, uiColors);
+  drawSettingsOverlay(ctx, state, canvas, ui, uiColors);
+  drawTextbox(ctx, state, canvas, ui, uiColors, dialogue);
   drawPlayerDefeatOverlay(ctx, state, canvas);
 }
 
