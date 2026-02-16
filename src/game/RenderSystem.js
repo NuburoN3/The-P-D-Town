@@ -226,6 +226,41 @@ function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, 
 }
 
 function drawNPCSprite(ctx, npc, drawX, drawY, drawWidth, drawHeight, colors) {
+  const frameWidth = Number.isFinite(npc.spriteFrameWidth) && npc.spriteFrameWidth > 0
+    ? npc.spriteFrameWidth
+    : null;
+  const frameHeight = Number.isFinite(npc.spriteFrameHeight) && npc.spriteFrameHeight > 0
+    ? npc.spriteFrameHeight
+    : null;
+  const framesPerRow = Number.isFinite(npc.spriteFramesPerRow) && npc.spriteFramesPerRow > 0
+    ? Math.floor(npc.spriteFramesPerRow)
+    : null;
+
+  if (frameWidth && frameHeight && framesPerRow) {
+    const directionToRow = {
+      down: 0,
+      left: 1,
+      right: 2,
+      up: 3
+    };
+    const row = directionToRow[npc.dir] ?? 0;
+    const frame = Math.min(1, framesPerRow - 1);
+    const sx = frame * frameWidth;
+    const sy = row * frameHeight;
+    ctx.drawImage(
+      npc.sprite,
+      sx,
+      sy,
+      frameWidth,
+      frameHeight,
+      drawX,
+      drawY,
+      drawWidth,
+      drawHeight
+    );
+    return;
+  }
+
   ctx.save();
   if (npc.dir === "left") {
     ctx.translate(drawX + drawWidth / 2, 0);
@@ -262,11 +297,18 @@ function drawNPCs(ctx, state, canvas, tileSize, colors) {
         let drawX;
         let drawY;
 
+        const frameHeight = Number.isFinite(npc.spriteFrameHeight) && npc.spriteFrameHeight > 0
+          ? npc.spriteFrameHeight
+          : npc.sprite.height;
+        const frameWidth = Number.isFinite(npc.spriteFrameWidth) && npc.spriteFrameWidth > 0
+          ? npc.spriteFrameWidth
+          : npc.sprite.width;
+
         if (npc.desiredHeightTiles) {
           const targetHeight = tileSize * npc.desiredHeightTiles;
-          const scale = targetHeight / npc.sprite.height;
-          drawWidth = npc.sprite.width * scale;
-          drawHeight = npc.sprite.height * scale;
+          const scale = targetHeight / frameHeight;
+          drawWidth = frameWidth * scale;
+          drawHeight = frameHeight * scale;
           drawX = Math.round(npc.x - cam.x - (drawWidth - tileSize) / 2);
           drawY = Math.round(npc.y - cam.y - (drawHeight - tileSize));
         } else {
