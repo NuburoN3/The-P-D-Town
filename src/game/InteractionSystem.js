@@ -122,7 +122,11 @@ export function createInteractionSystem({
   function toggleInventory() {
     const gameState = getGameState();
     if (gameState === GAME_STATES.INVENTORY) {
-      setGameState(getPreviousWorldState());
+      const previousState = getPreviousWorldState();
+      setGameState(previousState);
+      if (isFreeExploreState(previousState) && musicManager && typeof musicManager.resumeFromPauseMenu === "function") {
+        musicManager.resumeFromPauseMenu();
+      }
       clearInteractPressed();
       return;
     }

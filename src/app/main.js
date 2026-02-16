@@ -54,6 +54,7 @@ const mouseUiState = {
   y: 0,
   insideCanvas: false
 };
+let pointerLockPrimed = false;
 
 const userSettings = loadUserSettings();
 const settingsUiState = {
@@ -88,10 +89,70 @@ function updateMouseUiPosition(e) {
   mouseUiState.x = (e.clientX - rect.left) * scaleX;
   mouseUiState.y = (e.clientY - rect.top) * scaleY;
   mouseUiState.insideCanvas = true;
+  updateMenuHoverStateFromMouse(mouseUiState.x, mouseUiState.y);
+}
+
+function canUsePointerLock() {
+  return typeof canvas.requestPointerLock === "function" && typeof document.exitPointerLock === "function";
+}
+
+function shouldUnlockPointerForCurrentState() {
+  return (
+    gameState === GAME_STATES.TITLE_SCREEN ||
+    gameState === GAME_STATES.PAUSE_MENU ||
+    gameState === GAME_STATES.INVENTORY
+  );
+}
+
+function requestCanvasPointerLock() {
+  if (!canUsePointerLock()) return;
+  try {
+    const maybePromise = canvas.requestPointerLock();
+    if (maybePromise && typeof maybePromise.catch === "function") {
+      maybePromise.catch(() => {});
+    }
+  } catch {
+    // Ignore lock errors (e.g. browser gesture policy).
+  }
+}
+
+function syncPointerLockWithState({ fromUserGesture = false } = {}) {
+  if (!canUsePointerLock()) return;
+  const isLockedToCanvas = document.pointerLockElement === canvas;
+  if (shouldUnlockPointerForCurrentState()) {
+    if (isLockedToCanvas) {
+      document.exitPointerLock();
+    }
+    return;
+  }
+  if (!pointerLockPrimed || isLockedToCanvas || !fromUserGesture) return;
+  requestCanvasPointerLock();
 }
 
 canvas.addEventListener("mousemove", updateMouseUiPosition);
 canvas.addEventListener("mouseleave", () => {
+  mouseUiState.insideCanvas = false;
+  clearMenuHoverState();
+});
+canvas.addEventListener("mousedown", (e) => {
+  pointerLockPrimed = true;
+  updateMouseUiPosition(e);
+  syncPointerLockWithState({ fromUserGesture: true });
+});
+canvas.addEventListener("click", (e) => {
+  if (e.button !== 0) return;
+  updateMouseUiPosition(e);
+  const handledByTitle = handleTitleLeftClick(mouseUiState.x, mouseUiState.y);
+  const handledByPause = handledByTitle ? false : handlePauseMenuLeftClick(mouseUiState.x, mouseUiState.y);
+  if (handledByTitle || handledByPause) {
+    e.preventDefault();
+  }
+});
+document.addEventListener("pointerlockchange", () => {
+  if (document.pointerLockElement === canvas) {
+    mouseUiState.insideCanvas = true;
+    return;
+  }
   mouseUiState.insideCanvas = false;
 });
 
@@ -129,6 +190,7 @@ const choiceState = dialogue.choiceState;
 const pauseMenuState = {
   active: false,
   selected: 0,
+  hovered: -1,
   options: ["Inventory", "Attributes", "Settings", "Save", "Load", "Quit"],
   highContrast: Boolean(userSettings.highContrastMenu),
   animationMode: "idle",
@@ -614,6 +676,7 @@ const gameplayStartState = gameState;
 const titleState = {
   startedAt: performance.now(),
   selected: 0,
+  hovered: -1,
   options: ["Continue", "Start Journey", "How To Play"],
   showHowTo: false,
   fadeOutActive: false,
@@ -699,6 +762,125 @@ function confirmTitleSelection() {
     durationMs: 620
   });
   musicManager.playSfx("menuConfirm");
+}
+
+function pointInRect(px, py, x, y, w, h) {
+  return px >= x && px <= x + w && py >= y && py <= y + h;
+}
+
+function getPauseMenuOptionIndexAtPosition(mouseX, mouseY) {
+  const options = pauseMenuState?.options || ["Inventory", "Attributes", "Settings", "Save", "Load", "Quit"];
+  const optionStartY = 106;
+  const optionStep = 46;
+  const minMenuH = 392;
+  const requiredMenuH = optionStartY + Math.max(0, options.length - 1) * optionStep + 120;
+  const menuW = 340;
+  const menuH = Math.max(minMenuH, requiredMenuH);
+  const mode = pauseMenuState?.animationMode || "idle";
+  const startedAt = pauseMenuState?.animationStartedAt || 0;
+  const duration = Math.max(1, pauseMenuState?.animationDurationMs || 160);
+  const t = Math.min(1, (performance.now() - startedAt) / duration);
+  let visibility = 1;
+  if (mode === "in") visibility = t;
+  else if (mode === "out") visibility = 1 - t;
+  const slideOffset = (1 - Math.max(0, Math.min(1, visibility))) * 34;
+  const menuX = canvas.width - menuW - 24 + slideOffset;
+  const menuY = (canvas.height - menuH) / 2;
+
+  for (let i = 0; i < options.length; i++) {
+    const optionY = menuY + optionStartY + i * optionStep;
+    const rowX = menuX + 24;
+    const rowY = optionY - 23;
+    const rowW = menuW - 48;
+    const rowH = 44;
+    if (pointInRect(mouseX, mouseY, rowX, rowY, rowW, rowH)) return i;
+  }
+
+  return -1;
+}
+
+function getTitleOptionIndexAtPosition(mouseX, mouseY) {
+  const panelX = 72;
+  const optionCount = Array.isArray(titleState.options) ? titleState.options.length : 0;
+  const panelH = Math.max(188, 144 + Math.max(0, optionCount - 1) * 38);
+  const panelY = canvas.height - (panelH + 70);
+  const panelW = 372;
+
+  for (let i = 0; i < titleState.options.length; i++) {
+    const y = panelY + 64 + i * 38;
+    const rowX = panelX + 14;
+    const rowY = y - 20;
+    const rowW = panelW - 28;
+    const rowH = 28;
+    if (pointInRect(mouseX, mouseY, rowX, rowY, rowW, rowH)) return i;
+  }
+
+  return -1;
+}
+
+function clearMenuHoverState() {
+  pauseMenuState.hovered = -1;
+  titleState.hovered = -1;
+}
+
+function updateMenuHoverStateFromMouse(mouseX, mouseY) {
+  clearMenuHoverState();
+  if (!mouseUiState.insideCanvas) return;
+  if (gameState === GAME_STATES.PAUSE_MENU) {
+    const hoverIndex = getPauseMenuOptionIndexAtPosition(mouseX, mouseY);
+    pauseMenuState.hovered = hoverIndex;
+    if (hoverIndex >= 0) {
+      pauseMenuState.selected = hoverIndex;
+    }
+    return;
+  }
+  if (gameState === GAME_STATES.TITLE_SCREEN && !titleState.showHowTo) {
+    const hoverIndex = getTitleOptionIndexAtPosition(mouseX, mouseY);
+    titleState.hovered = hoverIndex;
+    if (hoverIndex >= 0) {
+      titleState.selected = hoverIndex;
+    }
+  }
+}
+
+function handlePauseMenuLeftClick(mouseX, mouseY) {
+  if (gameState !== GAME_STATES.PAUSE_MENU) return false;
+  const hoverIndex = getPauseMenuOptionIndexAtPosition(mouseX, mouseY);
+  if (hoverIndex < 0) return false;
+  pauseMenuState.selected = hoverIndex;
+  pauseMenuState.hovered = hoverIndex;
+  selectPauseMenuOption();
+  return true;
+}
+
+function handleTitleLeftClick(mouseX, mouseY) {
+  if (gameState !== GAME_STATES.TITLE_SCREEN) return false;
+
+  if (titleState.showHowTo) {
+    const helpW = Math.min(canvas.width - 120, 520);
+    const helpH = 236;
+    const helpX = Math.round((canvas.width - helpW) / 2);
+    const helpY = Math.round((canvas.height - helpH) / 2);
+    if (pointInRect(mouseX, mouseY, helpX, helpY, helpW, helpH)) {
+      titleState.showHowTo = false;
+      musicManager.playSfx("menuConfirm");
+      return true;
+    }
+    return false;
+  }
+
+  const hoverIndex = getTitleOptionIndexAtPosition(mouseX, mouseY);
+  if (hoverIndex >= 0) {
+    if (titleState.selected !== hoverIndex) {
+      titleState.selected = hoverIndex;
+      musicManager.playSfx("menuMove");
+    }
+    titleState.hovered = hoverIndex;
+    confirmTitleSelection();
+    return true;
+  }
+
+  return false;
 }
 
 function updateTitleScreen(now) {
@@ -962,6 +1144,7 @@ function openPauseMenu() {
   if (!isFreeExploreState(gameState)) return;
   previousGameState = gameState;
   gameState = GAME_STATES.PAUSE_MENU;
+  syncPointerLockWithState();
   setPauseMenuAnimation("in", 170);
   musicManager.pauseForPauseMenu();
   musicManager.playSfx("menuOpen");
@@ -970,12 +1153,14 @@ function openPauseMenu() {
 function resumeFromPauseMenu() {
   setPauseMenuAnimation("out", 140);
   gameState = previousGameState;
+  syncPointerLockWithState({ fromUserGesture: true });
   musicManager.resumeFromPauseMenu();
   musicManager.playSfx("menuConfirm");
 }
 
 function returnToPauseMenu() {
   gameState = GAME_STATES.PAUSE_MENU;
+  syncPointerLockWithState();
   setPauseMenuAnimation("in", 130);
   musicManager.pauseForPauseMenu();
   musicManager.playSfx("menuOpen");
@@ -1223,6 +1408,7 @@ addEventListener("keydown", (e) => {
 });
 
 addEventListener("keydown", (e) => {
+  syncPointerLockWithState({ fromUserGesture: true });
   if (choiceState.active) return;
   const key = normalizeInputKey(e.key);
 
@@ -1446,6 +1632,7 @@ gameController.syncMusicForCurrentArea();
 
 function loop() {
   const now = performance.now();
+  syncPointerLockWithState();
   handleGamepadPauseAndMenuInput(now);
   if (
     settingsUiState.statusText &&
