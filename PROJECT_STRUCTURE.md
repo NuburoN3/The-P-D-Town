@@ -29,12 +29,19 @@
     - `trainingActions.js`
   - `MovementSystem.js`
   - `RenderSystem.js`
+  - `rendering/`
+    - `entitiesLayer.js`
+    - `inventoryOverlay.js`
+    - `overlayCore.js`
+    - `uiPrimitives.js`
   - `features/`
     - `FeatureCoordinator.js`
     - `HousePourFeature.js`
     - `index.js`
     - `README.md`
 - `src/rendering/TileSystem.js`: Tile drawing strategies.
+  - `src/rendering/tiles/barTiles.js`: Bar-themed tile renderer family.
+  - `src/rendering/tiles/interiorTiles.js`: Interior/furniture tile renderer family.
 - `src/world/`: World content and world graph services.
   - `content.js`
   - `WorldService.js`
