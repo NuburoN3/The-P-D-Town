@@ -9,6 +9,7 @@ import {
   TRAINING,
   GAME_STATES,
   TILE_TYPES,
+  AUDIO_TRACKS,
   isFreeExploreState
 } from "../core/constants.js";
 import { InputManager } from "../core/InputManager.js";
@@ -57,7 +58,7 @@ const {
 } = state;
 
 const TITLE_SCREEN_MUSIC_KEY = "__title_screen_music__";
-const TITLE_SCREEN_MUSIC_SRC = "assets/sprites/StartScreen_Audio.wav";
+const TITLE_SCREEN_MUSIC_SRC = AUDIO_TRACKS.TITLE_SCREEN;
 musicManager.registerAreaTrack(TITLE_SCREEN_MUSIC_KEY, TITLE_SCREEN_MUSIC_SRC);
 
 let { currentTownId, currentAreaId, currentMap, currentMapW, currentMapH, gameState, previousWorldState } = state;

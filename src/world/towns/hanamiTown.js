@@ -2,7 +2,7 @@
 // HANAMI TOWN - Content definition for the first playable town
 // ============================================================================
 
-import { TILE_TYPES } from "../../core/constants.js";
+import { AUDIO_TRACKS, TILE_TYPES } from "../../core/constants.js";
 import { BUILDING_TYPES } from "../buildingRenderers.js";
 import {
     createFilledMap,
@@ -291,7 +291,7 @@ export const hanamiTown = {
             mood: "goldenDawn",
             width: 56,
             height: 44,
-            musicSrc: "assets/audio/Anticipation_Game_Audio_BG.wav",
+            musicSrc: AUDIO_TRACKS.ANTICIPATION,
             generateBaseMap: generateOverworldBase,
             buildings: [
                 {
@@ -367,7 +367,7 @@ export const hanamiTown = {
             mood: "inkQuiet",
             width: 12,
             height: 10,
-            musicSrc: "assets/audio/Hanami_Game_Audio_BG.wav",
+            musicSrc: AUDIO_TRACKS.HANAMI,
             generateBaseMap: generateDojoInteriorBase,
             trainingTile: { x: 4, y: 5 }
         },
@@ -425,7 +425,7 @@ export const hanamiTown = {
             mood: "inkQuiet",
             width: 56,
             height: 44,
-            musicSrc: "assets/audio/Hanami_Game_Audio_BG.wav",
+            musicSrc: AUDIO_TRACKS.TITLE_SCREEN,
             generateBaseMap: generateBoglandBase,
             signposts: [
                 { x: 28, y: 5, text: "Bogland Training Ground" },

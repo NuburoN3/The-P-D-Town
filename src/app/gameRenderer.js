@@ -1,5 +1,6 @@
 import { drawTile as drawTileSystem } from "../rendering/TileSystem.js";
 import { renderGameFrame } from "../game/RenderSystem.js";
+import { ASSET_KEYS } from "../core/constants.js";
 
 export function createGameRenderer({
   ctx,
@@ -234,6 +235,7 @@ export function createGameRenderer({
         currentAreaKind: worldService.getAreaKind(currentTownId, currentAreaId),
         gameState,
         titleState,
+        titleHeroImage: assets.getSprite(ASSET_KEYS.TITLE_HERO_IMAGE),
         doorSequence,
         playerDefeatSequence,
         player,

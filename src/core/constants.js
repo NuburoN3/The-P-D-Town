@@ -28,6 +28,25 @@ export const GAME_STATES = Object.freeze({
   SETTINGS: "settings"
 });
 
+export const BRANDING = Object.freeze({
+  TITLE: "PURPOSE & DIRECTION",
+  STUDIO: "Zeta Lotus Games"
+});
+
+export const ASSET_KEYS = Object.freeze({
+  TITLE_HERO_IMAGE: "panddcoverart"
+});
+
+export const ASSET_PATHS = Object.freeze({
+  TITLE_HERO_IMAGE: "assets/art/panddcoverart.jpg"
+});
+
+export const AUDIO_TRACKS = Object.freeze({
+  TITLE_SCREEN: "assets/sprites/StartScreen_Audio.wav",
+  HANAMI: "assets/audio/Hanami_Game_Audio_BG.wav",
+  ANTICIPATION: "assets/audio/Anticipation_Game_Audio_BG.wav"
+});
+
 export function isFreeExploreState(gameState) {
   return gameState === GAME_STATES.OVERWORLD || gameState === GAME_STATES.INTERIOR;
 }

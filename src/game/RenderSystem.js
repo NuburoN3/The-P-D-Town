@@ -1,4 +1,4 @@
-import { AREA_KINDS, GAME_STATES, TILE_TYPES, isFreeExploreState } from "../core/constants.js";
+import { AREA_KINDS, BRANDING, GAME_STATES, TILE_TYPES, isFreeExploreState } from "../core/constants.js";
 import { hash01 } from "../core/mathUtils.js";
 import {
   FONT_12,
@@ -47,7 +47,7 @@ const PAUSE_OPTION_SUBTITLES = Object.freeze({
   Settings: "Tune controls and visual comfort",
   Save: "Save your current game",
   Load: "Restore your last manual save",
-  Quit: "Leave P-D Town for now"
+  Quit: `Leave ${BRANDING.TITLE} for now`
 });
 
 const MOOD_UI_PRESETS = Object.freeze({
@@ -1089,18 +1089,72 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
   ctx.fillStyle = "rgba(8, 10, 16, 0.45)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+  const heroImage = state.titleHeroImage;
+  const heroFrameWidth = Math.min(460, Math.round(canvas.width * 0.38));
+  const heroFrameHeight = Math.min(560, Math.round(canvas.height * 0.72));
+  const heroFrameX = canvas.width - heroFrameWidth - 70;
+  const heroFrameY = Math.max(52, Math.round(canvas.height * 0.12));
+  drawSkinnedPanel(ctx, heroFrameX, heroFrameY, heroFrameWidth, heroFrameHeight, colors, { titleBand: false });
+
+  const heroInset = 14;
+  const heroX = heroFrameX + heroInset;
+  const heroY = heroFrameY + heroInset;
+  const heroW = heroFrameWidth - heroInset * 2;
+  const heroH = heroFrameHeight - heroInset * 2;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(heroX, heroY, heroW, heroH);
+  ctx.clip();
+
+  if (heroImage && heroImage.complete && heroImage.naturalWidth > 0 && heroImage.naturalHeight > 0) {
+    const sourceRatio = heroImage.naturalWidth / heroImage.naturalHeight;
+    const targetRatio = heroW / heroH;
+    let srcX = 0;
+    let srcY = 0;
+    let srcW = heroImage.naturalWidth;
+    let srcH = heroImage.naturalHeight;
+
+    if (sourceRatio > targetRatio) {
+      srcW = Math.round(heroImage.naturalHeight * targetRatio);
+      srcX = Math.round((heroImage.naturalWidth - srcW) * 0.5);
+    } else if (sourceRatio < targetRatio) {
+      srcH = Math.round(heroImage.naturalWidth / targetRatio);
+      srcY = Math.round((heroImage.naturalHeight - srcH) * 0.5);
+    }
+
+    ctx.drawImage(heroImage, srcX, srcY, srcW, srcH, heroX, heroY, heroW, heroH);
+  } else {
+    const fallback = ctx.createLinearGradient(heroX, heroY, heroX, heroY + heroH);
+    fallback.addColorStop(0, "rgba(245, 222, 173, 0.4)");
+    fallback.addColorStop(1, "rgba(26, 34, 46, 0.6)");
+    ctx.fillStyle = fallback;
+    ctx.fillRect(heroX, heroY, heroW, heroH);
+  }
+
+  const heroShade = ctx.createLinearGradient(heroX, heroY, heroX, heroY + heroH);
+  heroShade.addColorStop(0, "rgba(10, 12, 19, 0.04)");
+  heroShade.addColorStop(1, "rgba(10, 12, 19, 0.32)");
+  ctx.fillStyle = heroShade;
+  ctx.fillRect(heroX, heroY, heroW, heroH);
+  ctx.restore();
+
+  ctx.strokeStyle = "rgba(255, 231, 191, 0.45)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(heroX + 0.5, heroY + 0.5, heroW - 1, heroH - 1);
+
   ctx.font = FONT_28;
   ctx.fillStyle = "rgba(0,0,0,0.5)";
-  ctx.fillText("P-D TOWN", 84, 120);
+  ctx.fillText(BRANDING.TITLE, 84, 120);
   const logoGradient = ctx.createLinearGradient(82, 62, 82, 124);
   logoGradient.addColorStop(0, "#fff3d1");
   logoGradient.addColorStop(1, "#e4ba72");
   ctx.fillStyle = logoGradient;
-  ctx.fillText("P-D TOWN", 82, 118);
+  ctx.fillText(BRANDING.TITLE, 82, 118);
 
   ctx.font = FONT_20;
   ctx.fillStyle = "rgba(243, 227, 198, 0.92)";
-  ctx.fillText("Way of the Cherry Blossom", 84, 148);
+  ctx.fillText(BRANDING.STUDIO, 84, 148);
 
   const panelX = 72;
   const optionCount = Array.isArray(titleState.options) ? titleState.options.length : 0;
