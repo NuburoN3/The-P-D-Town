@@ -45,6 +45,10 @@ const {
   playerDefeatSequence
 } = state;
 
+const TITLE_SCREEN_MUSIC_KEY = "__title_screen_music__";
+const TITLE_SCREEN_MUSIC_SRC = "assets/sprites/StartScreen_Audio.wav";
+musicManager.registerAreaTrack(TITLE_SCREEN_MUSIC_KEY, TITLE_SCREEN_MUSIC_SRC);
+
 let { currentTownId, currentAreaId, currentMap, currentMapW, currentMapH, gameState, previousWorldState } = state;
 
 let previousGameState = GAME_STATES.OVERWORLD;
@@ -1628,7 +1632,11 @@ function render() {
   });
 }
 
-gameController.syncMusicForCurrentArea();
+if (gameState === GAME_STATES.TITLE_SCREEN) {
+  musicManager.playMusicForArea(TITLE_SCREEN_MUSIC_KEY);
+} else {
+  gameController.syncMusicForCurrentArea();
+}
 
 function loop() {
   const now = performance.now();
