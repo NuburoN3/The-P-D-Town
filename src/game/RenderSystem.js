@@ -233,10 +233,6 @@ function drawNPCSprite(ctx, npc, drawX, drawY, drawWidth, drawHeight, colors) {
     ctx.translate(-(drawX + drawWidth / 2), 0);
   }
   ctx.drawImage(npc.sprite, drawX, drawY, drawWidth, drawHeight);
-  if (npc.dir === "up") {
-    ctx.fillStyle = colors.SHADOW;
-    ctx.fillRect(drawX, drawY, drawWidth, drawHeight);
-  }
   ctx.restore();
 }
 
@@ -251,8 +247,7 @@ function drawNPCPlaceholder(ctx, nx, ny, colors) {
 }
 
 function drawNPCs(ctx, state, canvas, tileSize, colors) {
-  const { currentAreaId, currentAreaKind, npcs, cam } = state;
-  if (currentAreaKind === AREA_KINDS.OVERWORLD) return;
+  const { currentAreaId, npcs, cam } = state;
 
   for (const npc of npcs) {
     if (npc.world !== currentAreaId) continue;
