@@ -18,6 +18,23 @@ function resolveBuildingTileType(building, tileX, tileY) {
     return isFountainSolidTile(building, tileX, tileY) ? TILE_TYPES.WALL : TILE_TYPES.PATH;
   }
 
+  if (building.type === BUILDING_TYPES.PEN) {
+    const localX = tileX - building.x;
+    const localY = tileY - building.y;
+    const onBorder =
+      localX === 0 ||
+      localY === 0 ||
+      localX === building.width - 1 ||
+      localY === building.height - 1;
+    if (!onBorder) return TILE_TYPES.PATH;
+
+    const gateCenter = Math.floor(building.width / 2);
+    const isGate =
+      localY === building.height - 1 &&
+      (localX === gateCenter || (building.width % 2 === 0 && localX === gateCenter - 1));
+    return isGate ? TILE_TYPES.PATH : TILE_TYPES.WALL;
+  }
+
   return TILE_TYPES.WALL;
 }
 
