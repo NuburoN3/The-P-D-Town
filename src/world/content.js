@@ -604,7 +604,7 @@ export const GAME_CONTENT = {
           desiredHeightTiles: 1.15,
           areaId: "hanamiDojo",
           x: 4,
-          y: 4,
+          y: 3,
           dir: "right",
           dialogue: [
             "Master Hanami is the President of the Illustrious Dojo, but he hardly sleeps now.",

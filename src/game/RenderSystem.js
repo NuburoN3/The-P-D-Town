@@ -906,13 +906,15 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
   ctx.fillText("Menu", menuX + 24, menuY + 41);
 
   const selected = pauseMenuState ? pauseMenuState.selected : 0;
+  const hovered = pauseMenuState && Number.isInteger(pauseMenuState.hovered) ? pauseMenuState.hovered : -1;
+  const activeIndex = hovered >= 0 ? hovered : selected;
   const shimmerPhase = (performance.now() % 1500) / 1500;
 
   ctx.font = FONT_20;
   for (let i = 0; i < options.length; i++) {
     const option = options[i];
     const y = menuY + optionStartY + i * optionStep;
-    if (i === selected) {
+    if (i === activeIndex) {
       const rowGradient = ctx.createLinearGradient(menuX + 24, y - 23, menuX + menuW - 22, y + 21);
       if (highContrast) {
         rowGradient.addColorStop(0, "rgba(82, 150, 196, 0.24)");
@@ -942,7 +944,7 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
       const pulse = Math.sin(performance.now() * 0.008) * 0.5 + 0.5;
       drawFantasySelectorIcon(ctx, menuX + 29, y - 2, { highContrast, pulse });
     }
-    ctx.fillStyle = i === selected ? (highContrast ? "#f7fdff" : "#3f250e") : (highContrast ? "#deeff9" : "#5a3718");
+    ctx.fillStyle = i === activeIndex ? (highContrast ? "#f7fdff" : "#3f250e") : (highContrast ? "#deeff9" : "#5a3718");
     ctx.fillText(option, menuX + 44, y);
 
     const subtitle = PAUSE_OPTION_SUBTITLES[option] || "";
@@ -1536,7 +1538,9 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
   ctx.font = FONT_16;
   for (let i = 0; i < titleState.options.length; i++) {
     const y = panelY + 64 + i * 38;
-    const isSelected = i === titleState.selected;
+    const hovered = Number.isInteger(titleState.hovered) ? titleState.hovered : -1;
+    const activeIndex = hovered >= 0 ? hovered : titleState.selected;
+    const isSelected = i === activeIndex;
     if (isSelected) {
       const band = ctx.createLinearGradient(panelX + 14, y - 20, panelX + panelW - 14, y + 7);
       band.addColorStop(0, "rgba(255, 209, 127, 0.14)");
