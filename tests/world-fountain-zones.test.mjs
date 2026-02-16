@@ -16,20 +16,20 @@ test("WorldService marks fountain water as walkable and queryable", () => {
   const area = worldService.getArea("hanamiTown", "overworld");
   assert.ok(area);
 
-  // Hanami fountain starts at (12, 14). Local (2,2) is basin water.
-  assert.equal(worldService.isFountainWaterTile("hanamiTown", "overworld", 14, 16), true);
-  assert.equal(area.map[16][14], TILE_TYPES.PATH);
+  // Hanami fountain starts at (25, 19). Local (2,2) is basin water.
+  assert.equal(worldService.isFountainWaterTile("hanamiTown", "overworld", 27, 21), true);
+  assert.equal(area.map[21][27], TILE_TYPES.PATH);
 
   // Outer rim remains solid.
-  assert.equal(worldService.isFountainWaterTile("hanamiTown", "overworld", 12, 14), false);
-  assert.equal(area.map[14][12], TILE_TYPES.WALL);
+  assert.equal(worldService.isFountainWaterTile("hanamiTown", "overworld", 25, 19), false);
+  assert.equal(area.map[19][25], TILE_TYPES.WALL);
 
   // Center plinth remains solid.
-  assert.equal(worldService.isFountainWaterTile("hanamiTown", "overworld", 15, 17), false);
-  assert.equal(area.map[17][15], TILE_TYPES.WALL);
+  assert.equal(worldService.isFountainWaterTile("hanamiTown", "overworld", 28, 22), false);
+  assert.equal(area.map[22][28], TILE_TYPES.WALL);
 
   // Entry lane through the rim should be walkable so player can reach water.
-  assert.equal(worldService.isFountainWaterTile("hanamiTown", "overworld", 15, 20), false);
-  assert.equal(area.map[20][15], TILE_TYPES.PATH);
-  assert.equal(area.map[19][15], TILE_TYPES.PATH);
+  assert.equal(worldService.isFountainWaterTile("hanamiTown", "overworld", 28, 25), false);
+  assert.equal(area.map[25][28], TILE_TYPES.PATH);
+  assert.equal(area.map[24][28], TILE_TYPES.PATH);
 });

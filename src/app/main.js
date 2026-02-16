@@ -729,6 +729,9 @@ function updateTitleScreen(now) {
     gameState = gameplayStartState;
     previousWorldState = gameplayStartState;
     previousGameState = gameplayStartState;
+    if (gameController && typeof gameController.syncMusicForCurrentArea === "function") {
+      gameController.syncMusicForCurrentArea();
+    }
   }
 }
 
