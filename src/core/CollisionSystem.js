@@ -35,9 +35,13 @@ export class CollisionService {
       tile === TILE_TYPES.SIGNPOST ||
       tile === TILE_TYPES.DOOR ||
       tile === TILE_TYPES.BAR_COUNTER ||
-      tile === TILE_TYPES.BAR_STOOL ||
       tile === TILE_TYPES.BAR_TABLE ||
-      tile === TILE_TYPES.BAR_DECOR
+      tile === TILE_TYPES.BAR_DECOR ||
+      tile === TILE_TYPES.BAR_POSTER ||
+      tile === TILE_TYPES.CHURCH_STAINED_GLASS ||
+      tile === TILE_TYPES.BED ||
+      tile === TILE_TYPES.TV ||
+      tile === TILE_TYPES.HIFI
     );
   }
 
@@ -69,6 +73,7 @@ export class CollisionService {
 
     for (const npc of npcs) {
       if (npc.world !== currentAreaId) continue;
+      if (npc.blocking === false) continue;
       if (this.rectsOverlap(playerRect, npc)) return true;
     }
 

@@ -1,4 +1,4 @@
-import { AREA_KINDS, GAME_STATES } from "../core/constants.js";
+import { AREA_KINDS, GAME_STATES, isFreeExploreState } from "../core/constants.js";
 
 const FONT_12 = "600 12px 'Trebuchet MS', 'Segoe UI', sans-serif";
 const FONT_16 = "600 16px 'Trebuchet MS', 'Segoe UI', sans-serif";
@@ -9,6 +9,45 @@ const FONT_28 = "700 28px 'Palatino Linotype', 'Book Antiqua', serif";
 function hash01(seed) {
   const value = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
   return value - Math.floor(value);
+}
+
+function keyToDisplayName(key) {
+  if (typeof key !== "string" || key.length === 0) return "-";
+  if (key === "space") return "Space";
+  if (key === "arrowup") return "Up Arrow";
+  if (key === "arrowdown") return "Down Arrow";
+  if (key === "arrowleft") return "Left Arrow";
+  if (key === "arrowright") return "Right Arrow";
+  if (key === "escape") return "Esc";
+  if (key === "enter") return "Enter";
+  return key.length === 1 ? key.toUpperCase() : key;
+}
+
+function getPrimaryBindingLabel(state, action) {
+  const keys = state.keyBindings?.[action];
+  if (!Array.isArray(keys) || keys.length === 0) return "-";
+  return keyToDisplayName(keys[0]);
+}
+
+function getItemDisplayName(itemName) {
+  return itemName;
+}
+
+function getItemSpriteName(itemName) {
+  const spriteMap = {
+    "Training Headband": "trainingHeadband",
+    "Dojo Membership Card": "dojoMembership"
+  };
+  return spriteMap[itemName] || null;
+}
+
+function getItemSpriteScale(spriteName) {
+  const DEFAULT_SCALE = 1.2; // Default for new items
+  const scaleOverrides = {
+    trainingHeadband: 1.5,
+    dojoMembership: 1.0 // Membership card needs smaller scale since it's larger
+  };
+  return scaleOverrides[spriteName] ?? DEFAULT_SCALE;
 }
 
 const MOOD_PRESETS = Object.freeze({
@@ -92,6 +131,12 @@ function drawUiText(ctx, text, x, y, colors) {
 function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, spriteFrameHeight, spriteFramesPerRow) {
   const { player, cam } = state;
   if (!player.sprite || !player.sprite.width || !player.sprite.height) return;
+  const now = performance.now();
+  const defeatSequence = state.playerDefeatSequence;
+  const isDefeatFallActive = Boolean(
+    defeatSequence?.active &&
+    (defeatSequence.phase === "fall" || defeatSequence.phase === "fadeOut")
+  );
 
   const targetHeight = tileSize * player.desiredHeightTiles;
   const scale = targetHeight / spriteFrameHeight;
@@ -101,6 +146,10 @@ function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, 
   const drawY = Math.round(player.y - cam.y - (drawHeight - tileSize));
 
   drawEntityShadow(ctx, drawX, drawY, drawWidth, drawHeight, "rgba(0,0,0,0.22)");
+  ctx.save();
+  if (player.invulnerableUntil > now && Math.floor(now / 90) % 2 === 0) {
+    ctx.globalAlpha = 0.45;
+  }
 
   if (player.isTraining) {
     const handSprite = getHandstandSprite() || player.sprite;
@@ -118,6 +167,7 @@ function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, 
       drawWidth,
       drawHeight
     );
+    ctx.restore();
     return;
   }
 
@@ -131,6 +181,35 @@ function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, 
   const frame = player.walking ? player.animFrame : 1;
   const sx = frame * spriteFrameWidth;
   const sy = row * spriteFrameHeight;
+  const defeatFallProgress = isDefeatFallActive
+    ? Math.max(0, Math.min(1, defeatSequence.fallProgress || 0))
+    : 0;
+
+  if (isDefeatFallActive) {
+    const pivotX = drawX + drawWidth / 2;
+    const pivotY = drawY + drawHeight - 2;
+    const maxFallAngle = Math.PI * 0.44;
+    const fallAngle = -maxFallAngle * defeatFallProgress;
+
+    ctx.save();
+    ctx.translate(pivotX, pivotY);
+    ctx.rotate(fallAngle);
+    ctx.translate(-pivotX, -pivotY);
+    ctx.drawImage(
+      player.sprite,
+      sx,
+      sy,
+      spriteFrameWidth,
+      spriteFrameHeight,
+      drawX,
+      drawY,
+      drawWidth,
+      drawHeight
+    );
+    ctx.restore();
+    ctx.restore();
+    return;
+  }
 
   ctx.drawImage(
     player.sprite,
@@ -143,9 +222,45 @@ function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, 
     drawWidth,
     drawHeight
   );
+  ctx.restore();
 }
 
 function drawNPCSprite(ctx, npc, drawX, drawY, drawWidth, drawHeight, colors) {
+  const frameWidth = Number.isFinite(npc.spriteFrameWidth) && npc.spriteFrameWidth > 0
+    ? npc.spriteFrameWidth
+    : null;
+  const frameHeight = Number.isFinite(npc.spriteFrameHeight) && npc.spriteFrameHeight > 0
+    ? npc.spriteFrameHeight
+    : null;
+  const framesPerRow = Number.isFinite(npc.spriteFramesPerRow) && npc.spriteFramesPerRow > 0
+    ? Math.floor(npc.spriteFramesPerRow)
+    : null;
+
+  if (frameWidth && frameHeight && framesPerRow) {
+    const directionToRow = {
+      down: 0,
+      left: 1,
+      right: 2,
+      up: 3
+    };
+    const row = directionToRow[npc.dir] ?? 0;
+    const frame = Math.min(1, framesPerRow - 1);
+    const sx = frame * frameWidth;
+    const sy = row * frameHeight;
+    ctx.drawImage(
+      npc.sprite,
+      sx,
+      sy,
+      frameWidth,
+      frameHeight,
+      drawX,
+      drawY,
+      drawWidth,
+      drawHeight
+    );
+    return;
+  }
+
   ctx.save();
   if (npc.dir === "left") {
     ctx.translate(drawX + drawWidth / 2, 0);
@@ -153,10 +268,6 @@ function drawNPCSprite(ctx, npc, drawX, drawY, drawWidth, drawHeight, colors) {
     ctx.translate(-(drawX + drawWidth / 2), 0);
   }
   ctx.drawImage(npc.sprite, drawX, drawY, drawWidth, drawHeight);
-  if (npc.dir === "up") {
-    ctx.fillStyle = colors.SHADOW;
-    ctx.fillRect(drawX, drawY, drawWidth, drawHeight);
-  }
   ctx.restore();
 }
 
@@ -171,8 +282,7 @@ function drawNPCPlaceholder(ctx, nx, ny, colors) {
 }
 
 function drawNPCs(ctx, state, canvas, tileSize, colors) {
-  const { currentAreaId, currentAreaKind, npcs, cam } = state;
-  if (currentAreaKind === AREA_KINDS.OVERWORLD) return;
+  const { currentAreaId, npcs, cam } = state;
 
   for (const npc of npcs) {
     if (npc.world !== currentAreaId) continue;
@@ -187,11 +297,18 @@ function drawNPCs(ctx, state, canvas, tileSize, colors) {
         let drawX;
         let drawY;
 
+        const frameHeight = Number.isFinite(npc.spriteFrameHeight) && npc.spriteFrameHeight > 0
+          ? npc.spriteFrameHeight
+          : npc.sprite.height;
+        const frameWidth = Number.isFinite(npc.spriteFrameWidth) && npc.spriteFrameWidth > 0
+          ? npc.spriteFrameWidth
+          : npc.sprite.width;
+
         if (npc.desiredHeightTiles) {
           const targetHeight = tileSize * npc.desiredHeightTiles;
-          const scale = targetHeight / npc.sprite.height;
-          drawWidth = npc.sprite.width * scale;
-          drawHeight = npc.sprite.height * scale;
+          const scale = targetHeight / frameHeight;
+          drawWidth = frameWidth * scale;
+          drawHeight = frameHeight * scale;
           drawX = Math.round(npc.x - cam.x - (drawWidth - tileSize) / 2);
           drawY = Math.round(npc.y - cam.y - (drawHeight - tileSize));
         } else {
@@ -207,6 +324,121 @@ function drawNPCs(ctx, state, canvas, tileSize, colors) {
         drawNPCPlaceholder(ctx, nx, ny, colors);
       }
     }
+  }
+}
+
+function drawEnemyPlaceholder(ctx, enemy, ex, ey, tileSize) {
+  const base = enemy.state === "attackWindup"
+    ? "#bb4a4a"
+    : enemy.state === "hitStun"
+      ? "#9b7ea6"
+      : "#705765";
+  const trim = enemy.state === "attackWindup" ? "#ffd0a0" : "#d7bbc5";
+
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
+  ctx.beginPath();
+  ctx.ellipse(ex + 16, ey + tileSize - 4, 9, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = base;
+  ctx.fillRect(ex + 7, ey + 8, 18, 17);
+  ctx.fillStyle = trim;
+  ctx.fillRect(ex + 10, ey + 11, 12, 4);
+  ctx.fillStyle = "#f1e0d0";
+  ctx.fillRect(ex + 11, ey + 17, 10, 5);
+  ctx.fillStyle = "#2a2327";
+  ctx.fillRect(ex + 12, ey + 18, 1, 1);
+  ctx.fillRect(ex + 19, ey + 18, 1, 1);
+  ctx.fillStyle = "#3e2529";
+  ctx.fillRect(ex + 9, ey + 24, 6, 5);
+  ctx.fillRect(ex + 17, ey + 24, 6, 5);
+
+  ctx.fillStyle = "#50323d";
+  ctx.beginPath();
+  ctx.moveTo(ex + 12, ey + 8);
+  ctx.lineTo(ex + 15, ey + 3);
+  ctx.lineTo(ex + 17, ey + 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(ex + 18, ey + 8);
+  ctx.lineTo(ex + 21, ey + 3);
+  ctx.lineTo(ex + 23, ey + 8);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawEnemyHealthBar(ctx, enemy, ex, ey, tileSize) {
+  if (enemy.hp >= enemy.maxHp) return;
+  const ratio = Math.max(0, Math.min(1, enemy.hp / Math.max(1, enemy.maxHp)));
+  const barW = tileSize - 4;
+  const barH = 4;
+  const barX = ex + 2;
+  const barY = ey - 8;
+  ctx.fillStyle = "rgba(10, 10, 14, 0.8)";
+  ctx.fillRect(barX, barY, barW, barH);
+  ctx.fillStyle = ratio > 0.5 ? "#7ad080" : ratio > 0.25 ? "#ddb95f" : "#d36a6a";
+  ctx.fillRect(barX, barY, barW * ratio, barH);
+  ctx.strokeStyle = "rgba(255,255,255,0.35)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
+}
+
+function drawEnemies(ctx, state, canvas, tileSize) {
+  const { currentAreaId, enemies, cam } = state;
+  if (!Array.isArray(enemies) || enemies.length === 0) return;
+
+  for (const enemy of enemies) {
+    if (!enemy || enemy.dead || enemy.world !== currentAreaId) continue;
+
+    const ex = Math.round(enemy.x - cam.x);
+    const ey = Math.round(enemy.y - cam.y);
+    if (ex > canvas.width || ey > canvas.height || ex < -tileSize || ey < -tileSize) continue;
+
+    if (enemy.sprite && enemy.sprite.width && enemy.sprite.height) {
+      ctx.drawImage(enemy.sprite, ex, ey, tileSize, tileSize);
+    } else {
+      drawEnemyPlaceholder(ctx, enemy, ex, ey, tileSize);
+    }
+
+    if (enemy.state === "attackWindup") {
+      const now = performance.now();
+      const totalWindup = Math.max(1, enemy.attackWindupMs || 1);
+      const remaining = Math.max(0, (enemy.attackStrikeAt || now) - now);
+      const windupProgress = Math.max(0, Math.min(1, 1 - remaining / totalWindup));
+      const centerX = ex + tileSize / 2;
+      const centerY = ey + tileSize / 2;
+
+      let facingAngle = Math.PI * 0.5;
+      if (enemy.dir === "up") facingAngle = -Math.PI * 0.5;
+      else if (enemy.dir === "left") facingAngle = Math.PI;
+      else if (enemy.dir === "right") facingAngle = 0;
+
+      const arcWidth = Math.PI * 0.55;
+      ctx.fillStyle = `rgba(255, 138, 108, ${0.12 + windupProgress * 0.2})`;
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.arc(centerX, centerY, tileSize * (0.9 + windupProgress * 0.22), facingAngle - arcWidth, facingAngle + arcWidth);
+      ctx.closePath();
+      ctx.fill();
+
+      const pulse = 0.5 + Math.sin(now * 0.02) * 0.5;
+      ctx.strokeStyle = `rgba(255, 154, 120, ${0.35 + pulse * 0.4})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, tileSize * (0.56 + windupProgress * 0.14), 0, Math.PI * 2);
+      ctx.stroke();
+
+      const ringProgressStart = -Math.PI * 0.5;
+      const ringProgressEnd = ringProgressStart + Math.PI * 2 * windupProgress;
+      ctx.strokeStyle = "rgba(255, 232, 173, 0.92)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, tileSize * 0.68, ringProgressStart, ringProgressEnd);
+      ctx.stroke();
+    }
+
+    drawEnemyHealthBar(ctx, enemy, ex, ey, tileSize);
   }
 }
 
@@ -400,15 +632,26 @@ function drawDoorTransition(ctx, state, canvas, tileSize, cameraZoom) {
   ctx.restore();
 }
 
-function drawInventoryOverlay(ctx, state, canvas, ui, colors) {
-  const { gameState, playerInventory, playerStats } = state;
+function drawPlayerDefeatOverlay(ctx, state, canvas) {
+  const sequence = state.playerDefeatSequence;
+  if (!sequence || !sequence.active) return;
+
+  const alpha = Math.max(0, Math.min(1, sequence.overlayAlpha || 0));
+  if (alpha <= 0.001) return;
+
+  ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSprite) {
+  const { gameState, playerInventory, mouseUiState } = state;
   if (gameState !== GAME_STATES.INVENTORY) return;
 
   ctx.fillStyle = colors.INVENTORY_OVERLAY;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const boxW = ui.INVENTORY_BOX_WIDTH;
-  const boxH = ui.INVENTORY_BOX_HEIGHT;
+  const boxH = Math.min(ui.INVENTORY_BOX_HEIGHT, 248);
   const boxX = (canvas.width - boxW) / 2;
   const boxY = (canvas.height - boxH) / 2;
 
@@ -417,54 +660,113 @@ function drawInventoryOverlay(ctx, state, canvas, ui, colors) {
   ctx.font = FONT_28;
   drawUiText(ctx, "Inventory", boxX + 24, boxY + 42, colors);
 
-  const entries = Object.entries(playerInventory);
-  ctx.font = FONT_20;
+  // Draw item grid
+  const slotSize = 36;
+  const margin = 2;
+  const cols = 10;
+  const rows = 4;
+  const totalSlots = cols * rows;
+  const gridWidth = cols * (slotSize + margin) - margin;
+  const gridHeight = rows * (slotSize + margin) - margin;
+  const gridX = boxX + (boxW - gridWidth) / 2;
+  const gridY = boxY + 60;
 
-  let row = 0;
-  if (entries.length === 0) {
-    drawUiText(ctx, "(No items)", boxX + 24, boxY + 90, colors);
-    row = 1;
-  } else {
-    for (const [itemName, quantity] of entries) {
-      drawUiText(ctx, `${itemName} x${quantity}`, boxX + 24, boxY + 90 + row * 28, colors);
-      row++;
+  const allItems = Object.entries(playerInventory);
+  let hoveredItemName = "";
+  let hoveredItemIndex = -1;
+  if (mouseUiState?.insideCanvas) {
+    const mx = mouseUiState.x;
+    const my = mouseUiState.y;
+    if (
+      mx >= gridX &&
+      mx <= gridX + gridWidth &&
+      my >= gridY &&
+      my <= gridY + gridHeight
+    ) {
+      const col = Math.floor((mx - gridX) / (slotSize + margin));
+      const row = Math.floor((my - gridY) / (slotSize + margin));
+      const localX = (mx - gridX) % (slotSize + margin);
+      const localY = (my - gridY) % (slotSize + margin);
+      if (localX < slotSize && localY < slotSize) {
+        const slotIndex = row * cols + col;
+        if (slotIndex >= 0 && slotIndex < allItems.length) {
+          hoveredItemIndex = slotIndex;
+          hoveredItemName = allItems[slotIndex][0];
+        }
+      }
     }
   }
 
-  const statsY = boxY + 90 + row * 28 + 18;
-  ctx.font = FONT_22;
-  drawUiText(ctx, "Stats", boxX + 24, statsY, colors);
+  for (let i = 0; i < totalSlots; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = gridX + col * (slotSize + margin);
+    const y = gridY + row * (slotSize + margin);
 
-  ctx.font = FONT_20;
-  const levelY = statsY + 30;
-  drawUiText(ctx, `Discipline Lv. ${playerStats.disciplineLevel}`, boxX + 24, levelY, colors);
+    // Draw slot background
+    ctx.fillStyle = colors.INVENTORY_SLOT_BG;
+    ctx.fillRect(x, y, slotSize, slotSize);
 
-  const barX = boxX + 24;
-  const barY = levelY + 18;
-  const barW = boxW - 48;
-  const barH = 20;
-  const progressRatio = Math.min(1, playerStats.disciplineXP / playerStats.disciplineXPNeeded);
+    // Draw border
+    ctx.strokeStyle = colors.INVENTORY_SLOT_BORDER;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, slotSize, slotSize);
 
-  ctx.fillStyle = colors.POPUP_BAR_BG;
-  ctx.fillRect(barX, barY, barW, barH);
+    if (i < allItems.length) {
+      const [itemName, count] = allItems[i];
+      const spriteName = getItemSpriteName(itemName);
+      const sprite = spriteName ? getItemSprite(spriteName) : null;
 
-  ctx.fillStyle = colors.INVENTORY_BAR_FILL;
-  ctx.fillRect(barX, barY, barW * progressRatio, barH);
+      if (sprite && sprite.naturalWidth > 0 && sprite.naturalHeight > 0) {
+        // Draw sprite centered in slot with scaling (clipped to slot bounds)
+        const scale = getItemSpriteScale(spriteName);
+        const spriteSize = slotSize * scale;
+        const spriteX = x + (slotSize - spriteSize) / 2;
+        const spriteY = y + (slotSize - spriteSize) / 2;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, slotSize, slotSize);
+        ctx.clip();
+        ctx.drawImage(sprite, spriteX, spriteY, spriteSize, spriteSize);
+        ctx.restore();
+      } else {
+        // Fallback to text if sprite not loaded
+        ctx.font = FONT_12;
+        const textWidth = ctx.measureText(itemName).width;
+        drawUiText(ctx, itemName, x + (slotSize - textWidth) / 2, y + slotSize / 2 + 4, colors);
+      }
 
-  ctx.strokeStyle = colors.DIALOGUE_BORDER;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(barX, barY, barW, barH);
+      if (count > 1) {
+        ctx.font = FONT_12;
+        const countText = `x${count}`;
+        const countWidth = ctx.measureText(countText).width;
+        drawUiText(ctx, countText, x + slotSize - countWidth - 2, y + slotSize - 12, colors);
+      }
 
-  ctx.font = FONT_16;
-  const progressText = `${playerStats.disciplineXP} / ${playerStats.disciplineXPNeeded}`;
-  const textWidth = ctx.measureText(progressText).width;
-  drawUiText(ctx, progressText, barX + (barW - textWidth) / 2, barY + 15, colors);
+      if (i === hoveredItemIndex) {
+        ctx.fillStyle = "rgba(255, 236, 194, 0.16)";
+        ctx.fillRect(x, y, slotSize, slotSize);
+        ctx.strokeStyle = "rgba(255, 231, 167, 0.85)";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 1, y + 1, slotSize - 2, slotSize - 2);
+      }
+    }
+  }
+
+  if (hoveredItemName) {
+    ctx.font = FONT_16;
+    const nameWidth = ctx.measureText(hoveredItemName).width;
+    drawUiText(ctx, hoveredItemName, boxX + (boxW - nameWidth) / 2, gridY + gridHeight + 18, colors);
+  }
+
 }
 
 const PAUSE_OPTION_SUBTITLES = Object.freeze({
   Inventory: "Check your satchel and gathered goods",
   Attributes: "Inspect your discipline and growth",
   Settings: "Tune controls and visual comfort",
+  Save: "Save your current game",
+  Load: "Restore your last manual save",
   Quit: "Leave P-D Town for now"
 });
 
@@ -525,13 +827,18 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
   if (visibility <= 0.01) return;
 
   const highContrast = Boolean(pauseMenuState?.highContrast);
+  const options = pauseMenuState?.options || ["Inventory", "Attributes", "Settings", "Save", "Load", "Quit"];
+  const optionStartY = 106;
+  const optionStep = 46;
+  const minMenuH = 392;
+  const requiredMenuH = optionStartY + Math.max(0, options.length - 1) * optionStep + 120;
   const baseDim = state.currentAreaKind === AREA_KINDS.OVERWORLD ? 0.22 : 0.42;
   const dimAlpha = Math.min(0.72, baseDim + (highContrast ? 0.15 : 0));
   ctx.fillStyle = `rgba(18, 14, 24, ${dimAlpha * visibility})`;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const menuW = 340;
-  const menuH = 392;
+  const menuH = Math.max(minMenuH, requiredMenuH);
   const slideOffset = (1 - visibility) * 34;
   const menuX = canvas.width - menuW - 24 + slideOffset;
   const menuY = (canvas.height - menuH) / 2;
@@ -598,15 +905,16 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
   ctx.fillStyle = highContrast ? "#f7fdff" : "#fff2ca";
   ctx.fillText("Menu", menuX + 24, menuY + 41);
 
-  const options = pauseMenuState?.options || ['Inventory', 'Attributes', 'Settings', 'Quit'];
   const selected = pauseMenuState ? pauseMenuState.selected : 0;
+  const hovered = pauseMenuState && Number.isInteger(pauseMenuState.hovered) ? pauseMenuState.hovered : -1;
+  const activeIndex = hovered >= 0 ? hovered : selected;
   const shimmerPhase = (performance.now() % 1500) / 1500;
 
   ctx.font = FONT_20;
   for (let i = 0; i < options.length; i++) {
     const option = options[i];
-    const y = menuY + 106 + i * 64;
-    if (i === selected) {
+    const y = menuY + optionStartY + i * optionStep;
+    if (i === activeIndex) {
       const rowGradient = ctx.createLinearGradient(menuX + 24, y - 23, menuX + menuW - 22, y + 21);
       if (highContrast) {
         rowGradient.addColorStop(0, "rgba(82, 150, 196, 0.24)");
@@ -636,18 +944,18 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
       const pulse = Math.sin(performance.now() * 0.008) * 0.5 + 0.5;
       drawFantasySelectorIcon(ctx, menuX + 29, y - 2, { highContrast, pulse });
     }
-    ctx.fillStyle = i === selected ? (highContrast ? "#f7fdff" : "#3f250e") : (highContrast ? "#deeff9" : "#5a3718");
+    ctx.fillStyle = i === activeIndex ? (highContrast ? "#f7fdff" : "#3f250e") : (highContrast ? "#deeff9" : "#5a3718");
     ctx.fillText(option, menuX + 44, y);
 
     const subtitle = PAUSE_OPTION_SUBTITLES[option] || "";
     ctx.font = FONT_12;
     ctx.fillStyle = highContrast ? "rgba(207,232,245,0.92)" : "rgba(88, 56, 26, 0.84)";
-    ctx.fillText(subtitle, menuX + 44, y + 16);
+    ctx.fillText(subtitle, menuX + 44, y + 14);
     ctx.font = FONT_20;
 
     // Rune-style separator marks between options.
     if (i < options.length - 1) {
-      const sepY = y + 32;
+      const sepY = y + 30;
       ctx.strokeStyle = highContrast ? "rgba(140, 194, 225, 0.52)" : "rgba(122, 80, 36, 0.55)";
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -670,9 +978,10 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
 
   ctx.font = FONT_12;
   ctx.fillStyle = highContrast ? "#d9f2ff" : "#5f3b19";
-  ctx.fillText("W/S or Arrows: Move", menuX + 16, menuY + menuH - 52);
-  ctx.fillText("Space: Select   Enter/Esc: Resume", menuX + 16, menuY + menuH - 32);
-  ctx.fillText("Pad: D-Pad/Stick Move   A Select   B/Start Resume", menuX + 16, menuY + menuH - 12);
+  const instructionX = menuX + 28;
+  ctx.fillText("W/S or Arrows: Move", instructionX, menuY + menuH - 60);
+  ctx.fillText(`Space: Select   ${getPrimaryBindingLabel(state, "pause")}: Resume`, instructionX, menuY + menuH - 40);
+  ctx.fillText("Pad: D-Pad/Stick Move   A Select   B/Start Resume", instructionX, menuY + menuH - 20);
 }
 
 function drawAttributesOverlay(ctx, state, canvas, ui, colors) {
@@ -722,15 +1031,15 @@ function drawAttributesOverlay(ctx, state, canvas, ui, colors) {
 }
 
 function drawSettingsOverlay(ctx, state, canvas, ui, colors) {
-  const { gameState, pauseMenuState } = state;
+  const { gameState, pauseMenuState, settingsUiState, settingsItems, userSettings } = state;
   if (gameState !== GAME_STATES.SETTINGS) return;
 
   const highContrast = Boolean(pauseMenuState?.highContrast);
   ctx.fillStyle = highContrast ? "rgba(0,0,0,0.7)" : colors.INVENTORY_OVERLAY;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const boxW = ui.INVENTORY_BOX_WIDTH;
-  const boxH = ui.INVENTORY_BOX_HEIGHT;
+  const boxW = Math.min(canvas.width - 60, 690);
+  const boxH = Math.min(canvas.height - 60, 470);
   const boxX = (canvas.width - boxW) / 2;
   const boxY = (canvas.height - boxH) / 2;
 
@@ -742,20 +1051,77 @@ function drawSettingsOverlay(ctx, state, canvas, ui, colors) {
   const labelColor = highContrast ? "#f2fbff" : "#1f1203";
   const valueOnColor = highContrast ? "#90e4ff" : "#27632a";
   const valueOffColor = highContrast ? "#ffd57c" : "#7a3f1d";
+  const entries = Array.isArray(settingsItems) ? settingsItems : [];
+  const selected = Number.isFinite(settingsUiState?.selected) ? settingsUiState.selected : 0;
+  const statusText = settingsUiState?.statusText || "";
+  const awaitingRebindAction = settingsUiState?.awaitingRebindAction || null;
 
-  ctx.font = FONT_20;
-  ctx.fillStyle = labelColor;
-  ctx.fillText("High Contrast Menu", boxX + 24, boxY + 96);
-
-  const statusText = pauseMenuState?.highContrast ? "ON" : "OFF";
-  ctx.fillStyle = pauseMenuState?.highContrast ? valueOnColor : valueOffColor;
-  ctx.fillText(statusText, boxX + boxW - 78, boxY + 96);
+  const listX = boxX + 24;
+  const listY = boxY + 76;
+  const rowH = 28;
+  const visibleRows = Math.max(8, Math.floor((boxH - 170) / rowH));
+  const scrollStart = Math.max(0, Math.min(selected - Math.floor(visibleRows / 2), Math.max(0, entries.length - visibleRows)));
+  const visibleEnd = Math.min(entries.length, scrollStart + visibleRows);
 
   ctx.font = FONT_16;
+  for (let i = scrollStart; i < visibleEnd; i++) {
+    const item = entries[i];
+    const rowY = listY + (i - scrollStart) * rowH;
+    const isSelected = i === selected;
+    const isRebindingThis = awaitingRebindAction && item?.action === awaitingRebindAction;
+
+    if (isSelected) {
+      ctx.fillStyle = highContrast ? "rgba(145, 214, 255, 0.25)" : "rgba(255, 228, 164, 0.35)";
+      ctx.fillRect(listX - 8, rowY - 18, boxW - 48, 24);
+    }
+
+    ctx.fillStyle = labelColor;
+    const prefix = isSelected ? "> " : "  ";
+    ctx.fillText(`${prefix}${item?.label || "Unknown setting"}`, listX, rowY);
+
+    let valueText = "";
+    let valueColor = valueOffColor;
+    if (item?.kind === "toggle") {
+      const enabled = item.id === "highContrastMenu"
+        ? Boolean(pauseMenuState?.highContrast)
+        : Boolean(userSettings?.[item.id]);
+      valueText = enabled ? "ON" : "OFF";
+      valueColor = enabled ? valueOnColor : valueOffColor;
+    } else if (item?.kind === "cycle") {
+      if (item.id === "textSpeedMultiplier") {
+        const multiplier = Number.isFinite(userSettings?.textSpeedMultiplier) ? userSettings.textSpeedMultiplier : 1;
+        valueText = `${Math.round(multiplier * 100)}%`;
+      }
+      valueColor = highContrast ? "#cfeeff" : "#50320f";
+    } else if (item?.kind === "rebind") {
+      valueText = isRebindingThis ? "[Press key...]" : getPrimaryBindingLabel(state, item.action);
+      valueColor = isRebindingThis
+        ? (highContrast ? "#90e4ff" : "#245b92")
+        : (highContrast ? "#dbeffd" : "#5a3718");
+    } else if (item?.kind === "action") {
+      valueText = "Run";
+      valueColor = highContrast ? "#dbeffd" : "#5a3718";
+    }
+
+    if (valueText) {
+      ctx.fillStyle = valueColor;
+      const valueWidth = ctx.measureText(valueText).width;
+      ctx.fillText(valueText, boxX + boxW - 24 - valueWidth, rowY);
+    }
+  }
+
+  const instructionsY = boxY + boxH - 74;
+  ctx.font = FONT_12;
   ctx.fillStyle = labelColor;
-  ctx.fillText("Space or Gamepad A: Toggle", boxX + 24, boxY + 136);
-  ctx.fillText("Enter/Esc or Gamepad B/Start: Back", boxX + 24, boxY + 162);
-  ctx.fillText("This affects pause menu readability and contrast.", boxX + 24, boxY + 198);
+  ctx.fillText("W/S or Arrows: Navigate", boxX + 24, instructionsY);
+  ctx.fillText("Space/Enter or Gamepad A: Apply/Toggle", boxX + 24, instructionsY + 18);
+  ctx.fillText("Esc or Gamepad B/Start: Back", boxX + 24, instructionsY + 36);
+
+  if (statusText) {
+    ctx.font = FONT_16;
+    ctx.fillStyle = highContrast ? "#ddf5ff" : "#4e3213";
+    ctx.fillText(statusText, boxX + 24, boxY + boxH - 16);
+  }
 }
 
 function drawBarMinigameOverlay(ctx, state, canvas, colors) {
@@ -825,6 +1191,52 @@ function drawBarMinigameOverlay(ctx, state, canvas, colors) {
   ctx.restore();
 }
 
+function drawCombatHud(ctx, state, colors) {
+  if (!isFreeExploreState(state.gameState)) return;
+  if (!state.player || !Number.isFinite(state.player.maxHp)) return;
+
+  const showChallenge = Boolean(state.gameFlags?.acceptedTraining);
+  const promptMode = state.inputPromptMode === "gamepad" ? "gamepad" : "keyboard";
+  const panelX = 14;
+  const panelY = 14;
+  const panelW = 224;
+  const panelH = showChallenge ? 94 : 72;
+  drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors);
+
+  const hpRatio = Math.max(0, Math.min(1, state.player.hp / Math.max(1, state.player.maxHp)));
+  const hpBarX = panelX + 12;
+  const hpBarY = panelY + 28;
+  const hpBarW = panelW - 24;
+  const hpBarH = 12;
+
+  ctx.font = FONT_12;
+  drawUiText(ctx, `HP ${Math.round(state.player.hp)} / ${Math.round(state.player.maxHp)}`, panelX + 12, panelY + 19, colors);
+
+  ctx.fillStyle = "rgba(11, 12, 16, 0.85)";
+  ctx.fillRect(hpBarX, hpBarY, hpBarW, hpBarH);
+  ctx.fillStyle = hpRatio > 0.5 ? "#7ad080" : hpRatio > 0.25 ? "#ddb95f" : "#d36a6a";
+  ctx.fillRect(hpBarX, hpBarY, hpBarW * hpRatio, hpBarH);
+  ctx.strokeStyle = "rgba(255,255,255,0.4)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(hpBarX + 0.5, hpBarY + 0.5, hpBarW - 1, hpBarH - 1);
+
+  if (showChallenge) {
+    const kills = Number.isFinite(state.gameFlags.hanamiChallengeKills) ? state.gameFlags.hanamiChallengeKills : 0;
+    const target = Number.isFinite(state.gameFlags.hanamiChallengeTarget) ? state.gameFlags.hanamiChallengeTarget : 3;
+    ctx.font = FONT_12;
+    const challengeText = state.gameFlags.completedTraining
+      ? "Mr. Hanami challenge complete"
+      : `Mr. Hanami challenge: ${kills}/${target}`;
+    drawUiText(ctx, challengeText, panelX + 12, panelY + 48, colors);
+  }
+
+  ctx.font = FONT_12;
+  const promptText = promptMode === "gamepad"
+    ? "A Interact  X Attack  Start Menu"
+    : `${getPrimaryBindingLabel(state, "interact")} Interact  ${getPrimaryBindingLabel(state, "attack")} Attack  ${getPrimaryBindingLabel(state, "pause")} Menu`;
+  drawUiText(ctx, promptText, panelX + 12, panelY + panelH - 10, colors);
+}
+
 function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
   const { itemAlert, inventoryHint, player, cam } = state;
 
@@ -860,12 +1272,13 @@ function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
     ctx.globalAlpha = alpha * 0.95;
     ctx.font = FONT_16;
 
-    const hintText = "New item received - press I to view your inventory";
+    const inventoryKey = getPrimaryBindingLabel(state, "inventory");
+    const hintText = `New item received - press ${inventoryKey} to view your inventory`;
     const padding = 8;
     const textW = ctx.measureText(hintText).width;
     const boxW = textW + padding * 2;
     const boxH = 28;
-    const boxX = 12;
+    const boxX = Math.round((ctx.canvas.width - boxW) / 2);
     const boxY = 12;
 
     drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors);
@@ -876,6 +1289,8 @@ function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
 
 function drawAtmosphere(ctx, canvas, colors, state) {
   const isOverworld = state.currentAreaKind === AREA_KINDS.OVERWORLD;
+  const reducedFlashes = Boolean(state.userSettings?.reducedFlashes);
+  const intensity = reducedFlashes ? 0.58 : 1;
 
   if (isOverworld) {
     const topLight = ctx.createLinearGradient(0, 0, 0, canvas.height * 0.65);
@@ -892,7 +1307,7 @@ function drawAtmosphere(ctx, canvas, colors, state) {
   }
 
   const now = performance.now() * 0.001;
-  const particleCount = isOverworld ? 42 : 18;
+  const particleCount = Math.round((isOverworld ? 42 : 18) * intensity);
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
 
@@ -905,7 +1320,8 @@ function drawAtmosphere(ctx, canvas, colors, state) {
 
     const x = xBase + Math.sin(now * (0.8 + hash01(seed + 2.4)) + seed) * (isOverworld ? 20 : 10);
     const y = yBase + Math.sin(now * (0.75 + hash01(seed + 3.6)) + seed * 1.3) * (isOverworld ? 16 : 7);
-    const alpha = isOverworld ? 0.07 + hash01(seed + 4.1) * 0.16 : 0.04 + hash01(seed + 4.1) * 0.08;
+    const alphaBase = isOverworld ? 0.07 + hash01(seed + 4.1) * 0.16 : 0.04 + hash01(seed + 4.1) * 0.08;
+    const alpha = alphaBase * intensity;
     const size = isOverworld ? 1.4 + hash01(seed + 5.5) * 2.6 : 1 + hash01(seed + 5.5) * 1.6;
 
     ctx.save();
@@ -940,6 +1356,8 @@ function drawWorldVfx(ctx, state) {
   const effects = Array.isArray(state.vfxEffects) ? state.vfxEffects : null;
   if (!effects || effects.length === 0) return;
 
+  const reducedFlashes = Boolean(state.userSettings?.reducedFlashes);
+  const flashScale = reducedFlashes ? 0.58 : 1;
   const now = performance.now();
   for (const effect of effects) {
     const age = now - effect.startedAt;
@@ -953,7 +1371,7 @@ function drawWorldVfx(ctx, state) {
     const glowSize = baseSize * (1.2 + t * 1.1);
 
     ctx.save();
-    ctx.globalAlpha = Math.max(0.03, inv * 0.95);
+    ctx.globalAlpha = Math.max(0.03, inv * 0.95 * flashScale);
     const glow = ctx.createRadialGradient(x, y, 0, x, y, glowSize);
     glow.addColorStop(0, effect.glowColor || "rgba(255,255,255,0.34)");
     glow.addColorStop(1, "rgba(255,255,255,0)");
@@ -997,6 +1415,47 @@ function drawWorldVfx(ctx, state) {
           sparkleSize
         );
       }
+    } else if (effect.type === "attackSlash") {
+      const start = Math.PI * 0.15 + t * 1.6;
+      const end = start + Math.PI * 0.95;
+      ctx.strokeStyle = effect.color || "rgba(255, 238, 198, 0.95)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(x, y, baseSize * (0.72 + t * 0.2), start, end);
+      ctx.stroke();
+    } else if (effect.type === "hitSpark") {
+      const rays = 6;
+      ctx.strokeStyle = effect.color || "rgba(255, 191, 142, 0.96)";
+      ctx.lineWidth = 2;
+      for (let i = 0; i < rays; i++) {
+        const angle = i * ((Math.PI * 2) / rays) + t * 0.4;
+        const inner = baseSize * 0.12;
+        const outer = baseSize * (0.45 + t * 0.36);
+        ctx.beginPath();
+        ctx.moveTo(x + Math.cos(angle) * inner, y + Math.sin(angle) * inner);
+        ctx.lineTo(x + Math.cos(angle) * outer, y + Math.sin(angle) * outer);
+        ctx.stroke();
+      }
+    } else if (effect.type === "warningRing") {
+      const pulse = 0.5 + Math.sin(t * Math.PI * 2.6) * 0.5;
+      ctx.strokeStyle = effect.color || `rgba(255, 163, 131, ${0.46 + pulse * 0.24})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, baseSize * (0.7 + t * 0.45), 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (effect.type === "damageText") {
+      ctx.font = FONT_16;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const floatY = y - t * 22;
+      ctx.fillStyle = effect.color || "rgba(255, 233, 190, 0.98)";
+      ctx.strokeStyle = "rgba(0,0,0,0.55)";
+      ctx.lineWidth = 2;
+      const text = String(effect.text || "");
+      ctx.strokeText(text, x, floatY);
+      ctx.fillText(text, x, floatY);
+      ctx.textAlign = "start";
+      ctx.textBaseline = "alphabetic";
     } else {
       ctx.strokeStyle = effect.color || "rgba(255, 245, 209, 0.9)";
       ctx.lineWidth = 2;
@@ -1070,15 +1529,18 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
   ctx.fillText("Way of the Cherry Blossom", 84, 148);
 
   const panelX = 72;
-  const panelY = canvas.height - 234;
+  const optionCount = Array.isArray(titleState.options) ? titleState.options.length : 0;
+  const panelH = Math.max(188, 144 + Math.max(0, optionCount - 1) * 38);
+  const panelY = canvas.height - (panelH + 70);
   const panelW = 372;
-  const panelH = 164;
   drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors, { titleBand: true });
 
   ctx.font = FONT_16;
   for (let i = 0; i < titleState.options.length; i++) {
     const y = panelY + 64 + i * 38;
-    const isSelected = i === titleState.selected;
+    const hovered = Number.isInteger(titleState.hovered) ? titleState.hovered : -1;
+    const activeIndex = hovered >= 0 ? hovered : titleState.selected;
+    const isSelected = i === activeIndex;
     if (isSelected) {
       const band = ctx.createLinearGradient(panelX + 14, y - 20, panelX + panelW - 14, y + 7);
       band.addColorStop(0, "rgba(255, 209, 127, 0.14)");
@@ -1098,20 +1560,21 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
 
   if (titleState.showHowTo) {
     const helpW = Math.min(canvas.width - 120, 520);
-    const helpH = 210;
+    const helpH = 236;
     const helpX = Math.round((canvas.width - helpW) / 2);
     const helpY = Math.round((canvas.height - helpH) / 2);
     drawSkinnedPanel(ctx, helpX, helpY, helpW, helpH, colors, { titleBand: true });
     ctx.font = FONT_22;
     drawUiText(ctx, "How To Play", helpX + 20, helpY + 36, colors);
     ctx.font = FONT_16;
-    drawUiText(ctx, "Move: W A S D or Arrow Keys", helpX + 20, helpY + 72, colors);
-    drawUiText(ctx, "Interact / Advance: Space", helpX + 20, helpY + 96, colors);
-    drawUiText(ctx, "Pause Menu: Enter or Esc", helpX + 20, helpY + 120, colors);
-    drawUiText(ctx, "Inventory: I", helpX + 20, helpY + 144, colors);
-    drawUiText(ctx, "Gamepad: Left Stick + A + Start", helpX + 20, helpY + 168, colors);
+    drawUiText(ctx, `Move: ${getPrimaryBindingLabel(state, "moveUp")} ${getPrimaryBindingLabel(state, "moveLeft")} ${getPrimaryBindingLabel(state, "moveDown")} ${getPrimaryBindingLabel(state, "moveRight")} or arrows`, helpX + 20, helpY + 72, colors);
+    drawUiText(ctx, `Interact / Advance: ${getPrimaryBindingLabel(state, "interact")}`, helpX + 20, helpY + 96, colors);
+    drawUiText(ctx, `Attack: ${getPrimaryBindingLabel(state, "attack")}`, helpX + 20, helpY + 120, colors);
+    drawUiText(ctx, `Pause Menu: ${getPrimaryBindingLabel(state, "pause")}`, helpX + 20, helpY + 144, colors);
+    drawUiText(ctx, `Inventory: ${getPrimaryBindingLabel(state, "inventory")}`, helpX + 20, helpY + 168, colors);
+    drawUiText(ctx, "Gamepad: Left Stick + A/X + Start", helpX + 20, helpY + 192, colors);
     ctx.font = FONT_12;
-    drawUiText(ctx, "Press ESC/B to close this panel", helpX + 20, helpY + 192, colors);
+    drawUiText(ctx, "Press ESC/B to close this panel", helpX + 20, helpY + 218, colors);
   }
 
   if (titleState.fadeOutActive) {
@@ -1164,6 +1627,7 @@ export function renderGameFrame({
   ui,
   drawTile,
   getHandstandSprite,
+  getItemSprite = () => null,
   drawCustomOverlays = null,
   state,
   dialogue
@@ -1193,6 +1657,7 @@ export function renderGameFrame({
   }
 
   drawNPCs(ctx, state, canvas, tileSize, colors);
+  drawEnemies(ctx, state, canvas, tileSize);
   drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, spriteFrameHeight, spriteFramesPerRow);
   drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoom, drawTile);
   drawWorldVfx(ctx, state);
@@ -1207,12 +1672,14 @@ export function renderGameFrame({
     drawTitleScreenOverlay(ctx, canvas, state, colors);
     return;
   }
+  drawCombatHud(ctx, state, colors);
   if (typeof drawCustomOverlays === "function") {
     drawCustomOverlays({ ctx, canvas, colors, ui, state });
   }
-  drawInventoryOverlay(ctx, state, canvas, ui, colors);
+  drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSprite);
   drawPauseMenuOverlay(ctx, state, canvas, ui, colors);
   drawAttributesOverlay(ctx, state, canvas, ui, colors);
   drawSettingsOverlay(ctx, state, canvas, ui, colors);
   drawTextbox(ctx, state, canvas, ui, colors, dialogue);
+  drawPlayerDefeatOverlay(ctx, state, canvas);
 }

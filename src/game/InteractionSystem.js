@@ -61,6 +61,20 @@ export function createInteractionSystem({
     const onTrainingTile = tilePos.x === trainingTile.x && tilePos.y === trainingTile.y;
     if (!onTrainingTile) return;
 
+    if (gameFlags.acceptedTraining && !gameFlags.completedTraining) {
+      if (!isDialogueActive()) {
+        showDialogue("", "Mr. Hanami's challenge is upstairs. Defeat three opponents.");
+      }
+      return;
+    }
+
+    if (gameFlags.completedTraining && !gameFlags.hanamiEnduranceUnlocked) {
+      if (!isDialogueActive()) {
+        showDialogue("", trainingContent.enduranceLockedPrompt);
+      }
+      return;
+    }
+
     if (playerStats.disciplineLevel >= 2) {
       if (!isDialogueActive()) {
         showDialogue("", trainingContent.completedPrompt);
@@ -108,7 +122,11 @@ export function createInteractionSystem({
   function toggleInventory() {
     const gameState = getGameState();
     if (gameState === GAME_STATES.INVENTORY) {
-      setGameState(getPreviousWorldState());
+      const previousState = getPreviousWorldState();
+      setGameState(previousState);
+      if (isFreeExploreState(previousState) && musicManager && typeof musicManager.resumeFromPauseMenu === "function") {
+        musicManager.resumeFromPauseMenu();
+      }
       clearInteractPressed();
       return;
     }
@@ -140,12 +158,66 @@ export function createInteractionSystem({
     }
 
     if (gameFlags.completedTraining) {
-      showDialogue(npc.name, trainingContent.postCompleteDialogue);
+      const enduranceChallengeComplete = gameFlags.hanamiEnduranceUnlocked && playerStats.disciplineLevel >= 2;
+      if (enduranceChallengeComplete) {
+        if (!gameFlags.hanamiMembershipAwarded) {
+          showDialogue(npc.name, [
+            trainingContent.enduranceCompleteDialogue,
+            trainingContent.membershipCardGiveDialogue
+          ], () => {
+            gameFlags.hanamiMembershipAwarded = true;
+            if (!playerInventory[trainingContent.membershipCardItemName]) {
+              playerInventory[trainingContent.membershipCardItemName] = 1;
+            }
+
+            itemAlert.active = true;
+            itemAlert.text = trainingContent.membershipCardUnlockMessage;
+            itemAlert.startedAt = performance.now();
+            inventoryHint.active = true;
+            inventoryHint.startedAt = performance.now();
+            spawnVisualEffect("pickupGlow", {
+              x: player.x + tileSize / 2,
+              y: player.y + tileSize * 0.4,
+              size: 32
+            });
+            try {
+              musicManager.playSfx("itemUnlock");
+            } catch (_) {}
+          });
+          return;
+        }
+
+        showDialogue(npc.name, trainingContent.enduranceCompleteDialogue);
+        return;
+      }
+
+      if (gameFlags.hanamiEnduranceUnlocked) {
+        showDialogue(npc.name, trainingContent.enduranceInProgressDialogue);
+        return;
+      }
+
+      showDialogue(npc.name, trainingContent.postCompleteDialogue, () => {
+        showDialogue(npc.name, trainingContent.nextChallengeQuestion, () => {
+          openYesNoChoice((selectedOption) => {
+            if (selectedOption === "Yes") {
+              gameFlags.hanamiEnduranceUnlocked = true;
+              showDialogue(npc.name, trainingContent.enduranceAcceptedDialogue);
+            } else {
+              showDialogue(npc.name, trainingContent.declineDialogue);
+            }
+          });
+        });
+      });
       return;
     }
 
     if (gameFlags.acceptedTraining) {
-      showDialogue(npc.name, trainingContent.acceptedDialogue);
+      const kills = Number.isFinite(gameFlags.hanamiChallengeKills) ? gameFlags.hanamiChallengeKills : 0;
+      const target = Number.isFinite(gameFlags.hanamiChallengeTarget) ? gameFlags.hanamiChallengeTarget : 3;
+      showDialogue(npc.name, [
+        trainingContent.acceptedDialogue,
+        `Challenge progress: ${kills}/${target}.`
+      ]);
       return;
     }
 
@@ -153,6 +225,10 @@ export function createInteractionSystem({
       openYesNoChoice((selectedOption) => {
         if (selectedOption === "Yes") {
           gameFlags.acceptedTraining = true;
+          gameFlags.hanamiChallengeKills = 0;
+          gameFlags.hanamiChallengeTarget = 3;
+          gameFlags.hanamiChallengeCompleteAnnounced = false;
+          gameFlags.hanamiChallengePrepared = false;
 
           if (!playerInventory[trainingContent.itemName]) {
             playerInventory[trainingContent.itemName] = 1;
@@ -268,6 +344,9 @@ export function createInteractionSystem({
     const playerCenterX = player.x + tileSize / 2;
     const playerCenterY = player.y + tileSize / 2;
 
+    let closestNpc = null;
+    let closestNpcDistance = Number.POSITIVE_INFINITY;
+
     for (const npc of npcs) {
       if (npc.world !== currentAreaId) continue;
 
@@ -275,21 +354,34 @@ export function createInteractionSystem({
       const npcCenterY = npc.y + npc.height / 2;
       const dx = Math.abs(playerCenterX - npcCenterX);
       const dy = Math.abs(playerCenterY - npcCenterY);
+      const bartenderReachBonus = npc.id === "mikaBartender" ? ui.INTERACT_REACH : 0;
+      const reachX = ui.INTERACT_REACH;
+      const reachY = ui.INTERACT_REACH + bartenderReachBonus;
 
-      if (dx <= ui.INTERACT_REACH && dy <= ui.INTERACT_REACH) {
-        const relativeX = playerCenterX - npcCenterX;
-        const relativeY = playerCenterY - npcCenterY;
-
-        if (Math.abs(relativeX) >= Math.abs(relativeY)) {
-          npc.dir = relativeX < 0 ? "left" : "right";
-        } else {
-          npc.dir = relativeY < 0 ? "up" : "down";
+      if (dx <= reachX && dy <= reachY) {
+        const distance = Math.hypot(playerCenterX - npcCenterX, playerCenterY - npcCenterY);
+        if (distance < closestNpcDistance) {
+          closestNpc = npc;
+          closestNpcDistance = distance;
         }
-
-        handleNPCInteraction(npc);
-        clearInteractPressed();
-        return;
       }
+    }
+
+    if (closestNpc) {
+      const npcCenterX = closestNpc.x + closestNpc.width / 2;
+      const npcCenterY = closestNpc.y + closestNpc.height / 2;
+      const relativeX = playerCenterX - npcCenterX;
+      const relativeY = playerCenterY - npcCenterY;
+
+      if (Math.abs(relativeX) >= Math.abs(relativeY)) {
+        closestNpc.dir = relativeX < 0 ? "left" : "right";
+      } else {
+        closestNpc.dir = relativeY < 0 ? "up" : "down";
+      }
+
+      handleNPCInteraction(closestNpc);
+      clearInteractPressed();
+      return;
     }
 
     const inset = 5;

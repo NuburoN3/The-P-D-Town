@@ -5,9 +5,37 @@
 import { TILE_TYPES, AREA_KINDS } from "../core/constants.js";
 import { GAME_CONTENT } from "./content.js";
 import { assertValidGameContent } from "./validateContent.js";
+import { BUILDING_TYPES } from "./buildingRenderers.js";
+import { isFountainSolidTile, isFountainWaterTile as isFountainWaterTileInBuilding } from "./fountainGeometry.js";
+import { ENEMY_ARCHETYPES } from "./enemyArchetypes.js";
 
 function keyForTile(x, y) {
   return `${x},${y}`;
+}
+
+function resolveBuildingTileType(building, tileX, tileY) {
+  if (building.type === BUILDING_TYPES.FOUNTAIN) {
+    return isFountainSolidTile(building, tileX, tileY) ? TILE_TYPES.WALL : TILE_TYPES.PATH;
+  }
+
+  if (building.type === BUILDING_TYPES.PEN) {
+    const localX = tileX - building.x;
+    const localY = tileY - building.y;
+    const onBorder =
+      localX === 0 ||
+      localY === 0 ||
+      localX === building.width - 1 ||
+      localY === building.height - 1;
+    if (!onBorder) return TILE_TYPES.PATH;
+
+    const gateCenter = Math.floor(building.width / 2);
+    const isGate =
+      localY === building.height - 1 &&
+      (localX === gateCenter || (building.width % 2 === 0 && localX === gateCenter - 1));
+    return isGate ? TILE_TYPES.PATH : TILE_TYPES.WALL;
+  }
+
+  return TILE_TYPES.WALL;
 }
 
 export class WorldService {
@@ -62,7 +90,7 @@ export class WorldService {
           for (const building of area.buildings) {
             for (let y = building.y; y < building.y + building.height; y++) {
               for (let x = building.x; x < building.x + building.width; x++) {
-                area.map[y][x] = TILE_TYPES.WALL;
+                area.map[y][x] = resolveBuildingTileType(building, x, y);
               }
             }
           }
@@ -193,6 +221,12 @@ export class WorldService {
     return null;
   }
 
+  isFountainWaterTile(townId, areaId, tileX, tileY) {
+    const building = this.getBuilding(townId, areaId, tileX, tileY);
+    if (!building || building.type !== BUILDING_TYPES.FOUNTAIN) return false;
+    return isFountainWaterTileInBuilding(building, tileX, tileY);
+  }
+
   createNPCsForTown(townId) {
     const town = this.getTown(townId);
     if (!town) return [];
@@ -227,6 +261,91 @@ export class WorldService {
         dialogue: Array.isArray(dialogue) ? [...dialogue] : [String(dialogue ?? "")],
         hasTrainingChoice: Boolean(hasTrainingChoice),
         dir: dir || "down"
+      };
+    });
+  }
+
+  createEnemiesForTown(townId) {
+    const town = this.getTown(townId);
+    if (!town) return [];
+    const enemyDefinitions = Array.isArray(town.enemies) ? town.enemies : [];
+
+    return enemyDefinitions.map((enemy, index) => {
+      const archetypeId = typeof enemy.archetypeId === "string" ? enemy.archetypeId : null;
+      const archetypeDefaults = archetypeId && ENEMY_ARCHETYPES[archetypeId]
+        ? ENEMY_ARCHETYPES[archetypeId]
+        : null;
+      const resolved = {
+        ...(archetypeDefaults || {}),
+        ...enemy
+      };
+
+      const {
+        id,
+        areaId,
+        x,
+        y,
+        dir,
+        spriteName,
+        maxHp,
+        damage,
+        speed,
+        aggroRangeTiles,
+        attackRangeTiles,
+        attackCooldownMs,
+        attackWindupMs,
+        attackRecoveryMs,
+        respawnDelayMs,
+        archetypeId: resolvedArchetypeId,
+        ...customFields
+      } = resolved;
+
+      const spawnX = x * this.tileSize;
+      const spawnY = y * this.tileSize;
+      const resolvedMaxHp = Number.isFinite(maxHp) ? Math.max(1, maxHp) : 35;
+
+      return {
+        ...customFields,
+        id: id || `enemy-${index + 1}`,
+        name: enemy.name || `Enemy ${index + 1}`,
+        world: areaId,
+        x: spawnX,
+        y: spawnY,
+        spawnX,
+        spawnY,
+        width: this.tileSize,
+        height: this.tileSize,
+        dir: dir || "down",
+        sprite: spriteName ? this.getSprite(spriteName) : null,
+        maxHp: resolvedMaxHp,
+        hp: resolvedMaxHp,
+        damage: Number.isFinite(damage) ? Math.max(0, damage) : 8,
+        speed: Number.isFinite(speed) ? Math.max(0.4, speed) : 1.1,
+        aggroRange: (Number.isFinite(aggroRangeTiles) ? aggroRangeTiles : 5.5) * this.tileSize,
+        attackRange: (Number.isFinite(attackRangeTiles) ? attackRangeTiles : 1.1) * this.tileSize,
+        attackCooldownMs: Number.isFinite(attackCooldownMs) ? Math.max(120, attackCooldownMs) : 900,
+        attackWindupMs: Number.isFinite(attackWindupMs) ? Math.max(60, attackWindupMs) : 220,
+        attackRecoveryMs: Number.isFinite(attackRecoveryMs) ? Math.max(60, attackRecoveryMs) : 300,
+        respawnDelayMs: Number.isFinite(respawnDelayMs) ? Math.max(1000, respawnDelayMs) : 5000,
+        behaviorType: typeof resolved.behaviorType === "string" && resolved.behaviorType.length > 0
+          ? resolved.behaviorType
+          : "meleeChaser",
+        attackType: typeof resolved.attackType === "string" && resolved.attackType.length > 0
+          ? resolved.attackType
+          : "lightSlash",
+        archetypeId: resolvedArchetypeId || null,
+        respawnEnabled: resolved.respawnEnabled !== false,
+        countsForChallenge: Boolean(resolved.countsForChallenge),
+        challengeDefeatedCounted: false,
+        invulnerableUntil: 0,
+        hitStunUntil: 0,
+        state: "idle",
+        dead: false,
+        respawnAt: 0,
+        lastAttackAt: -Infinity,
+        attackStrikeAt: 0,
+        recoverUntil: 0,
+        pendingStrike: false
       };
     });
   }

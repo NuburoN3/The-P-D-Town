@@ -10,6 +10,7 @@ export class DialogueSystem {
     this.endAction = null;
     this.visibleCharacters = 0;
     this.textStartTime = 0;
+    this.textSpeedMultiplier = 1;
 
     this.choiceState = {
       active: false,
@@ -33,11 +34,17 @@ export class DialogueSystem {
 
   updateVisibleCharacters() {
     const elapsedSeconds = Math.max(0, (performance.now() - this.textStartTime) / 1000);
+    const charsPerSecond = Math.max(8, this.ui.CHARACTERS_PER_SECOND * this.textSpeedMultiplier);
     this.visibleCharacters = Math.min(
       this.currentVisibleLength(),
-      Math.floor(elapsedSeconds * this.ui.CHARACTERS_PER_SECOND)
+      Math.floor(elapsedSeconds * charsPerSecond)
     );
     return this.visibleCharacters;
+  }
+
+  setTextSpeedMultiplier(multiplier) {
+    if (!Number.isFinite(multiplier)) return;
+    this.textSpeedMultiplier = Math.max(0.5, Math.min(2, multiplier));
   }
 
   show(name, textOrLines, endAction = null) {

@@ -49,7 +49,14 @@ export function createGameRuntime() {
       menuOpen: "assets/audio/PauseMenu_Sound.wav",
       menuMove: "assets/audio/collision_sound.wav",
       menuConfirm: "assets/audio/EnterDoor_Sound.wav",
-      menuSelect: "assets/audio/MenuSelect_Sound.wav"
+      menuSelect: "assets/audio/MenuSelect_Sound.wav",
+      attackSwing: "assets/audio/MenuSelect_Sound.wav",
+      enemyTelegraph: "assets/audio/collision_sound.wav",
+      hitImpact: "assets/audio/Item_Unlock.wav",
+      hurt: "assets/audio/collision_sound.wav",
+      saveGame: "assets/audio/EnterDoor_Sound.wav",
+      loadGame: "assets/audio/PauseMenu_Sound.wav",
+      uiError: "assets/audio/collision_sound.wav"
     },
     fadeDurationMs: 800
   });
@@ -57,7 +64,13 @@ export function createGameRuntime() {
 
   const gameFlags = {
     acceptedTraining: false,
-    completedTraining: false
+    completedTraining: false,
+    hanamiEnduranceUnlocked: false,
+    hanamiMembershipAwarded: false,
+    hanamiChallengeKills: 0,
+    hanamiChallengeTarget: 3,
+    hanamiChallengeCompleteAnnounced: false,
+    hanamiChallengePrepared: false
   };
 
   const playerInventory = {};
@@ -102,6 +115,7 @@ export function createGameRuntime() {
   const currentMapH = initialArea.height;
 
   const npcs = worldService.createNPCsForTown(currentTownId);
+  const enemies = worldService.createEnemiesForTown(currentTownId);
 
   const initialGameState =
     initialArea.kind === AREA_KINDS.OVERWORLD ? GAME_STATES.OVERWORLD : GAME_STATES.INTERIOR;
@@ -111,6 +125,8 @@ export function createGameRuntime() {
   const player = {
     x: initialSpawn.x,
     y: initialSpawn.y,
+    spawnX: initialSpawn.x,
+    spawnY: initialSpawn.y,
     speed: 2.2,
     dir: initialSpawn.dir,
     walking: false,
@@ -121,7 +137,26 @@ export function createGameRuntime() {
     desiredHeightTiles: PLAYER_SPRITE_HEIGHT_TILES,
     isTraining: false,
     handstandAnimTimer: 0,
-    handstandFrame: 0
+    handstandFrame: 0,
+    maxHp: 100,
+    hp: 100,
+    invulnerableUntil: 0,
+    invulnerableMs: 620,
+    attackState: "idle",
+    attackStartedAt: 0,
+    attackActiveAt: 0,
+    attackActiveUntil: 0,
+    attackRecoveryUntil: 0,
+    lastAttackAt: -Infinity,
+    attackCooldownMs: 290,
+    attackWindupMs: 70,
+    attackActiveMs: 110,
+    attackRecoveryMs: 160,
+    attackRange: TILE * 0.9,
+    attackHitRadius: TILE * 0.7,
+    attackDamage: 20,
+    equippedAttackId: "lightSlash",
+    requestedAttackId: null
   };
 
   const cam = { x: 0, y: 0 };
@@ -144,6 +179,19 @@ export function createGameRuntime() {
     maxFadeRadius: 0
   };
 
+  const playerDefeatSequence = {
+    active: false,
+    phase: "idle",
+    phaseStartedAt: 0,
+    fallProgress: 0,
+    overlayAlpha: 0,
+    destination: null,
+    fallDurationMs: 420,
+    fadeOutDurationMs: 360,
+    blackoutHoldMs: 1000,
+    fadeInDurationMs: 420
+  };
+
   return {
     canvas,
     ctx,
@@ -163,11 +211,13 @@ export function createGameRuntime() {
       currentMapW,
       currentMapH,
       npcs,
+      enemies,
       gameState,
       previousWorldState,
       player,
       cam,
-      doorSequence
+      doorSequence,
+      playerDefeatSequence
     }
   };
 }
