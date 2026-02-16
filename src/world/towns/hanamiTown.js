@@ -1,8 +1,8 @@
-// ============================================================================
+﻿// ============================================================================
 // HANAMI TOWN - Content definition for the first playable town
 // ============================================================================
 
-import { TILE_TYPES } from "../../core/constants.js";
+import { AUDIO_TRACKS, TILE_TYPES } from "../../core/constants.js";
 import { BUILDING_TYPES } from "../buildingRenderers.js";
 import {
     createFilledMap,
@@ -89,6 +89,10 @@ function generateOverworldBase(width, height) {
         ],
         TILE_TYPES.PATH
     );
+
+    // Southern gate into Bogland.
+    map[42][28] = TILE_TYPES.DOOR;
+    paintPoints(map, [[27, 41], [28, 41], [29, 41]], TILE_TYPES.PATH);
 
     return map;
 }
@@ -226,6 +230,46 @@ function generateBnBUpstairsBase(width, height) {
     return map;
 }
 
+function generateBoglandBase(width, height) {
+    const map = createFilledMap(width, height, TILE_TYPES.HILL);
+
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            if (x === 0 || y === 0 || x === width - 1 || y === height - 1) {
+                map[y][x] = TILE_TYPES.TREE;
+            }
+        }
+    }
+
+    // Main southbound trail from town gate to bog heart.
+    paintPath(map, [{ x: 28, y: 1 }, { x: 28, y: 40 }], 2);
+    paintPath(map, [{ x: 28, y: 18 }, { x: 18, y: 18 }], 2);
+    paintPath(map, [{ x: 28, y: 24 }, { x: 37, y: 24 }], 2);
+
+    // Firmer moss islands and ruined clearings.
+    paintRect(map, 10, 10, 10, 8, TILE_TYPES.GRASS);
+    paintRect(map, 35, 8, 12, 9, TILE_TYPES.GRASS);
+    paintRect(map, 19, 26, 17, 11, TILE_TYPES.GRASS);
+    paintRect(map, 6, 30, 8, 8, TILE_TYPES.GRASS);
+    paintRect(map, 41, 30, 8, 8, TILE_TYPES.GRASS);
+
+    // Rot pockets and deadwood belts.
+    paintRect(map, 22, 9, 4, 5, TILE_TYPES.HILL);
+    paintRect(map, 31, 12, 3, 4, TILE_TYPES.HILL);
+    paintRect(map, 14, 24, 5, 4, TILE_TYPES.HILL);
+    paintRect(map, 36, 28, 4, 4, TILE_TYPES.HILL);
+    paintRect(map, 4, 6, 5, 5, TILE_TYPES.TREE);
+    paintRect(map, 47, 6, 5, 5, TILE_TYPES.TREE);
+    paintRect(map, 7, 20, 4, 5, TILE_TYPES.TREE);
+    paintRect(map, 45, 19, 5, 6, TILE_TYPES.TREE);
+
+    // Bogland gate door.
+    map[1][28] = TILE_TYPES.DOOR;
+    paintPoints(map, [[27, 2], [28, 2], [29, 2], [28, 3]], TILE_TYPES.PATH);
+
+    return map;
+}
+
 // ---------------------------------------------------------------------------
 // Town definition
 // ---------------------------------------------------------------------------
@@ -237,7 +281,8 @@ export const hanamiTown = {
     respawnSpawn: "dojoInteriorDoor",
     respawnNpcId: "mrHanami",
     conditionalDoors: [
-        { areaId: "hanamiDojo", x: 9, y: 3, hiddenUntil: "acceptedTraining" }
+        { areaId: "hanamiDojo", x: 9, y: 3, hiddenUntil: "acceptedTraining" },
+        { areaId: "overworld", x: 48, y: 20, hiddenUntil: "taikoHouseUnlocked" }
     ],
     areas: {
         overworld: {
@@ -246,7 +291,7 @@ export const hanamiTown = {
             mood: "goldenDawn",
             width: 56,
             height: 44,
-            musicSrc: "assets/audio/Anticipation_Game_Audio_BG.wav",
+            musicSrc: AUDIO_TRACKS.ANTICIPATION,
             generateBaseMap: generateOverworldBase,
             buildings: [
                 {
@@ -310,7 +355,7 @@ export const hanamiTown = {
                 { x: 38, y: 11, text: "Hanami Hill Dojo" },
                 { x: 43, y: 31, text: "Hanami Sakaba" },
                 { x: 28, y: 29, text: "Hanami Piazza Fountain" },
-                { x: 12, y: 17, text: "教会" },
+                { x: 12, y: 17, text: "Kyokai Chapel" },
                 { x: 10, y: 32, text: "Willow Farm Pen" },
                 { x: 47, y: 21, text: "Taiko Residence" },
                 { x: 48, y: 40, text: "Pat's Bed & Breakfast" }
@@ -322,7 +367,7 @@ export const hanamiTown = {
             mood: "inkQuiet",
             width: 12,
             height: 10,
-            musicSrc: "assets/audio/Hanami_Game_Audio_BG.wav",
+            musicSrc: AUDIO_TRACKS.HANAMI,
             generateBaseMap: generateDojoInteriorBase,
             trainingTile: { x: 4, y: 5 }
         },
@@ -373,6 +418,20 @@ export const hanamiTown = {
             width: 12,
             height: 10,
             generateBaseMap: generateBnBUpstairsBase
+        },
+        bogland: {
+            id: "bogland",
+            kind: "overworld",
+            mood: "inkQuiet",
+            width: 56,
+            height: 44,
+            musicSrc: AUDIO_TRACKS.TITLE_SCREEN,
+            generateBaseMap: generateBoglandBase,
+            signposts: [
+                { x: 28, y: 5, text: "Bogland Training Ground" },
+                { x: 18, y: 18, text: "Sunken Flats" },
+                { x: 37, y: 24, text: "Withered Moor" }
+            ]
         }
     },
     spawns: {
@@ -391,7 +450,9 @@ export const hanamiTown = {
         bnbExteriorDoor: { areaId: "overworld", x: 51, y: 40, dir: "down" },
         bnbLobbyDoor: { areaId: "patBnBDownstairs", x: 6, y: 8, dir: "up" },
         bnbUpstairsDoor: { areaId: "patBnBDownstairs", x: 9, y: 4, dir: "left" },
-        bnbUpstairsEntry: { areaId: "patBnBUpstairs", x: 2, y: 8, dir: "right" }
+        bnbUpstairsEntry: { areaId: "patBnBUpstairs", x: 2, y: 8, dir: "right" },
+        boglandTownGate: { areaId: "overworld", x: 28, y: 40, dir: "up" },
+        boglandEntry: { areaId: "bogland", x: 28, y: 3, dir: "down" }
     },
     doors: [
         {
@@ -453,6 +514,14 @@ export const hanamiTown = {
         {
             from: { areaId: "patBnBUpstairs", x: 2, y: 9 },
             to: { townId: "hanamiTown", spawnId: "bnbUpstairsDoor" }
+        },
+        {
+            from: { areaId: "overworld", x: 28, y: 42 },
+            to: { townId: "hanamiTown", spawnId: "boglandEntry" }
+        },
+        {
+            from: { areaId: "bogland", x: 28, y: 1 },
+            to: { townId: "hanamiTown", spawnId: "boglandTownGate" }
         }
     ],
     npcs: [
@@ -711,7 +780,7 @@ export const hanamiTown = {
             y: 3,
             dir: "right",
             dialogue: [
-                "Welcome to the Kyōkai.",
+                "Welcome to the Kyokai.",
                 "We're praying for calm while the dark cloud passes."
             ],
             hasTrainingChoice: false
@@ -892,6 +961,24 @@ export const hanamiTown = {
             hasTrainingChoice: false
         },
         {
+            id: "mrHanamiBogland",
+            name: "Mr. Hanami",
+            spriteName: "mr_hanami",
+            spriteFrameWidth: 32,
+            spriteFrameHeight: 32,
+            spriteFramesPerRow: 3,
+            desiredHeightTiles: 1.15,
+            areaId: "bogland",
+            x: 28,
+            y: 6,
+            dir: "down",
+            dialogue: [
+                "You made it to Bogland.",
+                "This land breaks careless fighters faster than any dojo match."
+            ],
+            hasTrainingChoice: false
+        },
+        {
             id: "barSideSkepticNori",
             name: "Nori",
             spriteName: "bar_patron_kenji",
@@ -910,15 +997,15 @@ export const hanamiTown = {
     enemies: [
         {
             id: "hanamiChallengeFighterA",
-            name: "Dojo Challenger A",
+            name: "Dojo Vanguard",
             archetypeId: "dojoFighter",
             areaId: "hanamiDojoUpstairs",
             x: 3,
             y: 2,
             dir: "right",
-            maxHp: 38,
+            maxHp: 42,
             damage: 8,
-            speed: 1.0,
+            speed: 1.02,
             aggroRangeTiles: 6,
             attackRangeTiles: 1.1,
             attackCooldownMs: 900,
@@ -932,47 +1019,113 @@ export const hanamiTown = {
         },
         {
             id: "hanamiChallengeFighterB",
-            name: "Dojo Challenger B",
+            name: "Dojo Flanker",
             archetypeId: "dojoFighter",
             areaId: "hanamiDojoUpstairs",
             x: 8,
             y: 2,
             dir: "left",
-            maxHp: 40,
-            damage: 8,
-            speed: 1.05,
+            maxHp: 36,
+            damage: 10,
+            speed: 1.18,
             aggroRangeTiles: 6,
-            attackRangeTiles: 1.2,
-            attackCooldownMs: 920,
-            attackWindupMs: 240,
-            attackRecoveryMs: 320,
+            attackRangeTiles: 1.05,
+            attackCooldownMs: 980,
+            attackWindupMs: 220,
+            attackRecoveryMs: 300,
             respawnDelayMs: 5000,
-            behaviorType: "meleeChaser",
-            attackType: "lightSlash",
+            behaviorType: "orbitStriker",
+            attackType: "heavySlash",
             respawnEnabled: false,
             countsForChallenge: true
         },
         {
             id: "hanamiChallengeFighterC",
-            name: "Dojo Challenger C",
+            name: "Dojo Controller",
             archetypeId: "dojoFighter",
             areaId: "hanamiDojoUpstairs",
             x: 6,
             y: 5,
             dir: "down",
-            maxHp: 44,
-            damage: 9,
-            speed: 1.08,
-            aggroRangeTiles: 6.3,
-            attackRangeTiles: 1.2,
-            attackCooldownMs: 880,
-            attackWindupMs: 220,
-            attackRecoveryMs: 320,
+            maxHp: 34,
+            damage: 7,
+            speed: 0.92,
+            aggroRangeTiles: 7.4,
+            attackRangeTiles: 2.6,
+            attackCooldownMs: 1120,
+            attackWindupMs: 280,
+            attackRecoveryMs: 360,
             respawnDelayMs: 5000,
-            behaviorType: "meleeChaser",
-            attackType: "lightSlash",
+            behaviorType: "zoneKeeper",
+            attackType: "chiBolt",
             respawnEnabled: false,
             countsForChallenge: true
+        },
+        {
+            id: "bogStalkerA",
+            name: "Bog Stalker A",
+            archetypeId: "rusher",
+            areaId: "bogland",
+            x: 22,
+            y: 21,
+            dir: "right",
+            maxHp: 38,
+            damage: 10,
+            speed: 1.12,
+            aggroRangeTiles: 7.3,
+            attackRangeTiles: 1.05,
+            attackCooldownMs: 900,
+            attackWindupMs: 210,
+            attackRecoveryMs: 290,
+            respawnDelayMs: 6000,
+            behaviorType: "orbitStriker",
+            attackType: "heavySlash",
+            respawnEnabled: false,
+            countsForBogTrial: true
+        },
+        {
+            id: "bogStalkerB",
+            name: "Bog Stalker B",
+            archetypeId: "tank",
+            areaId: "bogland",
+            x: 29,
+            y: 26,
+            dir: "left",
+            maxHp: 52,
+            damage: 11,
+            speed: 0.84,
+            aggroRangeTiles: 6.8,
+            attackRangeTiles: 1.25,
+            attackCooldownMs: 1020,
+            attackWindupMs: 300,
+            attackRecoveryMs: 380,
+            respawnDelayMs: 6200,
+            behaviorType: "meleeChaser",
+            attackType: "heavySlash",
+            respawnEnabled: false,
+            countsForBogTrial: true
+        },
+        {
+            id: "bogStalkerC",
+            name: "Bog Stalker C",
+            archetypeId: "rangedAcolyte",
+            areaId: "bogland",
+            x: 35,
+            y: 20,
+            dir: "down",
+            maxHp: 30,
+            damage: 8,
+            speed: 0.96,
+            aggroRangeTiles: 8.2,
+            attackRangeTiles: 2.9,
+            attackCooldownMs: 1160,
+            attackWindupMs: 300,
+            attackRecoveryMs: 360,
+            respawnDelayMs: 6200,
+            behaviorType: "zoneKeeper",
+            attackType: "chiBolt",
+            respawnEnabled: false,
+            countsForBogTrial: true
         }
     ]
 };

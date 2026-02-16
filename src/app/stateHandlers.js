@@ -155,7 +155,7 @@ export function createRuntimeStateHandlers({
   }
 
   function handleChallengeEnemyDefeat(enemy, now) {
-    challengeSystem.handleEnemyDefeat(
+    return challengeSystem.handleEnemyDefeat(
       { gameFlags, currentTownId: getCurrentTownId(), player, itemAlert },
       enemy,
       now
@@ -186,6 +186,7 @@ export function createRuntimeStateHandlers({
     if (event.type === "playerDamaged") {
       triggerHitstop(44);
       triggerCameraShake(2.2, 140);
+      combatFeedback.playerDamageFlashUntil = performance.now() + 170;
       musicManager.playSfx("hurt");
     }
   }

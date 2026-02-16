@@ -308,10 +308,58 @@ function drawEnemies(ctx, state, canvas, tileSize) {
       ctx.beginPath();
       ctx.arc(centerX, centerY, tileSize * 0.68, ringProgressStart, ringProgressEnd);
       ctx.stroke();
+
+      ctx.font = "bold 11px monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const countdown = Math.max(0, Math.ceil(remaining / 120));
+      ctx.fillStyle = "rgba(255, 242, 198, 0.96)";
+      ctx.strokeStyle = "rgba(0,0,0,0.55)";
+      ctx.lineWidth = 2;
+      ctx.strokeText(String(countdown), centerX, ey - 8);
+      ctx.fillText(String(countdown), centerX, ey - 8);
+      ctx.textAlign = "start";
+      ctx.textBaseline = "alphabetic";
     }
 
     drawEnemyHealthBar(ctx, enemy, ex, ey, tileSize);
   }
+}
+
+function drawPlayerAttackReadability(ctx, state, tileSize) {
+  const { player, cam } = state;
+  if (!player || player.attackState !== "active") return;
+
+  const now = performance.now();
+  const attackEndsAt = Number.isFinite(player.attackActiveUntil) ? player.attackActiveUntil : now;
+  const attackStartedAt = Number.isFinite(player.attackActiveAt) ? player.attackActiveAt : now - 1;
+  const total = Math.max(1, attackEndsAt - attackStartedAt);
+  const t = Math.max(0, Math.min(1, (now - attackStartedAt) / total));
+
+  const cx = player.x - cam.x + tileSize * 0.5;
+  const cy = player.y - cam.y + tileSize * 0.5;
+  const radius = Number.isFinite(player.attackHitRadius) ? player.attackHitRadius : tileSize * 0.7;
+
+  let facingAngle = Math.PI * 0.5;
+  if (player.dir === "up") facingAngle = -Math.PI * 0.5;
+  else if (player.dir === "left") facingAngle = Math.PI;
+  else if (player.dir === "right") facingAngle = 0;
+
+  const span = Math.PI * 0.62;
+  const start = facingAngle - span;
+  const end = facingAngle + span;
+  ctx.fillStyle = `rgba(255, 228, 166, ${0.12 + (1 - t) * 0.16})`;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.arc(cx, cy, radius + tileSize * 0.28, start, end);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(255, 241, 204, 0.9)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius + tileSize * 0.12, start, end);
+  ctx.stroke();
 }
 
 export function drawEntitiesLayer({
@@ -327,6 +375,7 @@ export function drawEntitiesLayer({
 }) {
   drawNPCs(ctx, state, canvas, tileSize, colors);
   drawEnemies(ctx, state, canvas, tileSize);
+  drawPlayerAttackReadability(ctx, state, tileSize);
   drawPlayer(
     ctx,
     state,

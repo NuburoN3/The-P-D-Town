@@ -1,5 +1,5 @@
 import { GAME_STATES } from "../../core/constants.js";
-import { FONT_12, FONT_20, drawSkinnedPanel, drawUiText } from "./uiPrimitives.js";
+import { FONT_12, FONT_20, drawControlChip, drawSkinnedPanel, drawUiText, getPrimaryBindingLabel } from "./uiPrimitives.js";
 
 export function drawTrainingPopup(ctx, state, canvas, ui, colors, tileSize) {
   const { trainingPopup, player, cam, playerStats } = state;
@@ -141,6 +141,16 @@ export function drawTextbox(ctx, state, canvas, ui, colors, dialogue) {
     ctx.closePath();
     ctx.fill();
   }
+
+  ctx.font = FONT_12;
+  const skipKey = state.inputPromptMode === "gamepad" ? "X" : getPrimaryBindingLabel(state, "attack");
+  const skipLabel = "Fast skip text";
+  const skipTextW = ctx.measureText(skipLabel).width;
+  const chipW = Math.ceil(ctx.measureText(skipKey).width) + 12;
+  const hintX = boxX + boxW - (chipW + skipTextW + 22);
+  const hintY = boxY + boxHeight - 18;
+  const renderedChipW = drawControlChip(ctx, skipKey, hintX, hintY, colors, { highlighted: true });
+  drawUiText(ctx, skipLabel, hintX + renderedChipW + 8, boxY + boxHeight - 10, colors);
 }
 
 export function drawDoorTransition(ctx, state, canvas, tileSize, cameraZoom) {
@@ -159,7 +169,8 @@ export function drawDoorTransition(ctx, state, canvas, tileSize, cameraZoom) {
   const holeRadius = Math.max(0, maxHoleRadius * (1 - transitionRatio));
 
   ctx.save();
-  ctx.fillStyle = `rgba(4, 6, 10, ${0.22 + transitionRatio * 0.74})`;
+  const blackoutAlpha = Math.min(1, 0.24 + transitionRatio * 0.86);
+  ctx.fillStyle = `rgba(4, 6, 10, ${blackoutAlpha})`;
   ctx.fillRect(0, 0, viewW, viewH);
 
   if (holeRadius > 0.5) {

@@ -1,4 +1,5 @@
 import { createGeneratedSpriteEntries } from "./spriteFactories.js";
+import { ASSET_KEYS, ASSET_PATHS } from "./constants.js";
 
 export class AssetManager {
   constructor() {
@@ -32,7 +33,8 @@ export const DEFAULT_SPRITE_MANIFEST = {
   protagonist: "assets/sprites/protagonist.png",
   protagonist_handstand: "assets/sprites/protagonist_handstand.png",
   trainingHeadband: "assets/sprites/TrainingHeadband.png",
-  dojoMembership: "assets/sprites/DojoMembership.png"
+  dojoMembership: "assets/sprites/DojoMembership.png",
+  [ASSET_KEYS.TITLE_HERO_IMAGE]: ASSET_PATHS.TITLE_HERO_IMAGE
 };
 
 export function createDefaultAssetManager() {

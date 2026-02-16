@@ -44,6 +44,18 @@ function resetEnemy(enemy) {
   enemy.attackStrikeAt = 0;
   enemy.recoverUntil = 0;
   enemy.challengeDefeatedCounted = false;
+  enemy.bogDefeatedCounted = false;
+}
+
+function beginEnemyWindup(enemy, now, toPlayerX, toPlayerY, onWindupStarted) {
+  const enteringWindup = enemy.state !== "attackWindup";
+  enemy.state = "attackWindup";
+  enemy.attackStrikeAt = now + enemy.attackWindupMs;
+  enemy.lastAttackAt = now;
+  updateEnemyDirection(enemy, toPlayerX, toPlayerY);
+  if (enteringWindup && typeof onWindupStarted === "function") {
+    onWindupStarted({ enemy, now, toPlayerX, toPlayerY });
+  }
 }
 
 function createMeleeChaserBehavior({ tileSize, onWindupStarted }) {
@@ -75,14 +87,7 @@ function createMeleeChaserBehavior({ tileSize, onWindupStarted }) {
       distanceToPlayer <= enemy.attackRange &&
       now - enemy.lastAttackAt >= enemy.attackCooldownMs
     ) {
-      const enteringWindup = enemy.state !== "attackWindup";
-      enemy.state = "attackWindup";
-      enemy.attackStrikeAt = now + enemy.attackWindupMs;
-      enemy.lastAttackAt = now;
-      updateEnemyDirection(enemy, toPlayerX, toPlayerY);
-      if (enteringWindup && typeof onWindupStarted === "function") {
-        onWindupStarted({ enemy, now, toPlayerX, toPlayerY });
-      }
+      beginEnemyWindup(enemy, now, toPlayerX, toPlayerY, onWindupStarted);
       return;
     }
 
@@ -122,6 +127,207 @@ function createMeleeChaserBehavior({ tileSize, onWindupStarted }) {
   };
 }
 
+function createOrbitStrikerBehavior({ tileSize, onWindupStarted }) {
+  return function updateOrbitStrikerEnemy({
+    now,
+    enemy,
+    player,
+    canFight,
+    collidesAt,
+    currentMap,
+    currentMapW,
+    currentMapH,
+    dtScale = 1
+  }) {
+    if (!canFight) {
+      if (enemy.state !== "idle") enemy.state = "idle";
+      return;
+    }
+
+    const playerCenterX = player.x + tileSize / 2;
+    const playerCenterY = player.y + tileSize / 2;
+    const enemyCenterX = enemy.x + enemy.width / 2;
+    const enemyCenterY = enemy.y + enemy.height / 2;
+    const toPlayerX = playerCenterX - enemyCenterX;
+    const toPlayerY = playerCenterY - enemyCenterY;
+    const distanceToPlayer = Math.hypot(toPlayerX, toPlayerY);
+
+    if (
+      distanceToPlayer <= enemy.attackRange * 0.95 &&
+      now - enemy.lastAttackAt >= enemy.attackCooldownMs
+    ) {
+      beginEnemyWindup(enemy, now, toPlayerX, toPlayerY, onWindupStarted);
+      return;
+    }
+
+    if (distanceToPlayer <= enemy.aggroRange) {
+      enemy.state = "flank";
+      const len = Math.max(0.001, distanceToPlayer);
+      const normX = toPlayerX / len;
+      const normY = toPlayerY / len;
+      const orbitDir = enemy.orbitDir === -1 ? -1 : 1;
+      const tangentX = -normY * orbitDir;
+      const tangentY = normX * orbitDir;
+      const desiredDistance = Math.max(enemy.attackRange * 0.95, tileSize * 1.4);
+
+      const targetX = player.x - normX * desiredDistance + tangentX * tileSize * 1.05;
+      const targetY = player.y - normY * desiredDistance + tangentY * tileSize * 1.05;
+
+      moveEnemy(
+        enemy,
+        targetX,
+        targetY,
+        clamp(enemy.speed * 1.08, 0.8, 2.8) * dtScale,
+        collidesAt,
+        currentMap,
+        currentMapW,
+        currentMapH
+      );
+
+      // Flip orbit direction periodically so movement is less predictable.
+      if (!Number.isFinite(enemy.nextOrbitFlipAt) || now >= enemy.nextOrbitFlipAt) {
+        enemy.orbitDir = orbitDir * -1;
+        enemy.nextOrbitFlipAt = now + 850 + Math.random() * 700;
+      }
+      return;
+    }
+
+    const spawnDx = enemy.spawnX - enemy.x;
+    const spawnDy = enemy.spawnY - enemy.y;
+    if (Math.hypot(spawnDx, spawnDy) > tileSize * 0.35) {
+      enemy.state = "return";
+      moveEnemy(
+        enemy,
+        enemy.spawnX,
+        enemy.spawnY,
+        clamp(enemy.speed * 0.9, 0.7, 2.4) * dtScale,
+        collidesAt,
+        currentMap,
+        currentMapW,
+        currentMapH
+      );
+      return;
+    }
+
+    enemy.state = "idle";
+  };
+}
+
+function createZoneKeeperBehavior({ tileSize, onWindupStarted }) {
+  return function updateZoneKeeperEnemy({
+    now,
+    enemy,
+    player,
+    canFight,
+    collidesAt,
+    currentMap,
+    currentMapW,
+    currentMapH,
+    dtScale = 1
+  }) {
+    if (!canFight) {
+      if (enemy.state !== "idle") enemy.state = "idle";
+      return;
+    }
+
+    const playerCenterX = player.x + tileSize / 2;
+    const playerCenterY = player.y + tileSize / 2;
+    const enemyCenterX = enemy.x + enemy.width / 2;
+    const enemyCenterY = enemy.y + enemy.height / 2;
+    const toPlayerX = playerCenterX - enemyCenterX;
+    const toPlayerY = playerCenterY - enemyCenterY;
+    const distanceToPlayer = Math.hypot(toPlayerX, toPlayerY);
+
+    if (
+      distanceToPlayer <= enemy.attackRange &&
+      now - enemy.lastAttackAt >= enemy.attackCooldownMs
+    ) {
+      beginEnemyWindup(enemy, now, toPlayerX, toPlayerY, onWindupStarted);
+      return;
+    }
+
+    const preferredMin = Math.max(tileSize * 1.2, enemy.attackRange * 0.58);
+    const preferredMax = enemy.attackRange * 1.04;
+
+    if (distanceToPlayer < preferredMin) {
+      enemy.state = "retreat";
+      const len = Math.max(0.001, distanceToPlayer);
+      const retreatTargetX = enemy.x - (toPlayerX / len) * tileSize * 1.7;
+      const retreatTargetY = enemy.y - (toPlayerY / len) * tileSize * 1.7;
+      moveEnemy(
+        enemy,
+        retreatTargetX,
+        retreatTargetY,
+        clamp(enemy.speed * 1.05, 0.75, 2.5) * dtScale,
+        collidesAt,
+        currentMap,
+        currentMapW,
+        currentMapH
+      );
+      return;
+    }
+
+    if (distanceToPlayer <= enemy.aggroRange * 1.15 && distanceToPlayer > preferredMax) {
+      enemy.state = "zone";
+      const len = Math.max(0.001, distanceToPlayer);
+      const approachTargetX = player.x - (toPlayerX / len) * preferredMax;
+      const approachTargetY = player.y - (toPlayerY / len) * preferredMax;
+      moveEnemy(
+        enemy,
+        approachTargetX,
+        approachTargetY,
+        clamp(enemy.speed * 0.9, 0.65, 2.2) * dtScale,
+        collidesAt,
+        currentMap,
+        currentMapW,
+        currentMapH
+      );
+      return;
+    }
+
+    if (distanceToPlayer <= enemy.aggroRange) {
+      enemy.state = "strafe";
+      const len = Math.max(0.001, distanceToPlayer);
+      const orbitDir = enemy.orbitDir === -1 ? -1 : 1;
+      const tangentX = (-toPlayerY / len) * orbitDir;
+      const tangentY = (toPlayerX / len) * orbitDir;
+      moveEnemy(
+        enemy,
+        enemy.x + tangentX * tileSize,
+        enemy.y + tangentY * tileSize,
+        clamp(enemy.speed * 0.82, 0.6, 2.0) * dtScale,
+        collidesAt,
+        currentMap,
+        currentMapW,
+        currentMapH
+      );
+      if (!Number.isFinite(enemy.nextOrbitFlipAt) || now >= enemy.nextOrbitFlipAt) {
+        enemy.orbitDir = orbitDir * -1;
+        enemy.nextOrbitFlipAt = now + 1000 + Math.random() * 600;
+      }
+      return;
+    }
+
+    const spawnDx = enemy.spawnX - enemy.x;
+    const spawnDy = enemy.spawnY - enemy.y;
+    if (Math.hypot(spawnDx, spawnDy) > tileSize * 0.35) {
+      enemy.state = "return";
+      moveEnemy(
+        enemy,
+        enemy.spawnX,
+        enemy.spawnY,
+        clamp(enemy.speed * 0.86, 0.65, 2.2) * dtScale,
+        collidesAt,
+        currentMap,
+        currentMapW,
+        currentMapH
+      );
+    } else {
+      enemy.state = "idle";
+    }
+  };
+}
+
 export function createEnemyAISystem({
   tileSize,
   behaviors = {},
@@ -133,6 +339,14 @@ export function createEnemyAISystem({
 
   const behaviorRegistry = {
     meleeChaser: createMeleeChaserBehavior({
+      tileSize,
+      onWindupStarted: handlers.onEnemyAttackWindupStarted
+    }),
+    orbitStriker: createOrbitStrikerBehavior({
+      tileSize,
+      onWindupStarted: handlers.onEnemyAttackWindupStarted
+    }),
+    zoneKeeper: createZoneKeeperBehavior({
       tileSize,
       onWindupStarted: handlers.onEnemyAttackWindupStarted
     }),

@@ -174,16 +174,26 @@ export function createCombatSystem({
       if (!enemy.pendingStrike) continue;
 
       enemy.pendingStrike = false;
+      const enemyProfile = getAttackProfileForEntity(enemy, enemy.attackType || enemy.equippedAttackId || null);
 
       const playerCenterX = player.x + tileSize / 2;
       const playerCenterY = player.y + tileSize / 2;
       const enemyCenterX = enemy.x + enemy.width / 2;
       const enemyCenterY = enemy.y + enemy.height / 2;
-      const d = distance(playerCenterX, playerCenterY, enemyCenterX, enemyCenterY);
-      if (d > enemy.attackRange + tileSize * 0.2) continue;
+      const strikeCenter = enemyProfile?.getAttackCenter
+        ? enemyProfile.getAttackCenter(enemy)
+        : { x: enemyCenterX, y: enemyCenterY };
+      const strikeRadius = Number.isFinite(enemyProfile?.hitRadius)
+        ? enemyProfile.hitRadius
+        : (Number.isFinite(enemy.attackRange) ? enemy.attackRange : tileSize * 0.9);
+      const d = distance(playerCenterX, playerCenterY, strikeCenter.x, strikeCenter.y);
+      if (d > strikeRadius + tileSize * 0.25) continue;
       if (player.invulnerableUntil > now) continue;
 
-      player.hp = Math.max(0, player.hp - enemy.damage);
+      const enemyDamage = Number.isFinite(enemyProfile?.damage)
+        ? enemyProfile.damage
+        : (Number.isFinite(enemy.damage) ? enemy.damage : 0);
+      player.hp = Math.max(0, player.hp - enemyDamage);
       player.invulnerableUntil = now + player.invulnerableMs;
 
       handlers.onRequestVfx("hitSpark", {
@@ -195,21 +205,21 @@ export function createCombatSystem({
       handlers.onRequestVfx("damageText", {
         x: playerCenterX,
         y: playerCenterY - 20,
-        text: `-${enemy.damage}`,
+        text: `-${enemyDamage}`,
         color: "#ff8b8b",
         durationMs: 560
       });
       handlers.onPlayerDamaged({
         source: enemy,
         target: player,
-        damage: enemy.damage,
+        damage: enemyDamage,
         now
       });
       handlers.onHitConfirmed({
         type: "playerDamaged",
         source: enemy,
         target: player,
-        damage: enemy.damage,
+        damage: enemyDamage,
         now
       });
 

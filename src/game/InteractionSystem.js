@@ -10,6 +10,7 @@ export function createInteractionSystem({
   ui,
   training,
   canvas,
+  cameraZoom = 1,
   gameFlags,
   playerInventory,
   playerStats,
@@ -88,6 +89,7 @@ export function createInteractionSystem({
   const beginDoorSequence = createDoorSequenceStarter({
     tileSize,
     canvas,
+    cameraZoom,
     player,
     doorSequence,
     musicManager,

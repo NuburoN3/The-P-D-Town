@@ -9,6 +9,7 @@ import {
   TRAINING,
   GAME_STATES,
   TILE_TYPES,
+  AUDIO_TRACKS,
   isFreeExploreState
 } from "../core/constants.js";
 import { InputManager } from "../core/InputManager.js";
@@ -37,6 +38,7 @@ import { createSaveLoadCoordinator } from "./saveLoadCoordinator.js";
 import { createGameRenderer } from "./gameRenderer.js";
 import { createInputBindings } from "./inputBindings.js";
 import { createMenuStateController } from "./menuStateController.js";
+import { normalizeGlobalStoryFlags, normalizeTownProgress } from "../game/progression/progressDefaults.js";
 
 const { canvas, ctx, assets, worldService, musicManager, state } = createGameRuntime();
 
@@ -56,7 +58,7 @@ const {
 } = state;
 
 const TITLE_SCREEN_MUSIC_KEY = "__title_screen_music__";
-const TITLE_SCREEN_MUSIC_SRC = "assets/sprites/StartScreen_Audio.wav";
+const TITLE_SCREEN_MUSIC_SRC = AUDIO_TRACKS.TITLE_SCREEN;
 musicManager.registerAreaTrack(TITLE_SCREEN_MUSIC_KEY, TITLE_SCREEN_MUSIC_SRC);
 
 let { currentTownId, currentAreaId, currentMap, currentMapW, currentMapH, gameState, previousWorldState } = state;
@@ -167,8 +169,51 @@ const combatFeedback = {
   hitstopUntil: 0,
   shakeUntil: 0,
   shakeMagnitude: 0,
-  lastEnemyTelegraphAt: 0
+  lastEnemyTelegraphAt: 0,
+  playerDamageFlashUntil: 0
 };
+
+const objectiveState = {
+  id: "",
+  text: "",
+  updatedAt: 0,
+  marker: null
+};
+
+const uiMotionState = {
+  minimapRevealAt: performance.now()
+};
+
+const minimapDiscoveryState = {
+  discoveredDoors: {}
+};
+
+const saveNoticeState = {
+  active: false,
+  text: "",
+  type: "save",
+  startedAt: 0,
+  durationMs: 1700
+};
+
+const combatRewardPanel = {
+  active: false,
+  title: "",
+  lines: [],
+  startedAt: 0,
+  durationMs: 2200,
+  queue: []
+};
+
+if (!Number.isFinite(playerStats.combatLevel) || playerStats.combatLevel < 1) {
+  playerStats.combatLevel = 1;
+}
+if (!Number.isFinite(playerStats.combatXP) || playerStats.combatXP < 0) {
+  playerStats.combatXP = 0;
+}
+if (!Number.isFinite(playerStats.combatXPNeeded) || playerStats.combatXPNeeded < 1) {
+  playerStats.combatXPNeeded = 6;
+}
 
 function persistUserSettings() {
   saveUserSettings({
@@ -183,6 +228,350 @@ function setSettingsStatus(text, durationMs = 1700) {
   settingsUiState.statusUntil = performance.now() + durationMs;
 }
 
+function pushSaveNotice({ text, type = "save", durationMs = 1700 }) {
+  if (!text) return;
+  saveNoticeState.active = true;
+  saveNoticeState.text = text;
+  saveNoticeState.type = type;
+  saveNoticeState.startedAt = performance.now();
+  saveNoticeState.durationMs = Math.max(700, durationMs);
+}
+
+function getTownProgressForCurrentTown() {
+  const townId = currentTownId;
+  if (!gameFlags.townProgress[townId]) {
+    gameFlags.townProgress[townId] = {};
+  }
+  normalizeGlobalStoryFlags(gameFlags);
+  const normalized = normalizeTownProgress(gameFlags.townProgress[townId]);
+  const configuredBogTarget = Number.isFinite(trainingContent?.bogQuest?.targetKills)
+    ? Math.max(1, Math.round(trainingContent.bogQuest.targetKills))
+    : normalized.bogQuestTarget;
+  normalized.bogQuestTarget = configuredBogTarget;
+  normalized.bogQuestKills = Math.max(0, Math.min(normalized.bogQuestTarget, normalized.bogQuestKills));
+  gameFlags.townProgress[townId] = normalized;
+  return normalized;
+}
+
+function getRumorCluesFound(tp) {
+  return Number(tp.rumorCluePiazza) + Number(tp.rumorClueChapel) + Number(tp.rumorClueBar);
+}
+
+function getBogQuestTarget(tp) {
+  if (Number.isFinite(tp?.bogQuestTarget) && tp.bogQuestTarget > 0) {
+    return Math.round(tp.bogQuestTarget);
+  }
+  if (Number.isFinite(trainingContent?.bogQuest?.targetKills)) {
+    return Math.max(1, Math.round(trainingContent.bogQuest.targetKills));
+  }
+  return 3;
+}
+
+function getNextMissingRumorClue(tp) {
+  if (!tp.rumorCluePiazza) {
+    return {
+      objectiveId: "rumor-clue-piazza",
+      text: "Objective: Investigate the piazza watchers about the northern threat."
+    };
+  }
+  if (!tp.rumorClueChapel) {
+    return {
+      objectiveId: "rumor-clue-chapel",
+      text: "Objective: Ask the chapel priest what changed before Taiko vanished."
+    };
+  }
+  if (!tp.rumorClueBar) {
+    return {
+      objectiveId: "rumor-clue-bar",
+      text: "Objective: Ask bar regulars what they heard before the mountain darkened."
+    };
+  }
+  return null;
+}
+
+function deriveObjective() {
+  const tp = getTownProgressForCurrentTown();
+  const rumorClues = getRumorCluesFound(tp);
+  const bogTarget = getBogQuestTarget(tp);
+  const bogKills = Number.isFinite(tp.bogQuestKills) ? tp.bogQuestKills : 0;
+
+  if (!gameFlags.acceptedTraining) {
+    return {
+      id: "talk-hanami",
+      text: "Objective: Find Mr. Hanami at the dojo and speak with him."
+    };
+  }
+
+  if (gameFlags.acceptedTraining && !gameFlags.completedTraining) {
+    const kills = Number.isFinite(tp.challengeKills) ? tp.challengeKills : 0;
+    const target = Number.isFinite(tp.challengeTarget) ? tp.challengeTarget : 3;
+    return {
+      id: "dojo-upstairs-challenge",
+      text: `Objective: Defeat upstairs opponents (${kills}/${target}).`
+    };
+  }
+
+  if (gameFlags.completedTraining && !tp.rumorQuestOffered) {
+    return {
+      id: "report-to-hanami",
+      text: "Objective: Return to Mr. Hanami for your next challenge."
+    };
+  }
+
+  if (tp.rumorQuestActive && !tp.rumorQuestCompleted) {
+    const nextClue = getNextMissingRumorClue(tp);
+    if (nextClue) {
+      return {
+        id: nextClue.objectiveId,
+        text: `${nextClue.text} (${rumorClues}/3 clues).`
+      };
+    }
+    return {
+      id: "rumor-report-hanami",
+      text: "Objective: Report your rumor findings to Mr. Hanami."
+    };
+  }
+
+  if (tp.rumorQuestCompleted && !tp.rumorQuestReported) {
+    return {
+      id: "rumor-report-hanami",
+      text: "Objective: Report your rumor findings to Mr. Hanami."
+    };
+  }
+
+  if (tp.enduranceUnlocked && playerStats.disciplineLevel < 2) {
+    return {
+      id: "endurance-training",
+      text: `Objective: Train on the mat to reach discipline Lv.2 (current Lv.${playerStats.disciplineLevel}).`
+    };
+  }
+
+  if (tp.enduranceUnlocked && playerStats.disciplineLevel >= 2 && !tp.membershipAwarded) {
+    return {
+      id: "collect-membership",
+      text: "Objective: Speak to Mr. Hanami to receive your membership card."
+    };
+  }
+
+  if (tp.membershipAwarded && !tp.bogQuestOffered) {
+    return {
+      id: "south-path",
+      text: "Objective: Follow the southern path into Bogland and meet Mr. Hanami."
+    };
+  }
+
+  if (tp.bogQuestOffered && !tp.bogQuestActive && !tp.bogQuestCompleted) {
+    return {
+      id: "bogland-accept",
+      text: "Objective: Speak to Mr. Hanami in Bogland when you are ready for the swamp trial."
+    };
+  }
+
+  if (tp.bogQuestActive && !tp.bogQuestCompleted) {
+    return {
+      id: "bogland-cleansing",
+      text: `Objective: Defeat Bogland stalkers (${bogKills}/${bogTarget}).`
+    };
+  }
+
+  if (tp.bogQuestCompleted && !tp.bogQuestReported) {
+    return {
+      id: "bogland-report-hanami",
+      text: "Objective: Report to Mr. Hanami in Bogland."
+    };
+  }
+
+  if (tp.bogQuestReported) {
+    return {
+      id: "taiko-preparation",
+      text: "Objective: Return to Hanami Town and prepare for the road toward Taiko."
+    };
+  }
+
+  if (gameFlags.completedTraining && !tp.enduranceUnlocked) {
+    return {
+      id: "choose-next-route",
+      text: "Objective: Speak with Mr. Hanami to begin endurance training or continue the investigation."
+    };
+  }
+
+  return {
+    id: "town-discipline",
+    text: "Objective: Continue building your discipline and speak with Mr. Hanami for guidance."
+  };
+}
+
+function resolveObjectiveMarker(objectiveId) {
+  const markers = {
+    "talk-hanami": [
+      { townId: "hanamiTown", areaId: "overworld", tileX: 41, tileY: 10, label: "Dojo entrance" },
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
+    ],
+    "dojo-upstairs-challenge": [
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 9, tileY: 3, label: "Upstairs challenge" },
+      { townId: "hanamiTown", areaId: "hanamiDojoUpstairs", tileX: 6, tileY: 5, label: "Challenge room" }
+    ],
+    "report-to-hanami": [
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
+    ],
+    "choose-next-route": [
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
+    ],
+    "rumor-clue-piazza": [
+      { townId: "hanamiTown", areaId: "overworld", tileX: 31, tileY: 16, label: "Mina in the piazza" }
+    ],
+    "rumor-clue-chapel": [
+      { townId: "hanamiTown", areaId: "hanamiChurch", tileX: 6, tileY: 3, label: "Priest Miki" }
+    ],
+    "rumor-clue-bar": [
+      { townId: "hanamiTown", areaId: "hanamiBar", tileX: 4, tileY: 7, label: "Tomo at the bar" }
+    ],
+    "rumor-report-hanami": [
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
+    ],
+    "endurance-training": [
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 4, tileY: 5, label: "Training mat" }
+    ],
+    "collect-membership": [
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
+    ],
+    "south-path": [
+      { townId: "hanamiTown", areaId: "overworld", tileX: 28, tileY: 42, label: "Bogland gate" }
+    ],
+    "bogland-accept": [
+      { townId: "hanamiTown", areaId: "bogland", tileX: 28, tileY: 6, label: "Mr. Hanami" }
+    ],
+    "bogland-cleansing": [
+      { townId: "hanamiTown", areaId: "bogland", tileX: 28, tileY: 24, label: "Corrupted bog zone" }
+    ],
+    "bogland-report-hanami": [
+      { townId: "hanamiTown", areaId: "bogland", tileX: 28, tileY: 6, label: "Mr. Hanami" }
+    ],
+    "taiko-preparation": [
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
+    ],
+    "town-discipline": [
+      { townId: "hanamiTown", areaId: "overworld", tileX: 28, tileY: 29, label: "Town center" }
+    ]
+  };
+
+  const options = markers[objectiveId];
+  if (!Array.isArray(options)) return null;
+  return options.find((marker) => marker.townId === currentTownId && marker.areaId === currentAreaId) || null;
+}
+
+function getAreaDoorDiscoveryKey(townId, areaId) {
+  return `${townId}:${areaId}`;
+}
+
+function markNearbyDoorsDiscovered() {
+  const key = getAreaDoorDiscoveryKey(currentTownId, currentAreaId);
+  if (!minimapDiscoveryState.discoveredDoors[key]) {
+    minimapDiscoveryState.discoveredDoors[key] = {};
+  }
+  const discovered = minimapDiscoveryState.discoveredDoors[key];
+
+  const playerTx = Math.floor((player.x + TILE * 0.5) / TILE);
+  const playerTy = Math.floor((player.y + TILE * 0.5) / TILE);
+  const radius = 7;
+
+  for (let ty = Math.max(0, playerTy - radius); ty <= Math.min(currentMapH - 1, playerTy + radius); ty++) {
+    const row = currentMap[ty];
+    if (!row) continue;
+    for (let tx = Math.max(0, playerTx - radius); tx <= Math.min(currentMapW - 1, playerTx + radius); tx++) {
+      if (row[tx] !== TILE_TYPES.DOOR) continue;
+      if (isConditionallyHiddenDoor(tx, ty)) continue;
+      discovered[`${tx},${ty}`] = true;
+    }
+  }
+}
+
+function syncObjectiveState(now = performance.now()) {
+  const next = deriveObjective();
+  const nextMarker = resolveObjectiveMarker(next.id);
+  const markerUnchanged = (
+    (objectiveState.marker == null && nextMarker == null) ||
+    (
+      objectiveState.marker &&
+      nextMarker &&
+      objectiveState.marker.townId === nextMarker.townId &&
+      objectiveState.marker.areaId === nextMarker.areaId &&
+      objectiveState.marker.tileX === nextMarker.tileX &&
+      objectiveState.marker.tileY === nextMarker.tileY
+    )
+  );
+  if (objectiveState.id === next.id && objectiveState.text === next.text && markerUnchanged) return;
+  objectiveState.id = next.id;
+  objectiveState.text = next.text;
+  objectiveState.updatedAt = now;
+  objectiveState.marker = nextMarker;
+}
+
+function showNextCombatReward(now = performance.now()) {
+  const next = combatRewardPanel.queue.shift();
+  if (!next) {
+    combatRewardPanel.active = false;
+    combatRewardPanel.title = "";
+    combatRewardPanel.lines = [];
+    return;
+  }
+
+  combatRewardPanel.active = true;
+  combatRewardPanel.title = next.title;
+  combatRewardPanel.lines = Array.isArray(next.lines) ? next.lines : [];
+  combatRewardPanel.startedAt = now;
+  combatRewardPanel.durationMs = Number.isFinite(next.durationMs) ? Math.max(900, next.durationMs) : 2200;
+}
+
+function queueCombatReward(reward) {
+  if (!reward || !reward.title) return;
+  combatRewardPanel.queue.push(reward);
+  if (!combatRewardPanel.active) {
+    showNextCombatReward(performance.now());
+  }
+}
+
+function grantCombatXpAndCollectSummary(enemy, now) {
+  const xpGained = enemy?.countsForChallenge ? 3 : 2;
+  let levelsGained = 0;
+
+  playerStats.combatXP += xpGained;
+  while (playerStats.combatXP >= playerStats.combatXPNeeded) {
+    playerStats.combatXP -= playerStats.combatXPNeeded;
+    playerStats.combatLevel += 1;
+    playerStats.combatXPNeeded = Math.min(60, playerStats.combatXPNeeded + 4);
+    levelsGained += 1;
+  }
+
+  const lines = [
+    `Combat XP +${xpGained}`,
+    `Combat Lv.${playerStats.combatLevel} (${playerStats.combatXP}/${playerStats.combatXPNeeded})`
+  ];
+  if (levelsGained > 0) {
+    lines.push(`Level up! +${levelsGained} combat level`);
+  }
+  lines.push("Items: none");
+
+  return {
+    title: `Defeated ${enemy?.name || "Enemy"}`,
+    lines,
+    completedLevelUp: levelsGained > 0
+  };
+}
+
+function updateRuntimeUi(now) {
+  syncObjectiveState(now);
+  markNearbyDoorsDiscovered();
+
+  if (saveNoticeState.active && now - saveNoticeState.startedAt >= saveNoticeState.durationMs) {
+    saveNoticeState.active = false;
+  }
+
+  if (combatRewardPanel.active && now - combatRewardPanel.startedAt >= combatRewardPanel.durationMs) {
+    showNextCombatReward(now);
+  }
+}
+
 function getSaveLoadContext() {
   return {
     worldService,
@@ -194,6 +583,7 @@ function getSaveLoadContext() {
     gameFlags,
     playerStats,
     playerInventory,
+    objectiveState,
     currentGameState: gameState,
     townId: currentTownId,
     areaId: currentAreaId
@@ -204,6 +594,7 @@ const {
   performSaveGame,
   performLoadGame,
   performStartNewGame,
+  performAutoSave,
   applyTitlePreviewSnapshot
 } = createSaveLoadCoordinator({
   buildGameSnapshot,
@@ -225,7 +616,12 @@ const {
   },
   getGameController,
   setSettingsStatus,
-  musicManager
+  musicManager,
+  onSaveNotice: pushSaveNotice,
+  onAfterRestore: () => {
+    uiMotionState.minimapRevealAt = performance.now();
+    syncObjectiveState(performance.now());
+  }
 });
 
 applyTitlePreviewSnapshot();
@@ -306,7 +702,24 @@ const combatSystem = createCombatSystem({
       handleCombatHitConfirmed(event);
     },
     onEntityDefeated: (enemy, now) => {
-      handleChallengeEnemyDefeat(enemy, now);
+      const challengeOutcome = handleChallengeEnemyDefeat(enemy, now);
+      const reward = grantCombatXpAndCollectSummary(enemy, now);
+      if (challengeOutcome?.challengeProgressText) {
+        reward.lines.push(`Challenge: ${challengeOutcome.challengeProgressText}`);
+      }
+      if (challengeOutcome?.bogProgressText) {
+        reward.lines.push(`Bog trial: ${challengeOutcome.bogProgressText}`);
+      }
+      if (challengeOutcome?.completedNow) {
+        reward.lines.push("Objective updated: return to Mr. Hanami.");
+        performAutoSave("Challenge complete");
+      }
+      if (challengeOutcome?.bogCompletedNow) {
+        reward.lines.push("Objective updated: report to Mr. Hanami in Bogland.");
+        performAutoSave("Bog trial complete");
+      }
+      queueCombatReward(reward);
+      syncObjectiveState(now);
     },
     onPlayerDefeated: ({ player: defeatedPlayer }) => {
       handlePlayerDefeated({ player: defeatedPlayer });
@@ -407,6 +820,7 @@ interactionSystem = createInteractionSystem({
   ui: UI,
   training: TRAINING,
   canvas,
+  cameraZoom: CAMERA_ZOOM,
   gameFlags,
   playerInventory,
   playerStats,
@@ -529,7 +943,14 @@ gameController = createGameController({
   actions: {
     beginDoorSequence: (doorTile) => interactionSystem.beginDoorSequence(doorTile),
     handleInteraction: () => interactionSystem.handleInteraction(),
-    updateFeatureState: (activeGameState) => featureCoordinator.updateForState(activeGameState)
+    updateFeatureState: (activeGameState) => featureCoordinator.updateForState(activeGameState),
+    onAreaChanged: ({ previousTownId, previousAreaId, townId, areaId }) => {
+      if (previousTownId !== townId || previousAreaId !== areaId) {
+        performAutoSave("Area transition");
+        uiMotionState.minimapRevealAt = performance.now();
+      }
+      syncObjectiveState(performance.now());
+    }
   }
 });
 
@@ -563,6 +984,7 @@ const { syncPointerLockWithState, register: registerInputBindings } = createInpu
   input,
   inputManagerClass: InputManager,
   choiceState,
+  dialogue,
   confirmChoice,
   settingsUiState,
   setSettingsStatus,
@@ -629,8 +1051,13 @@ const { render } = createGameRenderer({
   trainingPopup,
   playerStats,
   playerInventory,
+  objectiveState,
+  uiMotionState,
+  minimapDiscoveryState,
   itemAlert,
   inventoryHint,
+  saveNoticeState,
+  combatRewardPanel,
   pauseMenuState,
   mouseUiState,
   vfxSystem,
@@ -674,6 +1101,7 @@ const { startLoop } = createGameLoop({
   input,
   updateFountainHealing,
   vfxSystem,
+  updateRuntimeUi,
   render
 });
 
