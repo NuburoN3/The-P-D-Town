@@ -18,6 +18,15 @@
   - `DialogueSystem.js`
   - `GameController.js`
   - `InteractionSystem.js`
+  - `controller/`
+    - `roamingNpcController.js`
+    - `transientUiController.js`
+  - `interaction/`
+    - `contextUtils.js`
+    - `doorSequence.js`
+    - `interactionSearch.js`
+    - `npcInteractions.js`
+    - `trainingActions.js`
   - `MovementSystem.js`
   - `RenderSystem.js`
   - `features/`
@@ -31,6 +40,24 @@
   - `WorldService.js`
   - `validateContent.js`
   - `buildingRenderers.js`
+  - `buildings/`
+    - `barRenderer.js`
+    - `churchRenderer.js`
+    - `dojoRenderer.js`
+    - `fountainRenderer.js`
+    - `penRenderer.js`
+    - `rendererRegistry.js`
+    - `simpleRenderers.js`
+  - `runtime/`
+    - `actorFactories.js`
+    - `townBuilder.js`
+  - `validation/`
+    - `utils.js`
+    - `validateAreas.js`
+    - `validateDoors.js`
+    - `validateEnemies.js`
+    - `validateNpcs.js`
+    - `validateSpawns.js`
   - `index.js`
 - `src/WorldManager.js`: Compatibility export facade.
 
