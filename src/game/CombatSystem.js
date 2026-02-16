@@ -1,28 +1,27 @@
 import { isFreeExploreState } from "../core/constants.js";
+import { distance } from "../core/mathUtils.js";
 import { createDefaultAttackCatalog, resolveAttackProfile } from "./combat/attackCatalog.js";
 
-function distance(ax, ay, bx, by) {
-  return Math.hypot(ax - bx, ay - by);
-}
+// distance imported from ../core/mathUtils.js
 
 export function createCombatSystem({
   tileSize,
   attackCatalog = null,
   defaultAttackId = "lightSlash",
   eventHandlers = {},
-  spawnVisualEffect = () => {},
-  onEnemyDefeated = () => {}
+  spawnVisualEffect = () => { },
+  onEnemyDefeated = () => { }
 }) {
   const catalog = { ...(attackCatalog || createDefaultAttackCatalog(tileSize)) };
   const hitIdsInCurrentSwing = new Set();
   const handlers = {
     onRequestVfx: eventHandlers.onRequestVfx || spawnVisualEffect,
-    onEntityDamaged: eventHandlers.onEntityDamaged || (() => {}),
+    onEntityDamaged: eventHandlers.onEntityDamaged || (() => { }),
     onEntityDefeated: eventHandlers.onEntityDefeated || onEnemyDefeated,
-    onPlayerDamaged: eventHandlers.onPlayerDamaged || (() => {}),
+    onPlayerDamaged: eventHandlers.onPlayerDamaged || (() => { }),
     onPlayerDefeated: eventHandlers.onPlayerDefeated || null,
-    onPlayerAttackStarted: eventHandlers.onPlayerAttackStarted || (() => {}),
-    onHitConfirmed: eventHandlers.onHitConfirmed || (() => {})
+    onPlayerAttackStarted: eventHandlers.onPlayerAttackStarted || (() => { }),
+    onHitConfirmed: eventHandlers.onHitConfirmed || (() => { })
   };
 
   function registerAttackProfile(attackId, profile) {

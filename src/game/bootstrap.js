@@ -65,12 +65,16 @@ export function createGameRuntime() {
   const gameFlags = {
     acceptedTraining: false,
     completedTraining: false,
-    hanamiEnduranceUnlocked: false,
-    hanamiMembershipAwarded: false,
-    hanamiChallengeKills: 0,
-    hanamiChallengeTarget: 3,
-    hanamiChallengeCompleteAnnounced: false,
-    hanamiChallengePrepared: false
+    townProgress: {
+      hanamiTown: {
+        enduranceUnlocked: false,
+        membershipAwarded: false,
+        challengeKills: 0,
+        challengeTarget: 3,
+        challengeCompleteAnnounced: false,
+        challengePrepared: false
+      }
+    }
   };
 
   const playerInventory = {};

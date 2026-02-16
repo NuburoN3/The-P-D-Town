@@ -1,0 +1,120 @@
+import { ENEMY_ARCHETYPES } from "../enemyArchetypes.js";
+
+export function createNPCsForTown(town, tileSize, getSprite) {
+  const npcDefinitions = Array.isArray(town?.npcs) ? town.npcs : [];
+
+  return npcDefinitions.map((npc) => {
+    const {
+      id,
+      areaId,
+      x,
+      y,
+      desiredHeightTiles,
+      name,
+      spriteName,
+      dialogue,
+      hasTrainingChoice,
+      dir,
+      ...customFields
+    } = npc;
+
+    return {
+      ...customFields,
+      id,
+      world: areaId,
+      x: x * tileSize,
+      y: y * tileSize,
+      width: tileSize,
+      height: tileSize,
+      desiredHeightTiles,
+      name,
+      sprite: getSprite(spriteName),
+      dialogue: Array.isArray(dialogue) ? [...dialogue] : [String(dialogue ?? "")],
+      hasTrainingChoice: Boolean(hasTrainingChoice),
+      dir: dir || "down"
+    };
+  });
+}
+
+export function createEnemiesForTown(town, tileSize, getSprite) {
+  const enemyDefinitions = Array.isArray(town?.enemies) ? town.enemies : [];
+
+  return enemyDefinitions.map((enemy, index) => {
+    const archetypeId = typeof enemy.archetypeId === "string" ? enemy.archetypeId : null;
+    const archetypeDefaults = archetypeId && ENEMY_ARCHETYPES[archetypeId]
+      ? ENEMY_ARCHETYPES[archetypeId]
+      : null;
+    const resolved = {
+      ...(archetypeDefaults || {}),
+      ...enemy
+    };
+
+    const {
+      id,
+      areaId,
+      x,
+      y,
+      dir,
+      spriteName,
+      maxHp,
+      damage,
+      speed,
+      aggroRangeTiles,
+      attackRangeTiles,
+      attackCooldownMs,
+      attackWindupMs,
+      attackRecoveryMs,
+      respawnDelayMs,
+      archetypeId: resolvedArchetypeId,
+      ...customFields
+    } = resolved;
+
+    const spawnX = x * tileSize;
+    const spawnY = y * tileSize;
+    const resolvedMaxHp = Number.isFinite(maxHp) ? Math.max(1, maxHp) : 35;
+
+    return {
+      ...customFields,
+      id: id || `enemy-${index + 1}`,
+      name: enemy.name || `Enemy ${index + 1}`,
+      world: areaId,
+      x: spawnX,
+      y: spawnY,
+      spawnX,
+      spawnY,
+      width: tileSize,
+      height: tileSize,
+      dir: dir || "down",
+      sprite: spriteName ? getSprite(spriteName) : null,
+      maxHp: resolvedMaxHp,
+      hp: resolvedMaxHp,
+      damage: Number.isFinite(damage) ? Math.max(0, damage) : 8,
+      speed: Number.isFinite(speed) ? Math.max(0.4, speed) : 1.1,
+      aggroRange: (Number.isFinite(aggroRangeTiles) ? aggroRangeTiles : 5.5) * tileSize,
+      attackRange: (Number.isFinite(attackRangeTiles) ? attackRangeTiles : 1.1) * tileSize,
+      attackCooldownMs: Number.isFinite(attackCooldownMs) ? Math.max(120, attackCooldownMs) : 900,
+      attackWindupMs: Number.isFinite(attackWindupMs) ? Math.max(60, attackWindupMs) : 220,
+      attackRecoveryMs: Number.isFinite(attackRecoveryMs) ? Math.max(60, attackRecoveryMs) : 300,
+      respawnDelayMs: Number.isFinite(respawnDelayMs) ? Math.max(1000, respawnDelayMs) : 5000,
+      behaviorType: typeof resolved.behaviorType === "string" && resolved.behaviorType.length > 0
+        ? resolved.behaviorType
+        : "meleeChaser",
+      attackType: typeof resolved.attackType === "string" && resolved.attackType.length > 0
+        ? resolved.attackType
+        : "lightSlash",
+      archetypeId: resolvedArchetypeId || null,
+      respawnEnabled: resolved.respawnEnabled !== false,
+      countsForChallenge: Boolean(resolved.countsForChallenge),
+      challengeDefeatedCounted: false,
+      invulnerableUntil: 0,
+      hitStunUntil: 0,
+      state: "idle",
+      dead: false,
+      respawnAt: 0,
+      lastAttackAt: -Infinity,
+      attackStrikeAt: 0,
+      recoverUntil: 0,
+      pendingStrike: false
+    };
+  });
+}

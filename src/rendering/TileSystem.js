@@ -4,34 +4,28 @@
 
 import { TILE_TYPES, TILE, COLORS, GAME_STATES } from "../core/constants.js";
 import { BUILDING_TYPES, renderBuildingTile } from "../WorldManager.js";
-
-function hash2(x, y, seed = 0) {
-  const n = x * 374761393 + y * 668265263 + seed * 982451653;
-  return (n ^ (n >> 13)) >>> 0;
-}
-
-function sampleTile(deps, x, y) {
-  if (!deps.getTileAt) return null;
-  return deps.getTileAt(x, y);
-}
-
-function isShadowNeighborTile(tileType) {
-  return (
-    tileType === TILE_TYPES.TREE ||
-    tileType === TILE_TYPES.WALL ||
-    tileType === TILE_TYPES.CHERRY_BLOSSOM ||
-    tileType === TILE_TYPES.HILL
-  );
-}
-
-function isGrassFamilyTile(tileType) {
-  return (
-    tileType === TILE_TYPES.GRASS ||
-    tileType === TILE_TYPES.HILL ||
-    tileType === TILE_TYPES.CHERRY_BLOSSOM ||
-    tileType === TILE_TYPES.TREE
-  );
-}
+import {
+  drawBarCounterTile,
+  drawBarDecorTile,
+  drawBarFloorTile,
+  drawBarPosterTile,
+  drawBarStoolTile,
+  drawBarTableTile
+} from "./tiles/barTiles.js";
+import {
+  drawBedTile,
+  drawChurchStainedGlassTile,
+  drawHifiTile,
+  drawInteriorFloorTile,
+  drawTrainingFloorTile,
+  drawTvTile
+} from "./tiles/interiorTiles.js";
+import {
+  hash2,
+  sampleTile,
+  isShadowNeighborTile,
+  isGrassFamilyTile
+} from "./tileHelpers.js";
 
 function drawGrassTile(ctx, deps) {
   const { x, y, tileX, tileY } = deps;
@@ -361,87 +355,6 @@ function drawDoorTile(ctx, deps) {
   ctx.fillRect(deps.x + 19, deps.y + 15, 3, 3);
 }
 
-function drawInteriorFloorTile(ctx, deps) {
-  const alt = (deps.tileX + deps.tileY) % 2 === 0;
-  ctx.fillStyle = alt ? COLORS.INTERIOR_FLOOR_LIGHT : COLORS.INTERIOR_FLOOR_DARK;
-  ctx.fillRect(deps.x, deps.y, TILE, TILE);
-
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(deps.x + 1.5, deps.y + 1.5, TILE - 3, TILE - 3);
-
-  ctx.strokeStyle = COLORS.INTERIOR_FLOOR_TRIM;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(deps.x + 4.5, deps.y + 4.5, TILE - 9, TILE - 9);
-}
-
-function drawBarFloorTile(ctx, deps) {
-  const alt = (deps.tileX + deps.tileY) % 2 === 0;
-  ctx.fillStyle = alt ? COLORS.BAR_FLOOR_LIGHT : COLORS.BAR_FLOOR_DARK;
-  ctx.fillRect(deps.x, deps.y, TILE, TILE);
-
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(deps.x + 4, deps.y);
-  ctx.lineTo(deps.x + 4, deps.y + TILE);
-  ctx.moveTo(deps.x + 16, deps.y);
-  ctx.lineTo(deps.x + 16, deps.y + TILE);
-  ctx.moveTo(deps.x + 28, deps.y);
-  ctx.lineTo(deps.x + 28, deps.y + TILE);
-  ctx.stroke();
-
-  ctx.strokeStyle = COLORS.BAR_FLOOR_TRIM;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(deps.x + 1.5, deps.y + 1.5, TILE - 3, TILE - 3);
-}
-
-function drawBarCounterTile(ctx, deps) {
-  drawBarFloorTile(ctx, deps);
-  ctx.fillStyle = COLORS.BAR_COUNTER_FRONT;
-  ctx.fillRect(deps.x + 2, deps.y + 10, TILE - 4, 20);
-  ctx.fillStyle = COLORS.BAR_COUNTER_TOP;
-  ctx.fillRect(deps.x + 1, deps.y + 6, TILE - 2, 7);
-  ctx.fillStyle = COLORS.BAR_COUNTER_EDGE;
-  ctx.fillRect(deps.x + 2, deps.y + 7, TILE - 4, 2);
-  ctx.fillStyle = "rgba(0,0,0,0.2)";
-  ctx.fillRect(deps.x + 2, deps.y + 26, TILE - 4, 2);
-}
-
-function drawBarStoolTile(ctx, deps) {
-  drawBarFloorTile(ctx, deps);
-  ctx.fillStyle = COLORS.BAR_STOOL_LEG;
-  ctx.fillRect(deps.x + 14, deps.y + 12, 4, 13);
-  ctx.fillStyle = COLORS.BAR_STOOL_SEAT;
-  ctx.fillRect(deps.x + 9, deps.y + 8, 14, 6);
-  ctx.fillStyle = "rgba(255,255,255,0.16)";
-  ctx.fillRect(deps.x + 10, deps.y + 9, 5, 1);
-}
-
-function drawBarTableTile(ctx, deps) {
-  drawBarFloorTile(ctx, deps);
-  ctx.fillStyle = COLORS.BAR_TABLE_LEG;
-  ctx.fillRect(deps.x + 14, deps.y + 13, 4, 14);
-  ctx.fillStyle = COLORS.BAR_TABLE_TOP;
-  ctx.beginPath();
-  ctx.ellipse(deps.x + 16, deps.y + 11, 10, 6, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "rgba(255,255,255,0.15)";
-  ctx.fillRect(deps.x + 11, deps.y + 9, 6, 1);
-}
-
-function drawBarDecorTile(ctx, deps) {
-  drawBarFloorTile(ctx, deps);
-  ctx.fillStyle = "#5b3825";
-  ctx.fillRect(deps.x + 6, deps.y + 7, 20, 18);
-  ctx.fillStyle = COLORS.BAR_DECOR;
-  ctx.fillRect(deps.x + 8, deps.y + 9, 16, 4);
-  ctx.fillRect(deps.x + 8, deps.y + 16, 16, 4);
-  ctx.fillStyle = "#f0d28a";
-  ctx.fillRect(deps.x + 9, deps.y + 10, 3, 2);
-  ctx.fillRect(deps.x + 17, deps.y + 17, 3, 2);
-}
-
 function drawHillTile(ctx, deps) {
   const { x, y, tileX, tileY } = deps;
   const n = hash2(tileX, tileY, 121);
@@ -492,40 +405,6 @@ function drawHillTile(ctx, deps) {
     ctx.fillStyle = edgeGradient;
     ctx.fillRect(x + TILE - 8, y + 8, 8, TILE - 8);
   }
-}
-
-function drawBarPosterTile(ctx, deps) {
-  drawBarFloorTile(ctx, deps);
-  ctx.fillStyle = "#4b2e22";
-  ctx.fillRect(deps.x + 6, deps.y + 4, 20, 24);
-
-  ctx.fillStyle = COLORS.BAR_POSTER_BG || "#c94b3b";
-  ctx.fillRect(deps.x + 8, deps.y + 6, 16, 20);
-
-  ctx.fillStyle = COLORS.BAR_POSTER_ACCENT || "#f4e0a8";
-  ctx.fillRect(deps.x + 10, deps.y + 8, 12, 3);
-
-  // Cherry icon + cola stripe
-  ctx.fillStyle = "#8d131f";
-  ctx.beginPath();
-  ctx.arc(deps.x + 13, deps.y + 15, 2, 0, Math.PI * 2);
-  ctx.arc(deps.x + 18, deps.y + 15, 2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#f7d16f";
-  ctx.fillRect(deps.x + 11, deps.y + 19, 10, 2);
-  ctx.fillRect(deps.x + 12, deps.y + 22, 8, 1);
-}
-
-function drawTrainingFloorTile(ctx, deps) {
-  ctx.fillStyle = COLORS.TRAINING_FLOOR_DARK;
-  ctx.fillRect(deps.x, deps.y, TILE, TILE);
-
-  ctx.fillStyle = COLORS.TRAINING_FLOOR_LIGHT;
-  ctx.fillRect(deps.x + 2, deps.y + 2, TILE - 4, TILE - 4);
-  ctx.fillStyle = COLORS.TRAINING_FLOOR_DARK;
-  ctx.fillRect(deps.x + 7, deps.y + 7, TILE - 14, TILE - 14);
-  ctx.fillStyle = "rgba(255,255,255,0.2)";
-  ctx.fillRect(deps.x + 12, deps.y + 12, TILE - 24, TILE - 24);
 }
 
 function drawPorchTile(ctx, deps) {
@@ -583,74 +462,6 @@ function drawDojoPostTile(ctx, deps) {
   ctx.fillRect(deps.x + 12, deps.y + 11, 8, 2);
   ctx.fillRect(deps.x + 12, deps.y + 16, 8, 2);
   ctx.fillRect(deps.x + 12, deps.y + 21, 8, 2);
-}
-
-function drawChurchStainedGlassTile(ctx, deps) {
-  drawInteriorFloorTile(ctx, deps);
-
-  ctx.fillStyle = COLORS.CHURCH_GLASS_FRAME || "#4b3b33";
-  ctx.fillRect(deps.x + 5, deps.y + 2, 22, 28);
-
-  ctx.fillStyle = "#e6d0ac";
-  ctx.fillRect(deps.x + 6, deps.y + 3, 20, 26);
-
-  // Multicolor panes to read as stained glass.
-  ctx.fillStyle = "#8b2d41";
-  ctx.fillRect(deps.x + 8, deps.y + 6, 6, 7);
-  ctx.fillStyle = "#2f6f8c";
-  ctx.fillRect(deps.x + 17, deps.y + 6, 7, 7);
-  ctx.fillStyle = "#5a4d97";
-  ctx.fillRect(deps.x + 8, deps.y + 16, 6, 8);
-  ctx.fillStyle = "#d1993f";
-  ctx.fillRect(deps.x + 17, deps.y + 16, 7, 8);
-
-  ctx.fillStyle = COLORS.CHURCH_GLASS_LEAD || "#2f2f38";
-  ctx.fillRect(deps.x + 15, deps.y + 5, 1, 20);
-  ctx.fillRect(deps.x + 8, deps.y + 14, 16, 1);
-
-  ctx.fillStyle = "rgba(255,255,255,0.25)";
-  ctx.fillRect(deps.x + 10, deps.y + 7, 1, 5);
-  ctx.fillRect(deps.x + 19, deps.y + 7, 1, 5);
-  ctx.fillRect(deps.x + 10, deps.y + 17, 1, 5);
-  ctx.fillRect(deps.x + 19, deps.y + 17, 1, 5);
-}
-
-function drawBedTile(ctx, deps) {
-  drawInteriorFloorTile(ctx, deps);
-  ctx.fillStyle = COLORS.BED_FRAME || "#6b4a30";
-  ctx.fillRect(deps.x + 4, deps.y + 6, 24, 22);
-  ctx.fillStyle = COLORS.BED_SHEET || "#f1e9d2";
-  ctx.fillRect(deps.x + 6, deps.y + 8, 20, 8);
-  ctx.fillStyle = COLORS.BED_BLANKET || "#b56576";
-  ctx.fillRect(deps.x + 6, deps.y + 16, 20, 10);
-  ctx.fillStyle = "rgba(255,255,255,0.2)";
-  ctx.fillRect(deps.x + 7, deps.y + 17, 8, 1);
-}
-
-function drawTvTile(ctx, deps) {
-  drawInteriorFloorTile(ctx, deps);
-  ctx.fillStyle = COLORS.TV_FRAME || "#27272d";
-  ctx.fillRect(deps.x + 5, deps.y + 7, 22, 16);
-  ctx.fillStyle = COLORS.TV_SCREEN || "#5ea2b8";
-  ctx.fillRect(deps.x + 7, deps.y + 9, 18, 11);
-  ctx.fillStyle = COLORS.TV_GLOW || "rgba(170, 233, 255, 0.35)";
-  ctx.fillRect(deps.x + 9, deps.y + 11, 8, 3);
-  ctx.fillStyle = "#1f1f25";
-  ctx.fillRect(deps.x + 14, deps.y + 23, 4, 4);
-  ctx.fillRect(deps.x + 11, deps.y + 27, 10, 2);
-}
-
-function drawHifiTile(ctx, deps) {
-  drawInteriorFloorTile(ctx, deps);
-  ctx.fillStyle = COLORS.HIFI_BODY || "#3d3b46";
-  ctx.fillRect(deps.x + 6, deps.y + 10, 20, 14);
-  ctx.fillStyle = COLORS.HIFI_SPEAKER || "#222127";
-  ctx.fillRect(deps.x + 8, deps.y + 12, 5, 10);
-  ctx.fillRect(deps.x + 19, deps.y + 12, 5, 10);
-  ctx.fillStyle = COLORS.HIFI_ACCENT || "#93b7d8";
-  ctx.fillRect(deps.x + 14, deps.y + 13, 4, 2);
-  ctx.fillRect(deps.x + 14, deps.y + 17, 4, 1);
-  ctx.fillRect(deps.x + 14, deps.y + 20, 4, 1);
 }
 
 const tileRenderers = {

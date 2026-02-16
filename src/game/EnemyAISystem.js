@@ -1,8 +1,7 @@
 import { isFreeExploreState } from "../core/constants.js";
+import { clamp } from "../core/mathUtils.js";
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(value, max));
-}
+// clamp imported from ../core/mathUtils.js
 
 function updateEnemyDirection(enemy, dx, dy) {
   if (Math.abs(dx) > Math.abs(dy)) {
@@ -56,7 +55,8 @@ function createMeleeChaserBehavior({ tileSize, onWindupStarted }) {
     collidesAt,
     currentMap,
     currentMapW,
-    currentMapH
+    currentMapH,
+    dtScale = 1
   }) {
     if (!canFight) {
       if (enemy.state !== "idle") enemy.state = "idle";
@@ -92,7 +92,7 @@ function createMeleeChaserBehavior({ tileSize, onWindupStarted }) {
         enemy,
         player.x,
         player.y,
-        enemy.speed,
+        enemy.speed * dtScale,
         collidesAt,
         currentMap,
         currentMapW,
@@ -110,7 +110,7 @@ function createMeleeChaserBehavior({ tileSize, onWindupStarted }) {
         enemy,
         enemy.spawnX,
         enemy.spawnY,
-        clamp(enemy.speed * 0.88, 0.7, 2.2),
+        clamp(enemy.speed * 0.88, 0.7, 2.2) * dtScale,
         collidesAt,
         currentMap,
         currentMapW,
@@ -128,7 +128,7 @@ export function createEnemyAISystem({
   eventHandlers = {}
 }) {
   const handlers = {
-    onEnemyAttackWindupStarted: eventHandlers.onEnemyAttackWindupStarted || (() => {})
+    onEnemyAttackWindupStarted: eventHandlers.onEnemyAttackWindupStarted || (() => { })
   };
 
   const behaviorRegistry = {
@@ -192,7 +192,8 @@ export function createEnemyAISystem({
     currentMap,
     currentMapW,
     currentMapH,
-    collidesAt
+    collidesAt,
+    dtScale = 1
   }) {
     if (!Array.isArray(enemies) || !player) return;
 
@@ -218,7 +219,8 @@ export function createEnemyAISystem({
         currentMap,
         currentMapW,
         currentMapH,
-        tileSize
+        tileSize,
+        dtScale
       });
     }
   }

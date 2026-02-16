@@ -1,8 +1,7 @@
 import { AREA_KINDS, GAME_STATES } from "../core/constants.js";
+import { clamp } from "../core/mathUtils.js";
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
+// clamp imported from ../core/mathUtils.js
 
 function randomInRange(min, max) {
   return min + Math.random() * (max - min);

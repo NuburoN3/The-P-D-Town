@@ -33,7 +33,7 @@ export function isFreeExploreState(gameState) {
 }
 
 // Tile type IDs
-export const TILE_TYPES = {
+export const TILE_TYPES = Object.freeze({
   GRASS: 0,
   PATH: 1,
   TREE: 2,
@@ -56,7 +56,7 @@ export const TILE_TYPES = {
   BED: 19,
   TV: 20,
   HIFI: 21
-};
+});
 
 // Colors for rendering
 export const COLORS = {

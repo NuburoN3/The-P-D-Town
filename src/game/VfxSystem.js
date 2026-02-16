@@ -96,7 +96,9 @@ export function createVfxSystem() {
     for (let i = effects.length - 1; i >= 0; i--) {
       const effect = effects[i];
       if (now - effect.startedAt > effect.durationMs) {
-        effects.splice(i, 1);
+        // Swap-remove: O(1) instead of splice O(n)
+        effects[i] = effects[effects.length - 1];
+        effects.pop();
       }
     }
   }
