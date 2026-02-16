@@ -462,15 +462,7 @@ export function createDefaultAssetManager() {
   });
   assets.loadSprite("priest_miki", priestSprite || fallbackHuman);
 
-  const patSprite = createBarPatronSpriteDataUrl({
-    shirt: "#d6c7ae",
-    jacket: "#6b5a49",
-    hair: "#c8c2b8",
-    skin: "#e3bf9f",
-    pants: "#4b4034",
-    accent: "#f5e6c8"
-  });
-  assets.loadSprite("innkeeper_pat", patSprite || fallbackHuman);
+  assets.loadSprite("innkeeper_pat", "assets/sprites/pat.png");
 
   const farmerSprite = createBarPatronSpriteDataUrl({
     shirt: "#6e9a5a",
