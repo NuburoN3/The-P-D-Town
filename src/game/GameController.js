@@ -94,7 +94,7 @@ export function createGameController({
     npc.roamIdleUntil = now + 450 + Math.random() * 700;
   }
 
-  function updateRoamingNPCs(now) {
+  function updateRoamingNPCs(now, dtScale = 1) {
     const currentAreaId = state.getCurrentAreaId();
     const currentMap = state.getCurrentMap();
     const currentMapW = state.getCurrentMapW();
@@ -134,7 +134,7 @@ export function createGameController({
       }
 
       const speedPx = Number.isFinite(npc.wanderSpeed) ? Math.max(0.3, npc.wanderSpeed) : 0.9;
-      const step = Math.min(distance, speedPx);
+      const step = Math.min(distance, speedPx * dtScale);
       const vx = (dx / distance) * step;
       const vy = (dy / distance) * step;
 
@@ -199,7 +199,7 @@ export function createGameController({
     return true;
   }
 
-  function updatePlayerMovement() {
+  function updatePlayerMovement(dtScale = 1) {
     const blockingEntities = Array.isArray(state.enemies)
       ? state.npcs.concat(state.enemies.filter((enemy) => !enemy.dead))
       : state.npcs;
@@ -211,7 +211,8 @@ export function createGameController({
         currentMapW: state.getCurrentMapW(),
         currentMapH: state.getCurrentMapH(),
         npcs: blockingEntities,
-        currentAreaId: state.getCurrentAreaId()
+        currentAreaId: state.getCurrentAreaId(),
+        dtScale
       },
       {
         collides: collision.collidesAt,
@@ -222,18 +223,18 @@ export function createGameController({
     );
   }
 
-  function updateDoorEntry() {
+  function updateDoorEntry(dtScale = 1) {
     movementSystem.updateDoorEntry(
-      { player: state.player, doorSequence: state.doorSequence },
+      { player: state.player, doorSequence: state.doorSequence, dtScale },
       (nextState) => {
         state.setGameState(nextState);
       }
     );
   }
 
-  function updateTransition() {
+  function updateTransition(dtScale = 1) {
     movementSystem.updateTransition(
-      { player: state.player, doorSequence: state.doorSequence },
+      { player: state.player, doorSequence: state.doorSequence, dtScale },
       {
         setArea,
         setGameState: (nextState) => {
@@ -270,24 +271,24 @@ export function createGameController({
     }
   }
 
-  function update() {
+  function update(dtScale = 1) {
     const now = performance.now();
     updateTransientUi(now);
 
     const gameState = state.getGameState();
     if (isFreeExploreState(gameState) && !dialogue.isDialogueActive()) {
-      updateRoamingNPCs(now);
+      updateRoamingNPCs(now, dtScale);
       if (!state.player.isTraining) {
-        updatePlayerMovement();
+        updatePlayerMovement(dtScale);
       }
     } else if (dialogue.isDialogueActive()) {
       state.player.walking = false;
     } else if (typeof actions.updateFeatureState === "function" && actions.updateFeatureState(gameState)) {
       state.player.walking = false;
     } else if (gameState === GAME_STATES.ENTERING_DOOR) {
-      updateDoorEntry();
+      updateDoorEntry(dtScale);
     } else if (gameState === GAME_STATES.TRANSITION) {
-      updateTransition();
+      updateTransition(dtScale);
     }
 
     if (state.getGameState() !== GAME_STATES.TRANSITION && !state.playerDefeatSequence?.active) {

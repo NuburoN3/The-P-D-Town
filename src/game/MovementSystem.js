@@ -1,4 +1,5 @@
 import { AREA_KINDS, GAME_STATES } from "../core/constants.js";
+import { clamp, lerp } from "../core/mathUtils.js";
 
 export function createMovementSystem({
   keys,
@@ -11,13 +12,7 @@ export function createMovementSystem({
 }) {
   let lastWalkSoundTime = 0;
 
-  function clamp(value, min, max) {
-    return Math.max(min, Math.min(value, max));
-  }
-
-  function lerp(start, end, t) {
-    return start + (end - start) * t;
-  }
+  // clamp and lerp imported from ../core/mathUtils.js
 
   function getCameraLookAhead(player) {
     if (!player.walking) {
@@ -37,7 +32,8 @@ export function createMovementSystem({
     currentMapW,
     currentMapH,
     npcs,
-    currentAreaId
+    currentAreaId,
+    dtScale = 1
   }, {
     collides,
     collidesWithNPC,
@@ -55,19 +51,19 @@ export function createMovementSystem({
     let dy = 0;
 
     if (isPressed("moveUp", ["w", "arrowup"])) {
-      dy -= player.speed;
+      dy -= player.speed * dtScale;
       player.dir = "up";
     }
     if (isPressed("moveDown", ["s", "arrowdown"])) {
-      dy += player.speed;
+      dy += player.speed * dtScale;
       player.dir = "down";
     }
     if (isPressed("moveLeft", ["a", "arrowleft"])) {
-      dx -= player.speed;
+      dx -= player.speed * dtScale;
       player.dir = "left";
     }
     if (isPressed("moveRight", ["d", "arrowright"])) {
-      dx += player.speed;
+      dx += player.speed * dtScale;
       player.dir = "right";
     }
 
@@ -91,7 +87,7 @@ export function createMovementSystem({
     const ny = player.y + dy;
 
     if (!collides(nx, player.y, currentMap, currentMapW, currentMapH) &&
-        !collidesWithNPC(nx, player.y, npcs, currentAreaId)) {
+      !collidesWithNPC(nx, player.y, npcs, currentAreaId)) {
       player.x = nx;
     } else if (dx !== 0) {
       const doorTile = doorFromCollision(nx, player.y, currentMap, currentMapW, currentMapH);
@@ -103,7 +99,7 @@ export function createMovementSystem({
     }
 
     if (!collides(player.x, ny, currentMap, currentMapW, currentMapH) &&
-        !collidesWithNPC(player.x, ny, npcs, currentAreaId)) {
+      !collidesWithNPC(player.x, ny, npcs, currentAreaId)) {
       player.y = ny;
     } else if (dy !== 0) {
       const doorTile = doorFromCollision(player.x, ny, currentMap, currentMapW, currentMapH);
@@ -119,20 +115,20 @@ export function createMovementSystem({
     }
   }
 
-  function updateDoorEntry({ player, doorSequence }, setGameState) {
+  function updateDoorEntry({ player, doorSequence, dtScale = 1 }, setGameState) {
     player.walking = true;
     player.frame = (player.frame + 1) % 24;
 
     if (doorSequence.frame < doorSequence.stepFrames) {
-      player.x += doorSequence.stepDx;
-      player.y += doorSequence.stepDy;
+      player.x += doorSequence.stepDx * dtScale;
+      player.y += doorSequence.stepDy * dtScale;
       doorSequence.frame++;
     } else {
       setGameState(GAME_STATES.TRANSITION);
     }
   }
 
-  function updateTransition({ player, doorSequence }, {
+  function updateTransition({ player, doorSequence, dtScale = 1 }, {
     setArea,
     setGameState,
     getCurrentAreaKind
@@ -140,7 +136,7 @@ export function createMovementSystem({
     player.walking = false;
 
     if (doorSequence.transitionPhase === "out") {
-      doorSequence.fadeRadius += 20;
+      doorSequence.fadeRadius += 20 * dtScale;
       if (doorSequence.fadeRadius >= doorSequence.maxFadeRadius) {
         doorSequence.fadeRadius = doorSequence.maxFadeRadius;
         setArea(doorSequence.targetTownId, doorSequence.targetAreaId);
@@ -152,7 +148,7 @@ export function createMovementSystem({
       return;
     }
 
-    doorSequence.fadeRadius -= 20;
+    doorSequence.fadeRadius -= 20 * dtScale;
     if (doorSequence.fadeRadius <= 0) {
       doorSequence.fadeRadius = 0;
       doorSequence.active = false;

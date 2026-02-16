@@ -4,34 +4,12 @@
 
 import { TILE_TYPES, TILE, COLORS, GAME_STATES } from "../core/constants.js";
 import { BUILDING_TYPES, renderBuildingTile } from "../WorldManager.js";
-
-function hash2(x, y, seed = 0) {
-  const n = x * 374761393 + y * 668265263 + seed * 982451653;
-  return (n ^ (n >> 13)) >>> 0;
-}
-
-function sampleTile(deps, x, y) {
-  if (!deps.getTileAt) return null;
-  return deps.getTileAt(x, y);
-}
-
-function isShadowNeighborTile(tileType) {
-  return (
-    tileType === TILE_TYPES.TREE ||
-    tileType === TILE_TYPES.WALL ||
-    tileType === TILE_TYPES.CHERRY_BLOSSOM ||
-    tileType === TILE_TYPES.HILL
-  );
-}
-
-function isGrassFamilyTile(tileType) {
-  return (
-    tileType === TILE_TYPES.GRASS ||
-    tileType === TILE_TYPES.HILL ||
-    tileType === TILE_TYPES.CHERRY_BLOSSOM ||
-    tileType === TILE_TYPES.TREE
-  );
-}
+import {
+  hash2,
+  sampleTile,
+  isShadowNeighborTile,
+  isGrassFamilyTile
+} from "./tileHelpers.js";
 
 function drawGrassTile(ctx, deps) {
   const { x, y, tileX, tileY } = deps;
