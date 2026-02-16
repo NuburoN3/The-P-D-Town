@@ -6,6 +6,7 @@ export function createInputBindings({
   input,
   inputManagerClass,
   choiceState,
+  dialogue,
   confirmChoice,
   settingsUiState,
   setSettingsStatus,
@@ -140,6 +141,24 @@ export function createInputBindings({
       if (choiceState.active) return;
       const key = normalizeInputKey(e.key);
       const gameState = getGameState();
+
+      if (
+        dialogue &&
+        typeof dialogue.isActive === "function" &&
+        dialogue.isActive() &&
+        !choiceState.active &&
+        input.matchesActionKey("attack", key) &&
+        !e.repeat
+      ) {
+        if (typeof dialogue.isCurrentPageFullyVisible === "function" && !dialogue.isCurrentPageFullyVisible()) {
+          dialogue.revealCurrentPage();
+        } else if (typeof dialogue.advance === "function") {
+          dialogue.advance();
+        }
+        input.clearAttackPressed();
+        e.preventDefault();
+        return;
+      }
 
       if (gameState === gameStates.SETTINGS && settingsUiState.awaitingRebindAction && !e.repeat) {
         if (key === "escape") {

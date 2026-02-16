@@ -32,6 +32,10 @@ export class DialogueSystem {
     return this.currentLine().replace(/\n/g, "").length;
   }
 
+  isCurrentPageFullyVisible() {
+    return this.visibleCharacters >= this.currentVisibleLength();
+  }
+
   updateVisibleCharacters() {
     const elapsedSeconds = Math.max(0, (performance.now() - this.textStartTime) / 1000);
     const charsPerSecond = Math.max(8, this.ui.CHARACTERS_PER_SECOND * this.textSpeedMultiplier);
@@ -45,6 +49,10 @@ export class DialogueSystem {
   setTextSpeedMultiplier(multiplier) {
     if (!Number.isFinite(multiplier)) return;
     this.textSpeedMultiplier = Math.max(0.5, Math.min(2, multiplier));
+  }
+
+  revealCurrentPage() {
+    this.visibleCharacters = this.currentVisibleLength();
   }
 
   show(name, textOrLines, endAction = null) {
@@ -101,7 +109,7 @@ export class DialogueSystem {
     this.updateVisibleCharacters();
 
     if (this.visibleCharacters < this.currentVisibleLength()) {
-      this.visibleCharacters = this.currentVisibleLength();
+      this.revealCurrentPage();
       return;
     }
 

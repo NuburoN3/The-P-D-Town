@@ -8,9 +8,21 @@ export function createSaveLoadCoordinator({
   applyGameState,
   getGameController,
   setSettingsStatus,
-  musicManager
+  musicManager,
+  onSaveNotice = null
 }) {
   const newGameBaselineSnapshot = buildGameSnapshot(getSaveLoadContext());
+  let lastAutoSaveAt = 0;
+  const autoSaveCooldownMs = 7000;
+  const nowMs = () => (typeof performance !== "undefined" && typeof performance.now === "function")
+    ? performance.now()
+    : Date.now();
+
+  function pushSaveNotice(text, type = "save", durationMs = 1700) {
+    if (typeof onSaveNotice === "function") {
+      onSaveNotice({ text, type, durationMs });
+    }
+  }
 
   function syncMusicForCurrentArea() {
     const gameController = getGameController();
@@ -24,6 +36,7 @@ export function createSaveLoadCoordinator({
     if (!result.success) {
       musicManager.playSfx("uiError");
       setSettingsStatus("Save data invalid.");
+      pushSaveNotice("Save data invalid.", "error", 2000);
       return false;
     }
 
@@ -38,6 +51,7 @@ export function createSaveLoadCoordinator({
     syncMusicForCurrentArea();
     musicManager.playSfx("loadGame");
     setSettingsStatus(successMessage);
+    pushSaveNotice(successMessage, "load", 1700);
     return true;
   }
 
@@ -47,11 +61,13 @@ export function createSaveLoadCoordinator({
     if (ok) {
       musicManager.playSfx("saveGame");
       setSettingsStatus("Game saved.");
+      pushSaveNotice("Game saved.", "save", 1700);
       return;
     }
 
     musicManager.playSfx("uiError");
     setSettingsStatus("Save failed.");
+    pushSaveNotice("Save failed.", "error", 2200);
   }
 
   function performLoadGame() {
@@ -59,6 +75,7 @@ export function createSaveLoadCoordinator({
     if (!snapshot) {
       musicManager.playSfx("uiError");
       setSettingsStatus("No save found.");
+      pushSaveNotice("No save found.", "error", 2000);
       return;
     }
 
@@ -67,6 +84,21 @@ export function createSaveLoadCoordinator({
 
   function performStartNewGame() {
     restoreGameFromSnapshot(newGameBaselineSnapshot, "New game started.");
+  }
+
+  function performAutoSave(reason = "Checkpoint") {
+    const now = nowMs();
+    if (now - lastAutoSaveAt < autoSaveCooldownMs) {
+      return false;
+    }
+
+    const snapshot = buildGameSnapshot(getSaveLoadContext());
+    const ok = saveGameSnapshot(snapshot);
+    if (!ok) return false;
+
+    lastAutoSaveAt = now;
+    pushSaveNotice(`Autosaved: ${reason}`, "autosave", 1450);
+    return true;
   }
 
   function applyTitlePreviewSnapshot() {
@@ -80,6 +112,7 @@ export function createSaveLoadCoordinator({
     performSaveGame,
     performLoadGame,
     performStartNewGame,
+    performAutoSave,
     restoreGameFromSnapshot,
     applyTitlePreviewSnapshot,
     getNewGameBaselineSnapshot: () => newGameBaselineSnapshot

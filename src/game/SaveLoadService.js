@@ -11,7 +11,23 @@ import { TILE, AREA_KINDS, GAME_STATES } from "../core/constants.js";
  * @param {object} context.playerInventory
  * @returns {object} The snapshot object
  */
-export function buildGameSnapshot({ townId, areaId, player, gameFlags, playerStats, playerInventory }) {
+export function buildGameSnapshot({
+    townId,
+    areaId,
+    player,
+    gameFlags,
+    playerStats,
+    playerInventory,
+    objectiveState = null
+}) {
+    const snapshotObjective = objectiveState && typeof objectiveState === "object"
+        ? {
+            id: String(objectiveState.id || ""),
+            text: String(objectiveState.text || ""),
+            updatedAt: Number.isFinite(objectiveState.updatedAt) ? objectiveState.updatedAt : 0
+        }
+        : null;
+
     return {
         version: 1,
         world: {
@@ -31,7 +47,8 @@ export function buildGameSnapshot({ townId, areaId, player, gameFlags, playerSta
             townProgress: JSON.parse(JSON.stringify(gameFlags.townProgress || {})) // Deep copy
         },
         playerStats: { ...playerStats },
-        playerInventory: { ...playerInventory }
+        playerInventory: { ...playerInventory },
+        objectiveState: snapshotObjective
     };
 }
 
@@ -64,7 +81,8 @@ export function applyGameSnapshot(snapshot, context) {
         gameFlags,
         playerStats,
         playerInventory,
-        currentGameState
+        currentGameState,
+        objectiveState
     } = context;
 
     const townId = snapshot.world?.townId;
@@ -122,6 +140,14 @@ export function applyGameSnapshot(snapshot, context) {
             delete playerInventory[key];
         }
         Object.assign(playerInventory, snapshot.playerInventory);
+    }
+
+    if (objectiveState && snapshot.objectiveState && typeof snapshot.objectiveState === "object") {
+        objectiveState.id = String(snapshot.objectiveState.id || "");
+        objectiveState.text = String(snapshot.objectiveState.text || "");
+        objectiveState.updatedAt = Number.isFinite(snapshot.objectiveState.updatedAt)
+            ? snapshot.objectiveState.updatedAt
+            : 0;
     }
 
     // Determine Game State

@@ -23,6 +23,7 @@ export function createGameLoop({
   input,
   updateFountainHealing,
   vfxSystem,
+  updateRuntimeUi = () => { },
   render
 }) {
   let lastFrameTime = performance.now();
@@ -86,6 +87,8 @@ export function createGameLoop({
     if (!hitstopActive) {
       vfxSystem.update(now);
     }
+
+    updateRuntimeUi(now);
 
     render();
     requestAnimationFrame(loop);

@@ -141,6 +141,9 @@ export function drawTextbox(ctx, state, canvas, ui, colors, dialogue) {
     ctx.closePath();
     ctx.fill();
   }
+
+  ctx.font = FONT_12;
+  drawUiText(ctx, "Attack: fast skip text", boxX + boxW - 154, boxY + boxHeight - 10, colors);
 }
 
 export function drawDoorTransition(ctx, state, canvas, tileSize, cameraZoom) {
@@ -159,7 +162,8 @@ export function drawDoorTransition(ctx, state, canvas, tileSize, cameraZoom) {
   const holeRadius = Math.max(0, maxHoleRadius * (1 - transitionRatio));
 
   ctx.save();
-  ctx.fillStyle = `rgba(4, 6, 10, ${0.22 + transitionRatio * 0.74})`;
+  const blackoutAlpha = Math.min(1, 0.24 + transitionRatio * 0.86);
+  ctx.fillStyle = `rgba(4, 6, 10, ${blackoutAlpha})`;
   ctx.fillRect(0, 0, viewW, viewH);
 
   if (holeRadius > 0.5) {

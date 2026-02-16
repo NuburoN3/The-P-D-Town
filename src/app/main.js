@@ -167,8 +167,42 @@ const combatFeedback = {
   hitstopUntil: 0,
   shakeUntil: 0,
   shakeMagnitude: 0,
-  lastEnemyTelegraphAt: 0
+  lastEnemyTelegraphAt: 0,
+  playerDamageFlashUntil: 0
 };
+
+const objectiveState = {
+  id: "",
+  text: "",
+  updatedAt: 0
+};
+
+const saveNoticeState = {
+  active: false,
+  text: "",
+  type: "save",
+  startedAt: 0,
+  durationMs: 1700
+};
+
+const combatRewardPanel = {
+  active: false,
+  title: "",
+  lines: [],
+  startedAt: 0,
+  durationMs: 2200,
+  queue: []
+};
+
+if (!Number.isFinite(playerStats.combatLevel) || playerStats.combatLevel < 1) {
+  playerStats.combatLevel = 1;
+}
+if (!Number.isFinite(playerStats.combatXP) || playerStats.combatXP < 0) {
+  playerStats.combatXP = 0;
+}
+if (!Number.isFinite(playerStats.combatXPNeeded) || playerStats.combatXPNeeded < 1) {
+  playerStats.combatXPNeeded = 6;
+}
 
 function persistUserSettings() {
   saveUserSettings({
@@ -183,6 +217,148 @@ function setSettingsStatus(text, durationMs = 1700) {
   settingsUiState.statusUntil = performance.now() + durationMs;
 }
 
+function pushSaveNotice({ text, type = "save", durationMs = 1700 }) {
+  if (!text) return;
+  saveNoticeState.active = true;
+  saveNoticeState.text = text;
+  saveNoticeState.type = type;
+  saveNoticeState.startedAt = performance.now();
+  saveNoticeState.durationMs = Math.max(700, durationMs);
+}
+
+function getTownProgressForCurrentTown() {
+  const townId = currentTownId;
+  if (!gameFlags.townProgress[townId]) {
+    gameFlags.townProgress[townId] = {
+      enduranceUnlocked: false,
+      membershipAwarded: false,
+      challengeKills: 0,
+      challengeTarget: 3,
+      challengeCompleteAnnounced: false,
+      challengePrepared: false
+    };
+  }
+  return gameFlags.townProgress[townId];
+}
+
+function deriveObjective() {
+  const tp = getTownProgressForCurrentTown();
+
+  if (!gameFlags.acceptedTraining) {
+    return {
+      id: "talk-hanami",
+      text: "Objective: Find Mr. Hanami at the dojo and speak with him."
+    };
+  }
+
+  if (gameFlags.acceptedTraining && !gameFlags.completedTraining) {
+    const kills = Number.isFinite(tp.challengeKills) ? tp.challengeKills : 0;
+    const target = Number.isFinite(tp.challengeTarget) ? tp.challengeTarget : 3;
+    return {
+      id: "dojo-upstairs-challenge",
+      text: `Objective: Defeat upstairs opponents (${kills}/${target}).`
+    };
+  }
+
+  if (gameFlags.completedTraining && !tp.enduranceUnlocked) {
+    return {
+      id: "report-to-hanami",
+      text: "Objective: Return to Mr. Hanami for your next challenge."
+    };
+  }
+
+  if (tp.enduranceUnlocked && playerStats.disciplineLevel < 2) {
+    return {
+      id: "endurance-training",
+      text: `Objective: Train on the mat to reach discipline Lv.2 (current Lv.${playerStats.disciplineLevel}).`
+    };
+  }
+
+  if (tp.enduranceUnlocked && playerStats.disciplineLevel >= 2 && !tp.membershipAwarded) {
+    return {
+      id: "collect-membership",
+      text: "Objective: Speak to Mr. Hanami to receive your membership card."
+    };
+  }
+
+  return {
+    id: "south-path",
+    text: "Objective: Follow the southern path and meet Mr. Hanami."
+  };
+}
+
+function syncObjectiveState(now = performance.now()) {
+  const next = deriveObjective();
+  if (objectiveState.id === next.id && objectiveState.text === next.text) return;
+  objectiveState.id = next.id;
+  objectiveState.text = next.text;
+  objectiveState.updatedAt = now;
+}
+
+function showNextCombatReward(now = performance.now()) {
+  const next = combatRewardPanel.queue.shift();
+  if (!next) {
+    combatRewardPanel.active = false;
+    combatRewardPanel.title = "";
+    combatRewardPanel.lines = [];
+    return;
+  }
+
+  combatRewardPanel.active = true;
+  combatRewardPanel.title = next.title;
+  combatRewardPanel.lines = Array.isArray(next.lines) ? next.lines : [];
+  combatRewardPanel.startedAt = now;
+  combatRewardPanel.durationMs = Number.isFinite(next.durationMs) ? Math.max(900, next.durationMs) : 2200;
+}
+
+function queueCombatReward(reward) {
+  if (!reward || !reward.title) return;
+  combatRewardPanel.queue.push(reward);
+  if (!combatRewardPanel.active) {
+    showNextCombatReward(performance.now());
+  }
+}
+
+function grantCombatXpAndCollectSummary(enemy, now) {
+  const xpGained = enemy?.countsForChallenge ? 3 : 2;
+  let levelsGained = 0;
+
+  playerStats.combatXP += xpGained;
+  while (playerStats.combatXP >= playerStats.combatXPNeeded) {
+    playerStats.combatXP -= playerStats.combatXPNeeded;
+    playerStats.combatLevel += 1;
+    playerStats.combatXPNeeded = Math.min(60, playerStats.combatXPNeeded + 4);
+    levelsGained += 1;
+  }
+
+  const lines = [
+    `Combat XP +${xpGained}`,
+    `Combat Lv.${playerStats.combatLevel} (${playerStats.combatXP}/${playerStats.combatXPNeeded})`
+  ];
+  if (levelsGained > 0) {
+    lines.push(`Level up! +${levelsGained} combat level`);
+  }
+  lines.push("Items: none");
+
+  return {
+    title: `Defeated ${enemy?.name || "Enemy"}`,
+    lines,
+    completedLevelUp: levelsGained > 0
+  };
+}
+
+function updateRuntimeUi(now) {
+  syncObjectiveState(now);
+
+  if (saveNoticeState.active && now - saveNoticeState.startedAt >= saveNoticeState.durationMs) {
+    saveNoticeState.active = false;
+  }
+
+  if (combatRewardPanel.active && now - combatRewardPanel.startedAt >= combatRewardPanel.durationMs) {
+    showNextCombatReward(now);
+  }
+}
+
 function getSaveLoadContext() {
   return {
     worldService,
@@ -194,6 +370,7 @@ function getSaveLoadContext() {
     gameFlags,
     playerStats,
     playerInventory,
+    objectiveState,
     currentGameState: gameState,
     townId: currentTownId,
     areaId: currentAreaId
@@ -204,6 +381,7 @@ const {
   performSaveGame,
   performLoadGame,
   performStartNewGame,
+  performAutoSave,
   applyTitlePreviewSnapshot
 } = createSaveLoadCoordinator({
   buildGameSnapshot,
@@ -225,7 +403,8 @@ const {
   },
   getGameController,
   setSettingsStatus,
-  musicManager
+  musicManager,
+  onSaveNotice: pushSaveNotice
 });
 
 applyTitlePreviewSnapshot();
@@ -306,7 +485,17 @@ const combatSystem = createCombatSystem({
       handleCombatHitConfirmed(event);
     },
     onEntityDefeated: (enemy, now) => {
-      handleChallengeEnemyDefeat(enemy, now);
+      const challengeOutcome = handleChallengeEnemyDefeat(enemy, now);
+      const reward = grantCombatXpAndCollectSummary(enemy, now);
+      if (challengeOutcome?.challengeProgressText) {
+        reward.lines.push(`Challenge: ${challengeOutcome.challengeProgressText}`);
+      }
+      if (challengeOutcome?.completedNow) {
+        reward.lines.push("Objective updated: return to Mr. Hanami.");
+        performAutoSave("Challenge complete");
+      }
+      queueCombatReward(reward);
+      syncObjectiveState(now);
     },
     onPlayerDefeated: ({ player: defeatedPlayer }) => {
       handlePlayerDefeated({ player: defeatedPlayer });
@@ -407,6 +596,7 @@ interactionSystem = createInteractionSystem({
   ui: UI,
   training: TRAINING,
   canvas,
+  cameraZoom: CAMERA_ZOOM,
   gameFlags,
   playerInventory,
   playerStats,
@@ -529,7 +719,13 @@ gameController = createGameController({
   actions: {
     beginDoorSequence: (doorTile) => interactionSystem.beginDoorSequence(doorTile),
     handleInteraction: () => interactionSystem.handleInteraction(),
-    updateFeatureState: (activeGameState) => featureCoordinator.updateForState(activeGameState)
+    updateFeatureState: (activeGameState) => featureCoordinator.updateForState(activeGameState),
+    onAreaChanged: ({ previousTownId, previousAreaId, townId, areaId }) => {
+      if (previousTownId !== townId || previousAreaId !== areaId) {
+        performAutoSave("Area transition");
+      }
+      syncObjectiveState(performance.now());
+    }
   }
 });
 
@@ -563,6 +759,7 @@ const { syncPointerLockWithState, register: registerInputBindings } = createInpu
   input,
   inputManagerClass: InputManager,
   choiceState,
+  dialogue,
   confirmChoice,
   settingsUiState,
   setSettingsStatus,
@@ -629,8 +826,11 @@ const { render } = createGameRenderer({
   trainingPopup,
   playerStats,
   playerInventory,
+  objectiveState,
   itemAlert,
   inventoryHint,
+  saveNoticeState,
+  combatRewardPanel,
   pauseMenuState,
   mouseUiState,
   vfxSystem,
@@ -674,6 +874,7 @@ const { startLoop } = createGameLoop({
   input,
   updateFountainHealing,
   vfxSystem,
+  updateRuntimeUi,
   render
 });
 

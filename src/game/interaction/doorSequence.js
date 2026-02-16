@@ -3,6 +3,7 @@ import { GAME_STATES } from "../../core/constants.js";
 export function createDoorSequenceStarter({
   tileSize,
   canvas,
+  cameraZoom = 1,
   player,
   doorSequence,
   musicManager,
@@ -44,14 +45,18 @@ export function createDoorSequenceStarter({
     doorSequence.ty = doorTile.ty;
     doorSequence.stepDx = vx * 1.5;
     doorSequence.stepDy = vy * 1.5;
-    doorSequence.stepFrames = 20;
+    doorSequence.stepFrames = 12;
     doorSequence.frame = 0;
     doorSequence.targetTownId = destination.townId;
     doorSequence.targetAreaId = destination.areaId;
     doorSequence.targetX = destination.x;
     doorSequence.targetY = destination.y;
     doorSequence.targetDir = destination.dir || "down";
-    doorSequence.maxFadeRadius = Math.hypot(canvas.width, canvas.height);
+    const safeZoom = Number.isFinite(cameraZoom) && cameraZoom > 0 ? cameraZoom : 1;
+    const viewW = canvas.width / safeZoom;
+    const viewH = canvas.height / safeZoom;
+    doorSequence.maxFadeRadius = Math.hypot(viewW, viewH) * 0.62;
+    doorSequence.fadeStep = 34;
     doorSequence.fadeRadius = 0;
     doorSequence.transitionPhase = "out";
     spawnVisualEffect("doorSwirl", {

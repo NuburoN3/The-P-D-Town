@@ -134,9 +134,10 @@ export function createMovementSystem({
     getCurrentAreaKind
   }) {
     player.walking = false;
+    const fadeStep = (Number.isFinite(doorSequence.fadeStep) ? doorSequence.fadeStep : 20) * dtScale;
 
     if (doorSequence.transitionPhase === "out") {
-      doorSequence.fadeRadius += 20 * dtScale;
+      doorSequence.fadeRadius += fadeStep;
       if (doorSequence.fadeRadius >= doorSequence.maxFadeRadius) {
         doorSequence.fadeRadius = doorSequence.maxFadeRadius;
         setArea(doorSequence.targetTownId, doorSequence.targetAreaId);
@@ -148,7 +149,7 @@ export function createMovementSystem({
       return;
     }
 
-    doorSequence.fadeRadius -= 20 * dtScale;
+    doorSequence.fadeRadius -= fadeStep;
     if (doorSequence.fadeRadius <= 0) {
       doorSequence.fadeRadius = 0;
       doorSequence.active = false;

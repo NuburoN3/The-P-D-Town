@@ -180,7 +180,8 @@ export function createGameRuntime() {
     targetDir: "down",
     transitionPhase: "out",
     fadeRadius: 0,
-    maxFadeRadius: 0
+    maxFadeRadius: 0,
+    fadeStep: 34
   };
 
   const playerDefeatSequence = {

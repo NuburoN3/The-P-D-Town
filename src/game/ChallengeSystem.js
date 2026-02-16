@@ -13,7 +13,7 @@ export function createChallengeSystem({ tileSize, vfxSystem }) {
      * @param {number} now
      */
     function handleEnemyDefeat({ gameFlags, currentTownId, player, itemAlert }, enemy, now) {
-        if (!enemy || !enemy.countsForChallenge) return;
+        if (!enemy || !enemy.countsForChallenge) return null;
 
         if (!gameFlags.acceptedTraining) {
             enemy.dead = false;
@@ -24,19 +24,23 @@ export function createChallengeSystem({ tileSize, vfxSystem }) {
             enemy.pendingStrike = false;
             enemy.respawnAt = 0;
             enemy.invulnerableUntil = now + 180;
-            return;
+            return null;
         }
-        if (gameFlags.completedTraining) return;
-        if (enemy.challengeDefeatedCounted) return;
+        if (gameFlags.completedTraining) return null;
+        if (enemy.challengeDefeatedCounted) return null;
 
         enemy.challengeDefeatedCounted = true;
         const tp = gameFlags.townProgress?.[currentTownId];
-        if (!tp) return;
+        if (!tp) return null;
         tp.challengeKills = Math.min(tp.challengeTarget, tp.challengeKills + 1);
 
         itemAlert.active = true;
         itemAlert.text = `Challenge progress: ${tp.challengeKills}/${tp.challengeTarget}`;
         itemAlert.startedAt = now;
+        const outcome = {
+            challengeProgressText: `${tp.challengeKills}/${tp.challengeTarget}`,
+            completedNow: false
+        };
 
         if (tp.challengeKills >= tp.challengeTarget) {
             gameFlags.completedTraining = true;
@@ -51,8 +55,11 @@ export function createChallengeSystem({ tileSize, vfxSystem }) {
                     size: 48,
                     durationMs: 800
                 });
+                outcome.completedNow = true;
             }
         }
+
+        return outcome;
     }
 
     /**

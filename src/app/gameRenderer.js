@@ -33,8 +33,11 @@ export function createGameRenderer({
   trainingPopup,
   playerStats,
   playerInventory,
+  objectiveState,
   itemAlert,
   inventoryHint,
+  saveNoticeState,
+  combatRewardPanel,
   pauseMenuState,
   mouseUiState,
   vfxSystem,
@@ -46,6 +49,53 @@ export function createGameRenderer({
   getGameState,
   isConditionallyHiddenDoor
 }) {
+  function buildDoorHintText(currentTownId, currentAreaId, currentMap) {
+    const playerTx = Math.floor((player.x + tileSize * 0.5) / tileSize);
+    const playerTy = Math.floor((player.y + tileSize * 0.5) / tileSize);
+
+    for (let ty = playerTy - 1; ty <= playerTy + 1; ty++) {
+      const row = currentMap[ty];
+      if (!row) continue;
+      for (let tx = playerTx - 1; tx <= playerTx + 1; tx++) {
+        if (row[tx] !== tileTypes.DOOR) continue;
+        if (isConditionallyHiddenDoor(tx, ty)) continue;
+
+        const destination = worldService.resolveDoorDestination(currentTownId, currentAreaId, tx, ty);
+        if (!destination) continue;
+
+        const targetTown = worldService.getTown(destination.townId);
+        const targetArea = worldService.getArea(destination.townId, destination.areaId);
+        const townLabel = targetTown?.name || destination.townId;
+        const areaLabel = targetArea?.id || destination.areaId;
+        return `Door: ${townLabel} / ${areaLabel}`;
+      }
+    }
+
+    return "";
+  }
+
+  function buildMinimapState(currentMap, currentMapW, currentMapH) {
+    const doorTiles = [];
+    for (let y = 0; y < currentMapH; y++) {
+      const row = currentMap[y];
+      if (!row) continue;
+      for (let x = 0; x < currentMapW; x++) {
+        if (row[x] !== tileTypes.DOOR) continue;
+        if (isConditionallyHiddenDoor(x, y)) continue;
+        doorTiles.push({ x, y });
+      }
+    }
+
+    return {
+      map: currentMap,
+      width: currentMapW,
+      height: currentMapH,
+      playerTileX: Math.floor((player.x + tileSize * 0.5) / tileSize),
+      playerTileY: Math.floor((player.y + tileSize * 0.5) / tileSize),
+      doorTiles
+    };
+  }
+
   function drawTile(type, x, y, tileX, tileY) {
     const currentMap = getCurrentMap();
     const currentMapW = getCurrentMapW();
@@ -119,6 +169,10 @@ export function createGameRenderer({
     const currentMapW = getCurrentMapW();
     const currentMapH = getCurrentMapH();
     const gameState = getGameState();
+    const minimap = buildMinimapState(currentMap, currentMapW, currentMapH);
+    const doorHintText = buildDoorHintText(currentTownId, currentAreaId, currentMap);
+    const currentTown = worldService.getTown(currentTownId);
+    const currentArea = worldService.getArea(currentTownId, currentAreaId);
 
     renderGameFrame({
       ctx,
@@ -146,6 +200,9 @@ export function createGameRenderer({
         currentMap,
         currentMapW,
         currentMapH,
+        currentTownId,
+        currentTownName: currentTown?.name || currentTownId,
+        currentAreaName: currentArea?.id || currentAreaId,
         getBuildingAtWorldTile: (tx, ty) => worldService.getBuilding(currentTownId, currentAreaId, tx, ty),
         moodPreset: worldService.getAreaMoodPreset(currentTownId, currentAreaId),
         currentAreaId,
@@ -165,11 +222,17 @@ export function createGameRenderer({
         settingsItems,
         userSettings,
         vfxEffects: vfxSystem.effects,
+        combatFeedback,
         trainingPopup,
         playerStats,
         playerInventory,
+        objectiveState,
         itemAlert,
         inventoryHint,
+        saveNoticeState,
+        combatRewardPanel,
+        minimap,
+        doorHintText,
         pauseMenuState,
         mouseUiState
       },

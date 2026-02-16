@@ -1,4 +1,4 @@
-import { AREA_KINDS, GAME_STATES, isFreeExploreState } from "../core/constants.js";
+import { AREA_KINDS, GAME_STATES, TILE_TYPES, isFreeExploreState } from "../core/constants.js";
 import { hash01 } from "../core/mathUtils.js";
 import {
   FONT_12,
@@ -480,6 +480,177 @@ function drawCombatHud(ctx, state, colors) {
   drawUiText(ctx, promptText, panelX + 12, panelY + panelH - 10, colors);
 }
 
+function drawObjectiveTracker(ctx, state, colors) {
+  if (!isFreeExploreState(state.gameState)) return;
+  const objectiveText = state.objectiveState?.text;
+  if (!objectiveText) return;
+
+  const panelX = 248;
+  const panelY = 14;
+  const panelW = Math.min(420, ctx.canvas.width - panelX - 14);
+  const panelH = 72;
+  drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors);
+
+  ctx.font = FONT_12;
+  drawUiText(ctx, "Current Objective", panelX + 12, panelY + 18, colors);
+
+  ctx.font = FONT_16;
+  const maxWidth = panelW - 20;
+  const words = objectiveText.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width <= maxWidth || line.length === 0) {
+      line = next;
+    } else {
+      lines.push(line);
+      line = word;
+    }
+    if (lines.length >= 2) break;
+  }
+  if (line && lines.length < 2) lines.push(line);
+  for (let i = 0; i < lines.length; i++) {
+    drawUiText(ctx, lines[i], panelX + 10, panelY + 39 + i * 18, colors);
+  }
+}
+
+function drawSaveNotice(ctx, state, colors) {
+  const notice = state.saveNoticeState;
+  if (!notice?.active || !notice.text) return;
+
+  const elapsed = performance.now() - notice.startedAt;
+  const duration = Math.max(1, notice.durationMs || 1600);
+  const fadeOutStart = duration - 260;
+  const alpha = elapsed > fadeOutStart
+    ? Math.max(0, 1 - (elapsed - fadeOutStart) / 260)
+    : 1;
+  if (alpha <= 0) return;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = FONT_16;
+  const textWidth = ctx.measureText(notice.text).width;
+  const boxW = Math.max(140, textWidth + 26);
+  const boxH = 32;
+  const boxX = Math.round((ctx.canvas.width - boxW) / 2);
+  const boxY = 10;
+  drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors);
+  drawUiText(ctx, notice.text, boxX + 12, boxY + 20, colors);
+  ctx.restore();
+}
+
+function drawCombatRewardPanel(ctx, state, colors) {
+  const panel = state.combatRewardPanel;
+  if (!panel?.active || !isFreeExploreState(state.gameState)) return;
+
+  const boxW = Math.min(420, ctx.canvas.width - 48);
+  const boxH = 108;
+  const boxX = Math.round((ctx.canvas.width - boxW) / 2);
+  const boxY = 52;
+  drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors, { titleBand: true });
+
+  ctx.font = FONT_20;
+  drawUiText(ctx, panel.title || "Battle Result", boxX + 14, boxY + 34, colors);
+
+  const lines = Array.isArray(panel.lines) ? panel.lines : [];
+  ctx.font = FONT_12;
+  for (let i = 0; i < Math.min(lines.length, 4); i++) {
+    drawUiText(ctx, String(lines[i]), boxX + 16, boxY + 56 + i * 14, colors);
+  }
+}
+
+function drawMinimap(ctx, state, colors) {
+  if (!isFreeExploreState(state.gameState)) return;
+  const minimap = state.minimap;
+  if (!minimap?.map || !Number.isFinite(minimap.width) || !Number.isFinite(minimap.height)) return;
+
+  const panelW = 156;
+  const panelH = 126;
+  const panelX = ctx.canvas.width - panelW - 14;
+  const panelY = 14;
+  drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors, { titleBand: true });
+
+  ctx.font = FONT_12;
+  drawUiText(ctx, "Map", panelX + 10, panelY + 16, colors);
+
+  const mapX = panelX + 10;
+  const mapY = panelY + 26;
+  const mapW = panelW - 20;
+  const mapH = panelH - 36;
+  const cell = Math.max(1, Math.min(mapW / minimap.width, mapH / minimap.height));
+  const drawW = Math.floor(minimap.width * cell);
+  const drawH = Math.floor(minimap.height * cell);
+  const offsetX = mapX + Math.floor((mapW - drawW) / 2);
+  const offsetY = mapY + Math.floor((mapH - drawH) / 2);
+
+  ctx.fillStyle = "rgba(12, 16, 20, 0.8)";
+  ctx.fillRect(offsetX, offsetY, drawW, drawH);
+
+  for (let y = 0; y < minimap.height; y++) {
+    const row = minimap.map[y];
+    if (!row) continue;
+    for (let x = 0; x < minimap.width; x++) {
+      const tile = row[x];
+      let color = "rgba(92, 138, 91, 0.68)";
+      if (tile === TILE_TYPES.PATH || tile === TILE_TYPES.INTERIOR_FLOOR || tile === TILE_TYPES.BAR_FLOOR) {
+        color = "rgba(205, 183, 136, 0.75)";
+      } else if (tile === TILE_TYPES.WALL || tile === TILE_TYPES.TREE) {
+        color = "rgba(54, 64, 70, 0.82)";
+      } else if (tile === TILE_TYPES.HILL) {
+        color = "rgba(122, 102, 77, 0.78)";
+      } else if (tile === TILE_TYPES.DOOR) {
+        color = "rgba(255, 194, 132, 0.9)";
+      }
+      ctx.fillStyle = color;
+      ctx.fillRect(offsetX + x * cell, offsetY + y * cell, Math.ceil(cell), Math.ceil(cell));
+    }
+  }
+
+  const doors = Array.isArray(minimap.doorTiles) ? minimap.doorTiles : [];
+  ctx.fillStyle = "rgba(255, 206, 151, 0.95)";
+  for (const door of doors) {
+    ctx.fillRect(offsetX + door.x * cell, offsetY + door.y * cell, Math.ceil(cell), Math.ceil(cell));
+  }
+
+  ctx.fillStyle = "rgba(255, 116, 116, 0.98)";
+  ctx.fillRect(
+    offsetX + minimap.playerTileX * cell - 1,
+    offsetY + minimap.playerTileY * cell - 1,
+    Math.max(2, Math.ceil(cell) + 1),
+    Math.max(2, Math.ceil(cell) + 1)
+  );
+
+  ctx.font = FONT_12;
+  drawUiText(ctx, `${state.currentTownName || ""} / ${state.currentAreaName || ""}`, panelX + 10, panelY + panelH - 4, colors);
+}
+
+function drawDoorHint(ctx, state, colors, dialogue) {
+  if (!isFreeExploreState(state.gameState)) return;
+  if (dialogue && typeof dialogue.isActive === "function" && dialogue.isActive()) return;
+  const text = state.doorHintText;
+  if (!text) return;
+
+  ctx.font = FONT_12;
+  const textW = ctx.measureText(text).width;
+  const boxW = Math.max(120, textW + 20);
+  const boxH = 24;
+  const boxX = Math.round((ctx.canvas.width - boxW) / 2);
+  const boxY = ctx.canvas.height - 52;
+  drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors);
+  drawUiText(ctx, text, boxX + 10, boxY + 16, colors);
+}
+
+function drawCombatDamageFlash(ctx, state) {
+  const flashUntil = state.combatFeedback?.playerDamageFlashUntil;
+  if (!Number.isFinite(flashUntil)) return;
+  const remaining = flashUntil - performance.now();
+  if (remaining <= 0) return;
+  const alpha = Math.max(0, Math.min(0.22, (remaining / 170) * 0.22));
+  ctx.fillStyle = `rgba(180, 44, 44, ${alpha})`;
+  ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+}
+
 function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
   const { itemAlert, inventoryHint, player, cam } = state;
 
@@ -917,13 +1088,19 @@ export function renderGameFrame({
   ctx.restore();
 
   drawItemNotifications(ctx, state, cameraZoom, tileSize, colors);
+  drawSaveNotice(ctx, state, colors);
   drawAtmosphere(ctx, canvas, colors, state);
   drawMoodGrading(ctx, canvas, state);
+  drawCombatDamageFlash(ctx, state);
   if (state.gameState === GAME_STATES.TITLE_SCREEN) {
     drawTitleScreenOverlay(ctx, canvas, state, colors);
     return;
   }
   drawCombatHud(ctx, state, colors);
+  drawObjectiveTracker(ctx, state, colors);
+  drawMinimap(ctx, state, colors);
+  drawDoorHint(ctx, state, colors, dialogue);
+  drawCombatRewardPanel(ctx, state, colors);
   if (typeof drawCustomOverlays === "function") {
     drawCustomOverlays({ ctx, canvas, colors, ui, state });
   }

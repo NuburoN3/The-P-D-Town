@@ -29,6 +29,7 @@ export function createGameController({
     if (!area) return false;
 
     const previousTownId = state.getCurrentTownId();
+    const previousAreaId = state.getCurrentAreaId();
     state.setCurrentTownId(townId);
     state.setCurrentAreaId(areaId);
     state.setCurrentMapContext({
@@ -45,6 +46,14 @@ export function createGameController({
     }
 
     syncMusicForCurrentArea();
+    if (typeof actions.onAreaChanged === "function") {
+      actions.onAreaChanged({
+        previousTownId,
+        previousAreaId,
+        townId,
+        areaId
+      });
+    }
     return true;
   }
 
