@@ -7,6 +7,12 @@ export class AssetManager {
     this.sprites = {};
   }
 
+  /**
+   * Load a sprite by creating an Image element and assigning src.
+   * @param {string} name
+   * @param {string|null} src
+   * @returns {HTMLImageElement|object}
+   */
   loadSprite(name, src) {
     const img = new Image();
     img.src = src;
@@ -14,14 +20,31 @@ export class AssetManager {
     return img;
   }
 
+  /**
+   * Load multiple sprites from a manifest object.
+   * @param {{[k:string]: string}} manifest
+   */
   loadManifest(manifest) {
     for (const [name, src] of Object.entries(manifest)) {
       this.loadSprite(name, src);
     }
   }
 
+  /**
+   * Retrieve the sprite by name, or null.
+   * @param {string} name
+   */
   getSprite(name) {
     return this.sprites[name] || null;
+  }
+
+  /**
+   * Check whether a sprite exists in the manager.
+   * @param {string} name
+   * @returns {boolean}
+   */
+  hasSprite(name) {
+    return Object.prototype.hasOwnProperty.call(this.sprites, name);
   }
 }
 

@@ -4,11 +4,22 @@
 
 import { TILE, TILE_TYPES } from "./constants.js";
 
+/**
+ * CollisionService provides tile and NPC collision helpers.
+ */
 export class CollisionService {
+  /**
+   * @param {{tileSize?: number}} [opts]
+   */
   constructor({ tileSize = TILE } = {}) {
     this.tileSize = tileSize;
   }
 
+  /**
+   * Check rectangle overlap between two axis-aligned rects.
+   * @param {{x:number,y:number,width:number,height:number}} a
+   * @param {{x:number,y:number,width:number,height:number}} b
+   */
   rectsOverlap(a, b) {
     return (
       a.x < b.x + b.width &&
@@ -18,6 +29,14 @@ export class CollisionService {
     );
   }
 
+  /**
+   * Return the tile type at a pixel coordinate, or TREE if out of bounds.
+   * @param {number} px
+   * @param {number} py
+   * @param {Array<Array<number>>} currentMap
+   * @param {number} currentMapW
+   * @param {number} currentMapH
+   */
   tileAtPixel(px, py, currentMap, currentMapW, currentMapH) {
     const tx = Math.floor(px / this.tileSize);
     const ty = Math.floor(py / this.tileSize);
@@ -27,6 +46,9 @@ export class CollisionService {
     return currentMap[ty][tx];
   }
 
+  /**
+   * Return whether a pixel location is considered blocked.
+   */
   isBlockedAtPixel(px, py, currentMap, currentMapW, currentMapH) {
     const tile = this.tileAtPixel(px, py, currentMap, currentMapW, currentMapH);
     return (
@@ -45,16 +67,24 @@ export class CollisionService {
     );
   }
 
+  /**
+   * Check whether placing a tile at nx,ny would collide with blocked tiles.
+   */
   collides(nx, ny, currentMap, currentMapW, currentMapH) {
     const inset = 5;
-    const corners = [
+    const right = nx + this.tileSize - inset;
+    const bottom = ny + this.tileSize - inset;
+
+    // iterate corner coordinates without allocating an array each call
+    const checks = [
       [nx + inset, ny + inset],
-      [nx + this.tileSize - inset, ny + inset],
-      [nx + inset, ny + this.tileSize - inset],
-      [nx + this.tileSize - inset, ny + this.tileSize - inset]
+      [right, ny + inset],
+      [nx + inset, bottom],
+      [right, bottom]
     ];
 
-    for (const [px, py] of corners) {
+    for (let i = 0; i < 4; i++) {
+      const [px, py] = checks[i];
       if (this.isBlockedAtPixel(px, py, currentMap, currentMapW, currentMapH)) {
         return true;
       }
@@ -63,6 +93,9 @@ export class CollisionService {
     return false;
   }
 
+  /**
+   * Check rectangle collision with NPCs in the same area.
+   */
   collidesWithNPC(nx, ny, npcs, currentAreaId) {
     const playerRect = {
       x: nx + 5,
@@ -80,16 +113,24 @@ export class CollisionService {
     return false;
   }
 
+  /**
+   * If any corner overlaps a door tile, return its tx/ty.
+   */
   doorFromCollision(nx, ny, currentMap, currentMapW, currentMapH) {
+
     const inset = 5;
-    const corners = [
+    const right = nx + this.tileSize - inset;
+    const bottom = ny + this.tileSize - inset;
+
+    const checks = [
       [nx + inset, ny + inset],
-      [nx + this.tileSize - inset, ny + inset],
-      [nx + inset, ny + this.tileSize - inset],
-      [nx + this.tileSize - inset, ny + this.tileSize - inset]
+      [right, ny + inset],
+      [nx + inset, bottom],
+      [right, bottom]
     ];
 
-    for (const [px, py] of corners) {
+    for (let i = 0; i < 4; i++) {
+      const [px, py] = checks[i];
       const tx = Math.floor(px / this.tileSize);
       const ty = Math.floor(py / this.tileSize);
       if (tx < 0 || ty < 0 || tx >= currentMapW || ty >= currentMapH) continue;

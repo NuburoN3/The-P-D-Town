@@ -4,6 +4,23 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/**/*.test.mjs",
-    "test:content": "node --test tests/content-validation.test.mjs"
+    "test:content": "node --test tests/content-validation.test.mjs",
+    "lint": "eslint . --ext .js",
+    "lint:fix": "eslint . --ext .js --fix",
+    "format": "prettier --check .",
+    "format:fix": "prettier --write .",
+    "coverage": "c8 node --test tests/**/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "optimize:assets": "node scripts/optimize-assets.js"
+  },
+  "devDependencies": {
+    "eslint": "^8.50.0",
+    "prettier": "^2.8.8",
+    "eslint-config-prettier": "^8.8.0",
+    "c8": "^7.13.0",
+    "typescript": "^5.6.2"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
