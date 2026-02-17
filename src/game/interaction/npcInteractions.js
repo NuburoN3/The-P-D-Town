@@ -89,7 +89,8 @@ export function createNPCInteractionHandler({
   openYesNoChoice,
   spawnVisualEffect,
   getTownProgress,
-  handleFeatureNPCInteraction
+  handleFeatureNPCInteraction,
+  syncObjectiveState = () => { }
 }) {
   function normalizeProgressState(tp) {
     normalizeGlobalStoryFlags(gameFlags);
@@ -105,16 +106,6 @@ export function createNPCInteractionHandler({
         tp.rumorQuestActive = false;
         tp.enduranceUnlocked = true;
       }
-      if (
-        gameFlags.completedTraining &&
-        !tp.rumorQuestOffered &&
-        !tp.rumorQuestCompleted &&
-        !tp.rumorQuestReported
-      ) {
-        tp.rumorQuestOffered = true;
-        tp.rumorQuestActive = true;
-        gameFlags.taikoHouseUnlocked = true;
-      }
       if (gameFlags.completedTraining && tp.rumorQuestOffered && !tp.rumorQuestCompleted && !tp.rumorQuestActive) {
         tp.rumorQuestActive = true;
       }
@@ -128,16 +119,6 @@ export function createNPCInteractionHandler({
       normalized.rumorQuestCompleted = true;
       normalized.rumorQuestActive = false;
       normalized.enduranceUnlocked = true;
-    }
-    if (
-      gameFlags.completedTraining &&
-      !normalized.rumorQuestOffered &&
-      !normalized.rumorQuestCompleted &&
-      !normalized.rumorQuestReported
-    ) {
-      normalized.rumorQuestOffered = true;
-      normalized.rumorQuestActive = true;
-      gameFlags.taikoHouseUnlocked = true;
     }
     if (gameFlags.completedTraining && normalized.rumorQuestOffered && !normalized.rumorQuestCompleted && !normalized.rumorQuestActive) {
       normalized.rumorQuestActive = true;
@@ -308,6 +289,7 @@ export function createNPCInteractionHandler({
       "You will do this in order: piazza, then chapel, then bar.",
       "Return only after all three reports are confirmed."
     ]);
+    syncObjectiveState();
   }
 
   function handleBoglandHanamiInteraction(npc, tp) {
@@ -342,6 +324,7 @@ export function createNPCInteractionHandler({
               ? trainingContent.bogQuest.acceptedLines
               : ["Good. Clear the bog stalkers, then return to me."];
             showDialogue(npc.name, acceptedLines);
+            syncObjectiveState();
           } else {
             const declinedLines = Array.isArray(trainingContent?.bogQuest?.declinedLines)
               ? trainingContent.bogQuest.declinedLines
@@ -385,6 +368,7 @@ export function createNPCInteractionHandler({
                 ? trainingContent.bogQuest.acceptedLines
                 : ["Good. Clear the bog stalkers, then return to me."]
             );
+            syncObjectiveState();
           } else {
             showDialogue(
               npc.name,
@@ -437,7 +421,15 @@ export function createNPCInteractionHandler({
     if (gameFlags.completedTraining) {
       if (!tp.rumorQuestOffered) {
         showDialogue(npc.name, trainingContent.postCompleteDialogue, () => {
-          startInvestigationRoute(tp, npc.name);
+          showDialogue(npc.name, trainingContent.nextChallengeQuestion, () => {
+            openYesNoChoice((selectedOption) => {
+              if (selectedOption === "Yes") {
+                startInvestigationRoute(tp, npc.name);
+              } else {
+                showDialogue(npc.name, trainingContent.declineDialogue);
+              }
+            });
+          });
         });
         return;
       }
@@ -474,6 +466,7 @@ export function createNPCInteractionHandler({
           "Excellent. That kind of judgment protects a town.",
           "Now begin endurance drills on the mat."
         ]);
+        syncObjectiveState();
         return;
       }
 
@@ -493,6 +486,7 @@ export function createNPCInteractionHandler({
 
       tp.enduranceUnlocked = true;
       showDialogue(npc.name, trainingContent.enduranceAcceptedDialogue);
+      syncObjectiveState();
       return;
     }
 
@@ -533,6 +527,7 @@ export function createNPCInteractionHandler({
           }
 
           showDialogue(npc.name, trainingContent.itemReceivedMessage);
+          syncObjectiveState();
         } else {
           showDialogue(npc.name, trainingContent.declineDialogue);
         }

@@ -40,6 +40,7 @@ export function createInteractionSystem({
   advanceDialogue,
   getInteractPressed,
   clearInteractPressed,
+  syncObjectiveState = () => { },
   spawnVisualEffect = () => { },
   handleFeatureNPCInteraction = () => false,
   handleFeatureStateInteraction = () => false
@@ -83,7 +84,8 @@ export function createInteractionSystem({
     openYesNoChoice,
     spawnVisualEffect,
     getTownProgress: getCurrentTownProgress,
-    handleFeatureNPCInteraction
+    handleFeatureNPCInteraction,
+    syncObjectiveState
   });
 
   const beginDoorSequence = createDoorSequenceStarter({

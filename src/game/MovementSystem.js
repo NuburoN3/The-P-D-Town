@@ -4,11 +4,13 @@ import { clamp, lerp } from "../core/mathUtils.js";
 export function createMovementSystem({
   keys,
   getActionPressed = null,
+  getSprintPressed = null,
   tileSize,
   spriteFramesPerRow,
   cameraZoom,
   musicManager,
-  walkSoundIntervalMs = 300
+  walkSoundIntervalMs = 300,
+  sprintMultiplier = 1.5
 }) {
   let lastWalkSoundTime = 0;
 
@@ -49,21 +51,23 @@ export function createMovementSystem({
 
     let dx = 0;
     let dy = 0;
+    const sprinting = typeof getSprintPressed === "function" && Boolean(getSprintPressed());
+    const movementSpeed = player.speed * (sprinting ? sprintMultiplier : 1);
 
     if (isPressed("moveUp", ["w", "arrowup"])) {
-      dy -= player.speed * dtScale;
+      dy -= movementSpeed * dtScale;
       player.dir = "up";
     }
     if (isPressed("moveDown", ["s", "arrowdown"])) {
-      dy += player.speed * dtScale;
+      dy += movementSpeed * dtScale;
       player.dir = "down";
     }
     if (isPressed("moveLeft", ["a", "arrowleft"])) {
-      dx -= player.speed * dtScale;
+      dx -= movementSpeed * dtScale;
       player.dir = "left";
     }
     if (isPressed("moveRight", ["d", "arrowright"])) {
-      dx += player.speed * dtScale;
+      dx += movementSpeed * dtScale;
       player.dir = "right";
     }
 

@@ -27,7 +27,7 @@ export function createPauseMenuSystem({
         selected: 0,
         hovered: -1,
         visibility: 0,
-        options: ["Resume", "Save Game", "Load Game", "Settings", "Quit"],
+        options: ["Resume", "Inventory", "Attributes", "Save Game", "Load Game", "Settings", "Quit"],
 
         // Settings sub-menu state
         settingsUiState: {
@@ -80,7 +80,7 @@ export function createPauseMenuSystem({
         }
     }
 
-    function handleKeyDown(key, { onResume, onSave, onLoad, onQuit, inputManager }) {
+    function handleKeyDown(key, { onResume, onInventory, onAttributes, onSave, onLoad, onQuit, inputManager }) {
         if (state.mode === "settings") {
             handleSettingsKeyDown(key, inputManager);
             return;
@@ -98,7 +98,7 @@ export function createPauseMenuSystem({
             state.selected = (state.selected + 1) % options.length;
             musicManager.playSfx("menuMove");
         } else if (key === "enter" || key === "space") {
-            selectOption({ onResume, onSave, onLoad, onQuit });
+            selectOption({ onResume, onInventory, onAttributes, onSave, onLoad, onQuit });
         }
     }
 
@@ -146,10 +146,14 @@ export function createPauseMenuSystem({
         }
     }
 
-    function selectOption({ onResume, onSave, onLoad, onQuit }) {
+    function selectOption({ onResume, onInventory, onAttributes, onSave, onLoad, onQuit }) {
         const option = options[state.selected];
         if (option === "Resume") {
             onResume();
+        } else if (option === "Inventory") {
+            onInventory();
+        } else if (option === "Attributes") {
+            onAttributes();
         } else if (option === "Save Game") {
             onSave();
         } else if (option === "Load Game") {
@@ -164,14 +168,15 @@ export function createPauseMenuSystem({
     }
 
     function handleMouseMove(mouseX, mouseY) {
-        const menuW = 280;
-        const menuH = 320;
+        const menuW = 340;
+        const optionStartY = 106;
+        const optionStep = 46;
+        const minMenuH = 392;
+        const requiredMenuH = optionStartY + Math.max(0, options.length - 1) * optionStep + 120;
+        const menuH = Math.max(minMenuH, requiredMenuH);
         const slideOffset = (1 - Math.max(0, Math.min(1, state.visibility))) * 34;
         const menuX = canvas.width - menuW - 24 + slideOffset;
         const menuY = (canvas.height - menuH) / 2;
-
-        const optionStartY = 74;
-        const optionStep = 42;
 
         let hovered = -1;
         for (let i = 0; i < options.length; i++) {
@@ -195,6 +200,7 @@ export function createPauseMenuSystem({
     }
 
     function handleClick(mouseX, mouseY, callbacks) {
+        handleMouseMove(mouseX, mouseY);
         if (state.hovered >= 0) {
             selectOption(callbacks);
             return true;

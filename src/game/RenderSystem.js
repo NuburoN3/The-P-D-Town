@@ -42,11 +42,12 @@ const MOOD_PRESETS = Object.freeze({
 });
 
 const PAUSE_OPTION_SUBTITLES = Object.freeze({
+  Resume: "Return to your current scene",
   Inventory: "Check your satchel and gathered goods",
   Attributes: "Inspect your discipline and growth",
   Settings: "Tune controls and visual comfort",
-  Save: "Save your current game",
-  Load: "Restore your last manual save",
+  "Save Game": "Save your current game",
+  "Load Game": "Restore your last manual save",
   Quit: `Leave ${BRANDING.TITLE} for now`
 });
 
@@ -286,8 +287,8 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
   ctx.font = FONT_12;
   ctx.fillStyle = highContrast ? "#d9f2ff" : "#5f3b19";
   const instructionX = menuX + 28;
-  ctx.fillText("W/S or Arrows: Move", instructionX, menuY + menuH - 60);
-  ctx.fillText(`Space: Select   ${getPrimaryBindingLabel(state, "pause")}: Resume`, instructionX, menuY + menuH - 40);
+  ctx.fillText("W/S or Arrows: Move   Mouse: Hover", instructionX, menuY + menuH - 60);
+  ctx.fillText(`Space/Enter/Left Click: Select   ${getPrimaryBindingLabel(state, "pause")}: Resume`, instructionX, menuY + menuH - 40);
   ctx.fillText("Pad: D-Pad/Stick Move   A Select   B/Start Resume", instructionX, menuY + menuH - 20);
 }
 
@@ -420,8 +421,8 @@ function drawSettingsOverlay(ctx, state, canvas, ui, colors) {
   const instructionsY = boxY + boxH - 74;
   ctx.font = FONT_12;
   ctx.fillStyle = labelColor;
-  ctx.fillText("W/S or Arrows: Navigate", boxX + 24, instructionsY);
-  ctx.fillText("Space/Enter or Gamepad A: Apply/Toggle", boxX + 24, instructionsY + 18);
+  ctx.fillText("W/S or Arrows: Navigate   Mouse: Hover", boxX + 24, instructionsY);
+  ctx.fillText("Space/Enter/Left Click or Gamepad A: Apply/Toggle", boxX + 24, instructionsY + 18);
   ctx.fillText("Esc or Gamepad B/Start: Back", boxX + 24, instructionsY + 36);
 
   if (statusText) {
@@ -1183,12 +1184,12 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
 
   ctx.font = FONT_12;
   ctx.fillStyle = `rgba(245, 230, 202, ${0.58 + pulse * 0.42})`;
-  ctx.fillText("Arrow keys or stick: Navigate", panelX + 22, panelY + panelH - 38);
-  ctx.fillText("Enter/Space or A/Start: Confirm", panelX + 22, panelY + panelH - 20);
+  ctx.fillText("Arrow keys, stick, or mouse hover: Navigate", panelX + 22, panelY + panelH - 38);
+  ctx.fillText("Enter/Space/Left Click or A/Start: Confirm", panelX + 22, panelY + panelH - 20);
 
   if (titleState.showHowTo) {
     const helpW = Math.min(canvas.width - 120, 520);
-    const helpH = 236;
+    const helpH = 252;
     const helpX = Math.round((canvas.width - helpW) / 2);
     const helpY = Math.round((canvas.height - helpH) / 2);
     drawSkinnedPanel(ctx, helpX, helpY, helpW, helpH, colors, { titleBand: true });
@@ -1197,12 +1198,13 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
     ctx.font = FONT_16;
     drawUiText(ctx, `Move: ${getPrimaryBindingLabel(state, "moveUp")} ${getPrimaryBindingLabel(state, "moveLeft")} ${getPrimaryBindingLabel(state, "moveDown")} ${getPrimaryBindingLabel(state, "moveRight")} or arrows`, helpX + 20, helpY + 72, colors);
     drawUiText(ctx, `Interact / Advance: ${getPrimaryBindingLabel(state, "interact")}`, helpX + 20, helpY + 96, colors);
-    drawUiText(ctx, `Attack: ${getPrimaryBindingLabel(state, "attack")}`, helpX + 20, helpY + 120, colors);
-    drawUiText(ctx, `Pause Menu: ${getPrimaryBindingLabel(state, "pause")}`, helpX + 20, helpY + 144, colors);
-    drawUiText(ctx, `Inventory: ${getPrimaryBindingLabel(state, "inventory")}`, helpX + 20, helpY + 168, colors);
-    drawUiText(ctx, "Gamepad: Left Stick + A/X + Start", helpX + 20, helpY + 192, colors);
+    drawUiText(ctx, `Attack: ${getPrimaryBindingLabel(state, "attack")} or Left Click`, helpX + 20, helpY + 120, colors);
+    drawUiText(ctx, "Sprint: Hold Right Click", helpX + 20, helpY + 144, colors);
+    drawUiText(ctx, `Pause Menu: ${getPrimaryBindingLabel(state, "pause")}`, helpX + 20, helpY + 168, colors);
+    drawUiText(ctx, `Inventory: ${getPrimaryBindingLabel(state, "inventory")} (Right Click item to inspect)`, helpX + 20, helpY + 192, colors);
+    drawUiText(ctx, "Gamepad: Left Stick + A/X + Start", helpX + 20, helpY + 216, colors);
     ctx.font = FONT_12;
-    drawUiText(ctx, "Press ESC/B to close this panel", helpX + 20, helpY + 218, colors);
+    drawUiText(ctx, "Press ESC/B to close this panel", helpX + 20, helpY + 232, colors);
   }
 
   if (titleState.fadeOutActive) {

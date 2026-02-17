@@ -14,6 +14,7 @@ export function createCombatSystem({
 }) {
   const catalog = { ...(attackCatalog || createDefaultAttackCatalog(tileSize)) };
   const hitIdsInCurrentSwing = new Set();
+  const npcHitIdsInCurrentSwing = new Set();
   const handlers = {
     onRequestVfx: eventHandlers.onRequestVfx || spawnVisualEffect,
     onEntityDamaged: eventHandlers.onEntityDamaged || (() => { }),
@@ -94,7 +95,14 @@ export function createCombatSystem({
     if (player.attackState === "recovery" && now >= player.attackRecoveryUntil) {
       player.attackState = "idle";
       hitIdsInCurrentSwing.clear();
+      npcHitIdsInCurrentSwing.clear();
     }
+  }
+
+  function reactNpcToAttack(npc, now) {
+    npc.hitShakeUntil = now + 220;
+    npc.hitBubbleUntil = now + 760;
+    npc.hitBubbleText = "Ow!";
   }
 
   function hitEnemy(player, enemy, profile, now) {
@@ -165,6 +173,29 @@ export function createCombatSystem({
 
       hitIdsInCurrentSwing.add(enemy.id);
       hitEnemy(player, enemy, profile, now);
+    }
+  }
+
+  function processPlayerNpcHits({ now, player, npcs, currentAreaId, profile }) {
+    if (player.attackState !== "active") return;
+    if (!profile || !Array.isArray(npcs) || npcs.length === 0) return;
+
+    const attackCenter = profile.getAttackCenter
+      ? profile.getAttackCenter(player)
+      : { x: player.x + tileSize / 2, y: player.y + tileSize / 2 };
+    const hitRadius = Number.isFinite(profile.hitRadius) ? profile.hitRadius : tileSize * 0.7;
+
+    for (const npc of npcs) {
+      if (!npc || npc.world !== currentAreaId) continue;
+      if (npcHitIdsInCurrentSwing.has(npc.id)) continue;
+
+      const npcCenterX = npc.x + npc.width / 2;
+      const npcCenterY = npc.y + npc.height / 2;
+      const d = distance(attackCenter.x, attackCenter.y, npcCenterX, npcCenterY);
+      if (d > hitRadius + npc.width * 0.42) continue;
+
+      npcHitIdsInCurrentSwing.add(npc.id);
+      reactNpcToAttack(npc, now);
     }
   }
 
@@ -250,6 +281,7 @@ export function createCombatSystem({
     requestedAttackId = null,
     player,
     enemies,
+    npcs = null,
     currentAreaId
   }) {
     if (!player || !Array.isArray(enemies)) return;
@@ -262,6 +294,7 @@ export function createCombatSystem({
       player.attackState = "idle";
       player.activeAttackId = null;
       hitIdsInCurrentSwing.clear();
+      npcHitIdsInCurrentSwing.clear();
       return;
     }
 
@@ -282,6 +315,13 @@ export function createCombatSystem({
       now,
       player,
       enemies,
+      currentAreaId,
+      profile: player.attackState === "active" ? activeProfile : null
+    });
+    processPlayerNpcHits({
+      now,
+      player,
+      npcs,
       currentAreaId,
       profile: player.attackState === "active" ? activeProfile : null
     });

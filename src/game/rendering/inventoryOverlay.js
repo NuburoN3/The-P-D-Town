@@ -136,6 +136,36 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     }
   }
 
+  if (mouseUiState && mouseUiState.inventoryDetailsRequest) {
+    if (hoveredItemIndex >= 0) {
+      mouseUiState.inventoryDetailsIndex = hoveredItemIndex;
+      mouseUiState.inventoryDetailsAnchorX = mouseUiState.x;
+      mouseUiState.inventoryDetailsAnchorY = mouseUiState.y;
+    } else {
+      mouseUiState.inventoryDetailsIndex = -1;
+      mouseUiState.inventoryDetailsAnchorX = -1;
+      mouseUiState.inventoryDetailsAnchorY = -1;
+    }
+    mouseUiState.inventoryDetailsRequest = false;
+  }
+
+  let inspectedItem = null;
+  if (mouseUiState && !mouseUiState.insideCanvas && mouseUiState.inventoryDetailsIndex !== -1) {
+    mouseUiState.inventoryDetailsIndex = -1;
+    mouseUiState.inventoryDetailsAnchorX = -1;
+    mouseUiState.inventoryDetailsAnchorY = -1;
+  }
+  const inspectedIndex = Number.isInteger(mouseUiState?.inventoryDetailsIndex)
+    ? mouseUiState.inventoryDetailsIndex
+    : -1;
+  if (inspectedIndex >= 0 && inspectedIndex < sortedItems.length) {
+    inspectedItem = sortedItems[inspectedIndex];
+  } else if (mouseUiState && mouseUiState.inventoryDetailsIndex !== -1) {
+    mouseUiState.inventoryDetailsIndex = -1;
+    mouseUiState.inventoryDetailsAnchorX = -1;
+    mouseUiState.inventoryDetailsAnchorY = -1;
+  }
+
   for (let i = 0; i < totalSlots; i++) {
     const col = i % cols;
     const row = Math.floor(i / cols);
@@ -187,41 +217,93 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     }
   }
 
-  const detailsX = gridX + gridWidth + 18;
-  const detailsY = gridY;
-  const detailsW = boxX + boxW - detailsX - 20;
-  const detailsH = gridHeight;
-  drawSkinnedPanel(ctx, detailsX, detailsY, detailsW, detailsH, colors);
-  ctx.font = FONT_16;
-  drawUiText(ctx, "Item Details", detailsX + 10, detailsY + 20, colors);
-  if (!hoveredItem) {
+  if (hoveredItem && !inspectedItem) {
+    const tooltipText = hoveredItem.name;
     ctx.font = FONT_12;
-    drawUiText(ctx, "Hover an item to inspect category and usage.", detailsX + 10, detailsY + 42, colors);
-  } else {
-    ctx.font = FONT_16;
-    drawUiText(ctx, hoveredItem.name, detailsX + 10, detailsY + 42, colors);
-    ctx.font = FONT_12;
-    drawUiText(ctx, `Category: ${hoveredItem.category}`, detailsX + 10, detailsY + 62, colors);
-    drawUiText(ctx, `Quantity: ${hoveredItem.count}`, detailsX + 10, detailsY + 78, colors);
-    drawUiText(ctx, `Usage: ${hoveredItem.usage}`, detailsX + 10, detailsY + 94, colors);
+    const paddingX = 8;
+    const paddingY = 6;
+    const textW = Math.ceil(ctx.measureText(tooltipText).width);
+    const bubbleW = textW + paddingX * 2;
+    const bubbleH = 20;
+    const maxX = canvas.width - bubbleW - 8;
+    const maxY = canvas.height - bubbleH - 8;
+    const bubbleX = Math.max(8, Math.min(maxX, mouseUiState.x + 14));
+    const bubbleY = Math.max(8, Math.min(maxY, mouseUiState.y - bubbleH - 10));
+    ctx.fillStyle = "rgba(18, 14, 10, 0.86)";
+    ctx.fillRect(bubbleX, bubbleY, bubbleW, bubbleH);
+    ctx.strokeStyle = "rgba(255, 231, 167, 0.7)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bubbleX + 0.5, bubbleY + 0.5, bubbleW - 1, bubbleH - 1);
+    drawUiText(ctx, tooltipText, bubbleX + paddingX, bubbleY + 14, colors);
+  }
 
-    const descWords = hoveredItem.description.split(/\s+/).filter(Boolean);
+  if (inspectedItem && mouseUiState?.insideCanvas) {
+    ctx.font = FONT_12;
+    const lines = [];
+    const descWords = inspectedItem.description.split(/\s+/).filter(Boolean);
     let descLine = "";
-    const descLines = [];
-    const maxDescW = detailsW - 20;
+    const maxDescW = 300;
     for (const word of descWords) {
       const next = descLine ? `${descLine} ${word}` : word;
       if (ctx.measureText(next).width <= maxDescW || descLine.length === 0) {
         descLine = next;
       } else {
-        descLines.push(descLine);
+        lines.push(descLine);
         descLine = word;
       }
-      if (descLines.length >= 4) break;
+      if (lines.length >= 7) break;
     }
-    if (descLine && descLines.length < 4) descLines.push(descLine);
-    for (let i = 0; i < descLines.length; i++) {
-      drawUiText(ctx, descLines[i], detailsX + 10, detailsY + 116 + i * 14, colors);
+    if (descLine && lines.length < 8) lines.push(descLine);
+
+    const paddingX = 10;
+    const lineH = 14;
+    const bubbleW = Math.min(
+      320,
+      Math.ceil(lines.reduce((max, line) => Math.max(max, ctx.measureText(line).width), 0)) + paddingX * 2
+    );
+    const bubbleH = lines.length * lineH + 12;
+    const anchorX = Number.isFinite(mouseUiState.inventoryDetailsAnchorX)
+      ? mouseUiState.inventoryDetailsAnchorX
+      : mouseUiState.x;
+    const anchorY = Number.isFinite(mouseUiState.inventoryDetailsAnchorY)
+      ? mouseUiState.inventoryDetailsAnchorY
+      : mouseUiState.y;
+    const maxX = canvas.width - bubbleW - 8;
+    const maxY = canvas.height - bubbleH - 8;
+    const bubbleX = Math.max(8, Math.min(maxX, anchorX + 14));
+    const bubbleY = Math.max(8, Math.min(maxY, anchorY - bubbleH - 12));
+
+    const inspectedCol = inspectedIndex % cols;
+    const inspectedRow = Math.floor(inspectedIndex / cols);
+    const inspectedSlotX = gridX + inspectedCol * (slotSize + margin);
+    const inspectedSlotY = gridY + inspectedRow * (slotSize + margin);
+    const mx = mouseUiState.x;
+    const my = mouseUiState.y;
+    const hoveringSlot =
+      mx >= inspectedSlotX &&
+      mx <= inspectedSlotX + slotSize &&
+      my >= inspectedSlotY &&
+      my <= inspectedSlotY + slotSize;
+    const hoveringBubble =
+      mx >= bubbleX &&
+      mx <= bubbleX + bubbleW &&
+      my >= bubbleY &&
+      my <= bubbleY + bubbleH;
+    if (!hoveringSlot && !hoveringBubble) {
+      mouseUiState.inventoryDetailsIndex = -1;
+      mouseUiState.inventoryDetailsAnchorX = -1;
+      mouseUiState.inventoryDetailsAnchorY = -1;
+      return;
+    }
+
+    ctx.fillStyle = "rgba(18, 14, 10, 0.9)";
+    ctx.fillRect(bubbleX, bubbleY, bubbleW, bubbleH);
+    ctx.strokeStyle = "rgba(255, 231, 167, 0.78)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bubbleX + 0.5, bubbleY + 0.5, bubbleW - 1, bubbleH - 1);
+
+    for (let i = 0; i < lines.length; i++) {
+      drawUiText(ctx, lines[i], bubbleX + paddingX, bubbleY + 16 + i * lineH, colors);
     }
   }
 }

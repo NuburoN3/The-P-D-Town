@@ -70,6 +70,8 @@ export function createInputController({
         if (gameState === GAME_STATES.PAUSE_MENU) {
             const pauseActions = {
                 onResume: actions.onResume,
+                onInventory: actions.onInventory,
+                onAttributes: actions.onAttributes,
                 onSave: actions.onSave,
                 onLoad: actions.onLoad,
                 onQuit: actions.onQuit,

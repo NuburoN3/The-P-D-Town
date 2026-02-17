@@ -18,6 +18,8 @@ export function createInputBindings({
   performStartNewGame,
   performLoadGame,
   resumeFromPauseMenu,
+  openInventoryFromPauseMenu,
+  openAttributesFromPauseMenu,
   returnToPauseMenu,
   openPauseMenu,
   isFreeExploreState,
@@ -26,12 +28,15 @@ export function createInputBindings({
   handleTitleLeftClick,
   handlePauseMenuLeftClick
 }) {
-  const POINTER_LOCK_ENABLED = false;
+  const POINTER_LOCK_ENABLED = true;
   let pointerLockPrimed = false;
 
   function normalizeInputKey(key) {
-    if (key === " ") return "space";
-    return String(key || "").toLowerCase();
+    const normalized = String(key || "").toLowerCase();
+    if (normalized === " " || normalized === "space" || normalized === "spacebar") {
+      return "space";
+    }
+    return normalized;
   }
 
   function isPauseKey(key) {
@@ -61,7 +66,9 @@ export function createInputBindings({
     return (
       gameState === gameStates.TITLE_SCREEN ||
       gameState === gameStates.PAUSE_MENU ||
-      gameState === gameStates.INVENTORY
+      gameState === gameStates.INVENTORY ||
+      gameState === gameStates.ATTRIBUTES ||
+      gameState === gameStates.SETTINGS
     );
   }
 
@@ -96,19 +103,50 @@ export function createInputBindings({
     canvas.addEventListener("mousemove", updateMouseUiPosition);
     canvas.addEventListener("mouseleave", () => {
       mouseUiState.insideCanvas = false;
+      mouseUiState.sprintPressed = false;
       clearMenuHoverState();
+    });
+    canvas.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
     });
     canvas.addEventListener("mousedown", (e) => {
       pointerLockPrimed = true;
       updateMouseUiPosition(e);
+      if (e.button === 2) {
+        if (getGameState() === gameStates.INVENTORY) {
+          mouseUiState.inventoryDetailsRequest = true;
+        } else {
+          mouseUiState.sprintPressed = true;
+        }
+        e.preventDefault();
+      }
       syncPointerLockWithState({ fromUserGesture: true });
+    });
+    canvas.addEventListener("mouseup", (e) => {
+      if (e.button === 2) {
+        mouseUiState.sprintPressed = false;
+      }
+    });
+    window.addEventListener("mouseup", (e) => {
+      if (e.button === 2) {
+        mouseUiState.sprintPressed = false;
+      }
+    });
+    window.addEventListener("blur", () => {
+      mouseUiState.sprintPressed = false;
     });
     canvas.addEventListener("click", (e) => {
       if (e.button !== 0) return;
       updateMouseUiPosition(e);
+      const gameState = getGameState();
       const handledByTitle = handleTitleLeftClick(mouseUiState.x, mouseUiState.y);
       const handledByPause = handledByTitle ? false : handlePauseMenuLeftClick(mouseUiState.x, mouseUiState.y);
       if (handledByTitle || handledByPause) {
+        e.preventDefault();
+        return;
+      }
+      if (isFreeExploreState(gameState)) {
+        input.triggerAttackPressed();
         e.preventDefault();
       }
     });
@@ -202,6 +240,8 @@ export function createInputBindings({
       if (gameState === gameStates.PAUSE_MENU || gameState === gameStates.SETTINGS) {
         pauseMenuSystem.handleKeyDown(key, {
           onResume: resumeFromPauseMenu,
+          onInventory: openInventoryFromPauseMenu,
+          onAttributes: openAttributesFromPauseMenu,
           onSave: performSaveGame,
           onLoad: performLoadGame,
           onQuit: () => {

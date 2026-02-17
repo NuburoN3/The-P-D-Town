@@ -76,7 +76,7 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
 
     function handleKeyDown(key, { onStartGame, onContinueGame }) {
         if (state.showHowTo) {
-            if (key === "escape" || key === "enter" || key === " ") {
+            if (key === "escape" || key === "enter" || key === "space" || key === " ") {
                 state.showHowTo = false;
                 musicManager.playSfx("menuConfirm");
             }
@@ -89,7 +89,7 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
         } else if (key === "arrowdown" || key === "s") {
             state.selected = (state.selected + 1) % state.options.length;
             musicManager.playSfx("menuMove");
-        } else if (key === "enter" || key === " " || key === "e") {
+        } else if (key === "enter" || key === "space" || key === " " || key === "e") {
             confirmSelection({ onStartGame, onContinueGame });
         }
     }

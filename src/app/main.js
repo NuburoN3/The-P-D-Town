@@ -85,7 +85,12 @@ const setPreviousGameState = (nextState) => {
 const mouseUiState = {
   x: 0,
   y: 0,
-  insideCanvas: false
+  insideCanvas: false,
+  sprintPressed: false,
+  inventoryDetailsRequest: false,
+  inventoryDetailsIndex: -1,
+  inventoryDetailsAnchorX: -1,
+  inventoryDetailsAnchorY: -1
 };
 let menuStateController = null;
 const openPauseMenu = () => {
@@ -141,6 +146,7 @@ const collisionService = new CollisionService({ tileSize: TILE });
 const movementSystem = createMovementSystem({
   keys: input.keys,
   getActionPressed: (action) => input.isActionPressed(action),
+  getSprintPressed: () => mouseUiState.sprintPressed,
   tileSize: TILE,
   spriteFramesPerRow: SPRITE_FRAMES_PER_ROW,
   cameraZoom: CAMERA_ZOOM,
@@ -256,16 +262,6 @@ function getTownProgressForCurrentTown() {
     normalized.rumorQuestActive = false;
     normalized.enduranceUnlocked = true;
   }
-  if (
-    gameFlags.completedTraining &&
-    !normalized.rumorQuestOffered &&
-    !normalized.rumorQuestCompleted &&
-    !normalized.rumorQuestReported
-  ) {
-    normalized.rumorQuestOffered = true;
-    normalized.rumorQuestActive = true;
-    gameFlags.taikoHouseUnlocked = true;
-  }
   if (gameFlags.completedTraining && normalized.rumorQuestOffered && !normalized.rumorQuestCompleted && !normalized.rumorQuestActive) {
     normalized.rumorQuestActive = true;
   }
@@ -328,6 +324,13 @@ function deriveObjective() {
     return {
       id: "dojo-upstairs-challenge",
       text: `Objective: Defeat upstairs opponents (${kills}/${target}).`
+    };
+  }
+
+  if (gameFlags.completedTraining && !tp.rumorQuestOffered) {
+    return {
+      id: "start-investigation",
+      text: "Objective: Speak to Mr. Hanami to accept your next challenge."
     };
   }
 
@@ -798,8 +801,17 @@ function updateMenuHoverStateFromMouse(mouseX, mouseY) {
 function handlePauseMenuLeftClick(mouseX, mouseY) {
   if (gameState !== GAME_STATES.PAUSE_MENU) return false;
 
+  const openInventoryFromPause = () => {
+    gameState = GAME_STATES.INVENTORY;
+  };
+  const openAttributesFromPause = () => {
+    gameState = GAME_STATES.ATTRIBUTES;
+  };
+
   return pauseMenuSystem.handleClick(mouseX, mouseY, {
     onResume: resumeFromPauseMenu,
+    onInventory: openInventoryFromPause,
+    onAttributes: openAttributesFromPause,
     onSave: performSaveGame,
     onLoad: performLoadGame,
     onQuit: () => {
@@ -873,6 +885,7 @@ interactionSystem = createInteractionSystem({
   advanceDialogue,
   getInteractPressed: () => input.getInteractPressed(),
   clearInteractPressed: () => input.clearInteractPressed(),
+  syncObjectiveState: () => syncObjectiveState(performance.now()),
   spawnVisualEffect: (type, options) => vfxSystem.spawn(type, options),
   handleFeatureNPCInteraction: (npc) => featureCoordinator.tryHandleNPCInteraction(npc),
   handleFeatureStateInteraction: (activeGameState) => {
@@ -985,6 +998,12 @@ const inputController = createInputController({
       onContinueGame: performLoadGame
     },
     onResume: resumeFromPauseMenu,
+    onInventory: () => {
+      gameState = GAME_STATES.INVENTORY;
+    },
+    onAttributes: () => {
+      gameState = GAME_STATES.ATTRIBUTES;
+    },
     onSave: performSaveGame,
     onLoad: performLoadGame,
     onQuit: () => location.reload(),
@@ -1014,6 +1033,12 @@ const { syncPointerLockWithState, register: registerInputBindings } = createInpu
   performStartNewGame,
   performLoadGame,
   resumeFromPauseMenu,
+  openInventoryFromPauseMenu: () => {
+    gameState = GAME_STATES.INVENTORY;
+  },
+  openAttributesFromPauseMenu: () => {
+    gameState = GAME_STATES.ATTRIBUTES;
+  },
   returnToPauseMenu,
   openPauseMenu,
   isFreeExploreState,
@@ -1109,6 +1134,7 @@ const { startLoop } = createGameLoop({
   isDialogueActive,
   choiceState,
   enemies,
+  npcs,
   player,
   getCurrentAreaId,
   getCurrentMap,

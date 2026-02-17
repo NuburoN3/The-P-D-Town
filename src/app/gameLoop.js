@@ -13,6 +13,7 @@ export function createGameLoop({
   isDialogueActive,
   choiceState,
   enemies,
+  npcs,
   player,
   getCurrentAreaId,
   getCurrentMap,
@@ -75,6 +76,7 @@ export function createGameLoop({
           requestedAttackId: player.requestedAttackId || player.equippedAttackId || null,
           player,
           enemies,
+          npcs,
           currentAreaId: getCurrentAreaId()
         });
 

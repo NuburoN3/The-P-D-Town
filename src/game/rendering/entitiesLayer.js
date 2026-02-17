@@ -153,14 +153,54 @@ function drawNPCPlaceholder(ctx, nx, ny, colors) {
   ctx.fillRect(nx + 16, ny + 26, 6, 6);
 }
 
+function drawNpcOwBubble(ctx, npc, drawX, drawY, drawWidth) {
+  const text = typeof npc.hitBubbleText === "string" && npc.hitBubbleText.length > 0
+    ? npc.hitBubbleText
+    : "Ow!";
+  ctx.save();
+  ctx.font = "bold 12px Georgia";
+  const paddingX = 7;
+  const bubbleW = Math.ceil(ctx.measureText(text).width) + paddingX * 2;
+  const bubbleH = 18;
+  const bubbleX = Math.round(drawX + drawWidth / 2 - bubbleW / 2);
+  const bubbleY = Math.round(drawY - 18);
+  ctx.fillStyle = "rgba(255, 252, 241, 0.95)";
+  ctx.fillRect(bubbleX, bubbleY, bubbleW, bubbleH);
+  ctx.strokeStyle = "rgba(73, 51, 30, 0.85)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(bubbleX + 0.5, bubbleY + 0.5, bubbleW - 1, bubbleH - 1);
+  ctx.beginPath();
+  ctx.moveTo(bubbleX + bubbleW / 2 - 4, bubbleY + bubbleH);
+  ctx.lineTo(bubbleX + bubbleW / 2 + 4, bubbleY + bubbleH);
+  ctx.lineTo(Math.round(drawX + drawWidth / 2), bubbleY + bubbleH + 5);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(255, 252, 241, 0.95)";
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#3a2919";
+  ctx.fillText(text, bubbleX + paddingX, bubbleY + 13);
+  ctx.restore();
+}
+
 function drawNPCs(ctx, state, canvas, tileSize, colors) {
   const { currentAreaId, npcs, cam } = state;
+  const now = performance.now();
 
   for (const npc of npcs) {
     if (npc.world !== currentAreaId) continue;
 
-    const nx = npc.x - cam.x;
-    const ny = npc.y - cam.y;
+    let shakeX = 0;
+    let shakeY = 0;
+    const shakeUntil = Number.isFinite(npc.hitShakeUntil) ? npc.hitShakeUntil : 0;
+    if (now < shakeUntil) {
+      const t = (shakeUntil - now) / 220;
+      const amp = 1.1 + Math.max(0, t) * 1.8;
+      shakeX = Math.sin(now * 0.09 + npc.x * 0.01) * amp;
+      shakeY = Math.cos(now * 0.11 + npc.y * 0.01) * amp * 0.45;
+    }
+
+    const nx = npc.x - cam.x + shakeX;
+    const ny = npc.y - cam.y + shakeY;
 
     if (nx > -npc.width && ny > -npc.height && nx < canvas.width && ny < canvas.height) {
       if (npc.sprite && npc.sprite.width && npc.sprite.height) {
@@ -181,19 +221,25 @@ function drawNPCs(ctx, state, canvas, tileSize, colors) {
           const scale = targetHeight / frameHeight;
           drawWidth = frameWidth * scale;
           drawHeight = frameHeight * scale;
-          drawX = Math.round(npc.x - cam.x - (drawWidth - tileSize) / 2);
-          drawY = Math.round(npc.y - cam.y - (drawHeight - tileSize));
+          drawX = Math.round(npc.x - cam.x - (drawWidth - tileSize) / 2 + shakeX);
+          drawY = Math.round(npc.y - cam.y - (drawHeight - tileSize) + shakeY);
         } else {
           drawWidth = npc.spriteWidth || tileSize;
           drawHeight = npc.spriteHeight || tileSize;
-          drawX = Math.round(npc.x - cam.x - (drawWidth - tileSize) / 2);
-          drawY = Math.round(npc.y - cam.y - (drawHeight - tileSize));
+          drawX = Math.round(npc.x - cam.x - (drawWidth - tileSize) / 2 + shakeX);
+          drawY = Math.round(npc.y - cam.y - (drawHeight - tileSize) + shakeY);
         }
 
         drawEntityShadow(ctx, drawX, drawY, drawWidth, drawHeight, colors.GROUND_SHADOW);
         drawNPCSprite(ctx, npc, drawX, drawY, drawWidth, drawHeight);
+        if (now < (Number.isFinite(npc.hitBubbleUntil) ? npc.hitBubbleUntil : 0)) {
+          drawNpcOwBubble(ctx, npc, drawX, drawY, drawWidth);
+        }
       } else {
         drawNPCPlaceholder(ctx, nx, ny, colors);
+        if (now < (Number.isFinite(npc.hitBubbleUntil) ? npc.hitBubbleUntil : 0)) {
+          drawNpcOwBubble(ctx, npc, nx, ny, npc.width || tileSize);
+        }
       }
     }
   }

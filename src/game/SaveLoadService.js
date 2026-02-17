@@ -81,7 +81,6 @@ export function applyGameSnapshot(snapshot, context) {
         gameFlags,
         playerStats,
         playerInventory,
-        currentGameState,
         objectiveState
     } = context;
 
@@ -156,61 +155,7 @@ export function applyGameSnapshot(snapshot, context) {
         ? GAME_STATES.OVERWORLD
         : GAME_STATES.INTERIOR;
 
-    const newGameState = (currentGameState !== GAME_STATES.TITLE_SCREEN)
-        ? resolvedState
-        : undefined; // Don't change if title screen logic handles transition, OR return it and let caller decide.
-    // Original logic: if (gameState !== TITLE_SCREEN) gameState = resolvedState.
-    // Actually, when loading from Pause Menu, we ARE in PAUSE_MENU state (not TITLE_SCREEN).
-    // When loading from Title Screen, we ARE in TITLE_SCREEN.
-    // The original code said: if (gameState !== TITLE_SCREEN) gameState = resolvedState.
-    // This implies that if we validly load from Title Screen, we DO NOT set gameState?
-    // Wait. `performLoadGame` calls `applyGameSnapshot`.
-    // If called from Title Screen (Continue Game), state IS Title Screen.
-    // Then `applyGameSnapshot` returns true.
-    // Then caller (TitleScreenSystem callbacks) might change state?
-    // Code in main.js:
-    // onContinueGame: () => { performLoadGame(); }
-    // performLoadGame => applyGameSnapshot.
-    // If applyGameSnapshot DOES NOT change state, then we are stuck in Title Screen?
-    // The original code was:
-    // if (gameState !== GAME_STATES.TITLE_SCREEN) { gameState = resolvedState; ... }
-    // This looks like it prevents state change during Title Screen load?
-    // Ah, `onContinueGame` in `TitleScreenSystem` callback might handle state transition?
-    // Actually, `performLoadGame` sets `setSettingsStatus("Save loaded.")`.
-    // If `gameState` is not updated, we won't see the game.
-    // Maybe `gameController` update handles it?
-
-    // Actually, I suspect the original code relying on `if (gameState !== TITLE_SCREEN)` was for *hot reloading* checks or similar?
-    // Or maybe `applyGameSnapshot` is used by *other* things?
-    // Let's look at `main.js` again.
-    // Line 356: if (gameState !== GAME_STATES.TITLE_SCREEN) { ... }
-    // If I load from Title Screen, this block is SKIPPED.
-    // So `gameState` remains `TITLE_SCREEN`.
-    // Then `performLoadGame` finishes.
-    // Then what?
-    // The `TitleScreenSystem` or `main.js` loop must switch state.
-    // But `TitleScreenSystem` callback is `onContinueGame`.
-    // If state isn't changed, `TitleScreenSystem` continues to render.
-
-    // Wait, maybe `performLoadGame` is NOT what is called from Title Screen?
-    // `TitleScreenSystem.js` calls `onContinueGame`.
-    // in `main.js`:
-    // onContinueGame: () => { performLoadGame(); }
-
-    // Tests passed with this logic.
-    // Perhaps `TitleScreenSystem` has a `startGame` transition that is triggered?
-    // No, `onContinueGame` just calls `performLoadGame`.
-
-    // Maybe `gameState` IS CHANGED somewhere else?
-    // Or maybe my understanding of `gameState` check is wrong.
-    // If `gameState === TITLE_SCREEN`, the check fails, so we DON'T set `resolvedState`.
-    // This seems like a bug in original code or I am missing something.
-    // UNLESS `applyGameSnapshot` is called `startNewGame` which sets state separately?
-    // But `performLoadGame` calls it.
-
-    // Let's replicate original logic exactly for now.
-    // I will return `newGameState` only if condition met.
-
+    const newGameState = resolvedState;
     if (camera) camera.initialized = false;
 
     return {
