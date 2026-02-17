@@ -64,6 +64,17 @@ function resolveRumorClueGroups(trainingContent) {
   );
 }
 
+function getNextRequiredRumorClueGroup(tp, clueGroups) {
+  return clueGroups.find((group) => !tp[group.key]) || null;
+}
+
+function getRumorLeadLabel(clueKey) {
+  if (clueKey === "rumorCluePiazza") return "piazza";
+  if (clueKey === "rumorClueChapel") return "chapel";
+  if (clueKey === "rumorClueBar") return "bar";
+  return "next witness";
+}
+
 export function createNPCInteractionHandler({
   tileSize,
   gameFlags,
@@ -87,10 +98,50 @@ export function createNPCInteractionHandler({
       Object.assign(tp, normalized);
       tp.bogQuestTarget = getBogQuestTarget(tp, trainingContent);
       tp.bogQuestKills = Math.max(0, Math.min(tp.bogQuestTarget, tp.bogQuestKills));
+      const rumorClues = getRumorCluesFound(tp);
+      if (rumorClues >= 3) tp.rumorQuestCompleted = true;
+      if (tp.rumorQuestReported) {
+        tp.rumorQuestCompleted = true;
+        tp.rumorQuestActive = false;
+        tp.enduranceUnlocked = true;
+      }
+      if (
+        gameFlags.completedTraining &&
+        !tp.rumorQuestOffered &&
+        !tp.rumorQuestCompleted &&
+        !tp.rumorQuestReported
+      ) {
+        tp.rumorQuestOffered = true;
+        tp.rumorQuestActive = true;
+        gameFlags.taikoHouseUnlocked = true;
+      }
+      if (gameFlags.completedTraining && tp.rumorQuestOffered && !tp.rumorQuestCompleted && !tp.rumorQuestActive) {
+        tp.rumorQuestActive = true;
+      }
       return tp;
     }
     normalized.bogQuestTarget = getBogQuestTarget(normalized, trainingContent);
     normalized.bogQuestKills = Math.max(0, Math.min(normalized.bogQuestTarget, normalized.bogQuestKills));
+    const rumorClues = getRumorCluesFound(normalized);
+    if (rumorClues >= 3) normalized.rumorQuestCompleted = true;
+    if (normalized.rumorQuestReported) {
+      normalized.rumorQuestCompleted = true;
+      normalized.rumorQuestActive = false;
+      normalized.enduranceUnlocked = true;
+    }
+    if (
+      gameFlags.completedTraining &&
+      !normalized.rumorQuestOffered &&
+      !normalized.rumorQuestCompleted &&
+      !normalized.rumorQuestReported
+    ) {
+      normalized.rumorQuestOffered = true;
+      normalized.rumorQuestActive = true;
+      gameFlags.taikoHouseUnlocked = true;
+    }
+    if (gameFlags.completedTraining && normalized.rumorQuestOffered && !normalized.rumorQuestCompleted && !normalized.rumorQuestActive) {
+      normalized.rumorQuestActive = true;
+    }
     return normalized;
   }
 
@@ -180,6 +231,15 @@ export function createNPCInteractionHandler({
     if (!clue) return null;
     if (tp[clue.key]) return null;
 
+    const nextRequiredClue = getNextRequiredRumorClueGroup(tp, clueGroups);
+    if (nextRequiredClue && clue.key !== nextRequiredClue.key) {
+      const nextLead = getRumorLeadLabel(nextRequiredClue.key);
+      return [
+        `Mr. Hanami wants this in order. Check the ${nextLead} lead first.`,
+        "Route order: piazza, then chapel, then bar."
+      ];
+    }
+
     tp[clue.key] = true;
     const found = getRumorCluesFound(tp);
     if (found >= 3) {
@@ -231,6 +291,23 @@ export function createNPCInteractionHandler({
         musicManager.playSfx("itemUnlock");
       } catch (_) { }
     });
+  }
+
+  function startInvestigationRoute(tp, npcName) {
+    tp.rumorQuestOffered = true;
+    tp.rumorQuestActive = true;
+    tp.rumorQuestCompleted = false;
+    tp.rumorQuestReported = false;
+    gameFlags.taikoHouseUnlocked = true;
+    itemAlert.active = true;
+    itemAlert.text = "Investigation started. Follow leads: piazza -> chapel -> bar.";
+    itemAlert.startedAt = performance.now();
+
+    showDialogue(npcName, [
+      "Before your next lesson, gather three witness accounts for me.",
+      "You will do this in order: piazza, then chapel, then bar.",
+      "Return only after all three reports are confirmed."
+    ]);
   }
 
   function handleBoglandHanamiInteraction(npc, tp) {
@@ -358,8 +435,49 @@ export function createNPCInteractionHandler({
     }
 
     if (gameFlags.completedTraining) {
-      const enduranceChallengeComplete = tp.enduranceUnlocked && playerStats.disciplineLevel >= 2;
-      if (enduranceChallengeComplete) {
+      if (!tp.rumorQuestOffered) {
+        showDialogue(npc.name, trainingContent.postCompleteDialogue, () => {
+          startInvestigationRoute(tp, npc.name);
+        });
+        return;
+      }
+
+      if (!tp.rumorQuestActive && !tp.rumorQuestCompleted) {
+        startInvestigationRoute(tp, npc.name);
+        return;
+      }
+
+      if (tp.rumorQuestActive && !tp.rumorQuestCompleted) {
+        const clues = getRumorCluesFound(tp);
+        const clueGroups = resolveRumorClueGroups(trainingContent);
+        const nextLead = getNextRequiredRumorClueGroup(tp, clueGroups);
+        const nextLeadLabel = getRumorLeadLabel(nextLead?.key);
+        showDialogue(npc.name, [
+          `Rumor leads gathered: ${clues}/3.`,
+          `Next lead: ${nextLeadLabel}.`,
+          "Complete the full route before endurance training."
+        ]);
+        return;
+      }
+
+      if (tp.rumorQuestCompleted && !tp.rumorQuestReported) {
+        tp.rumorQuestReported = true;
+        tp.rumorQuestActive = false;
+        gameFlags.townRumorResolved = true;
+        tp.enduranceUnlocked = true;
+        itemAlert.active = true;
+        itemAlert.text = "Rumor report complete. Town watch updated.";
+        itemAlert.startedAt = performance.now();
+        showDialogue(npc.name, [
+          "Your report is clear and disciplined.",
+          "You confirmed timing, witnesses, and pattern without panic.",
+          "Excellent. That kind of judgment protects a town.",
+          "Now begin endurance drills on the mat."
+        ]);
+        return;
+      }
+
+      if (tp.enduranceUnlocked && playerStats.disciplineLevel >= 2) {
         if (!tp.membershipAwarded) {
           maybeAwardMembershipCard(tp, npc.name);
           return;
@@ -368,128 +486,13 @@ export function createNPCInteractionHandler({
         return;
       }
 
-      if (!tp.rumorQuestOffered) {
-        tp.rumorQuestOffered = true;
-        showDialogue(npc.name, trainingContent.postCompleteDialogue, () => {
-          showDialogue(npc.name, [
-            "Before your next lesson, gather three witness accounts for me.",
-            "Check the piazza, chapel, and bar so we can separate fact from fear.",
-            "Will you investigate this now?"
-          ], () => {
-            openYesNoChoice((selectedOption) => {
-              if (selectedOption === "Yes") {
-                tp.rumorQuestActive = true;
-                gameFlags.taikoHouseUnlocked = true;
-                itemAlert.active = true;
-                itemAlert.text = "Investigation started. Taiko's house door is now open.";
-                itemAlert.startedAt = performance.now();
-                showDialogue(npc.name, [
-                  "Good. Bring me verified witness accounts.",
-                  "When you're ready, I can still begin endurance training at any time."
-                ]);
-              } else {
-                showDialogue(npc.name, [
-                  "Understood. We can proceed with direct training when you are ready.",
-                  "If you change your mind, I still value those witness reports."
-                ]);
-              }
-            });
-          });
-        });
-        return;
-      }
-
-      if (tp.rumorQuestCompleted && !tp.rumorQuestReported) {
-        tp.rumorQuestReported = true;
-        tp.rumorQuestActive = false;
-        gameFlags.townRumorResolved = true;
-        itemAlert.active = true;
-        itemAlert.text = "Rumor report complete. Town watch updated.";
-        itemAlert.startedAt = performance.now();
-        showDialogue(npc.name, [
-          "Your report is clear and disciplined.",
-          "You confirmed timing, witnesses, and pattern without panic.",
-          "Excellent. That kind of judgment protects a town."
-        ]);
-        return;
-      }
-
-      if (!tp.rumorQuestActive && !tp.rumorQuestCompleted && !tp.enduranceUnlocked) {
-        showDialogue(npc.name, [
-          "You can begin endurance drills now, or investigate town rumors first.",
-          "Do you want to start the investigation route?"
-        ], () => {
-          openYesNoChoice((selectedOption) => {
-            if (selectedOption === "Yes") {
-              tp.rumorQuestActive = true;
-              gameFlags.taikoHouseUnlocked = true;
-              itemAlert.active = true;
-              itemAlert.text = "Investigation started. Taiko's house door is now open.";
-              itemAlert.startedAt = performance.now();
-              showDialogue(npc.name, [
-                "Good. Gather witness accounts from the piazza, chapel, and bar."
-              ]);
-            } else {
-              showDialogue(npc.name, trainingContent.nextChallengeQuestion, () => {
-                openYesNoChoice((nextOption) => {
-                  if (nextOption === "Yes") {
-                    tp.enduranceUnlocked = true;
-                    showDialogue(npc.name, trainingContent.enduranceAcceptedDialogue);
-                  } else {
-                    showDialogue(npc.name, trainingContent.declineDialogue);
-                  }
-                });
-              });
-            }
-          });
-        });
-        return;
-      }
-
-      if (tp.rumorQuestActive && !tp.rumorQuestCompleted && !tp.enduranceUnlocked) {
-        const clues = getRumorCluesFound(tp);
-        showDialogue(npc.name, [
-          `Rumor leads gathered: ${clues}/3.`,
-          "Do you want to begin endurance training now, or keep investigating first?"
-        ], () => {
-          openYesNoChoice((selectedOption) => {
-            if (selectedOption === "Yes") {
-              tp.enduranceUnlocked = true;
-              showDialogue(npc.name, trainingContent.enduranceAcceptedDialogue);
-            } else {
-              showDialogue(npc.name, [
-                "Continue collecting witness accounts.",
-                "Return when you want to start endurance drills."
-              ]);
-            }
-          });
-        });
-        return;
-      }
-
       if (tp.enduranceUnlocked) {
-        if (tp.rumorQuestActive && !tp.rumorQuestCompleted) {
-          const clues = getRumorCluesFound(tp);
-          showDialogue(npc.name, [
-            trainingContent.enduranceInProgressDialogue,
-            `Investigation leads: ${clues}/3.`
-          ]);
-        } else {
-          showDialogue(npc.name, trainingContent.enduranceInProgressDialogue);
-        }
+        showDialogue(npc.name, trainingContent.enduranceInProgressDialogue);
         return;
       }
 
-      showDialogue(npc.name, trainingContent.nextChallengeQuestion, () => {
-        openYesNoChoice((selectedOption) => {
-          if (selectedOption === "Yes") {
-            tp.enduranceUnlocked = true;
-            showDialogue(npc.name, trainingContent.enduranceAcceptedDialogue);
-          } else {
-            showDialogue(npc.name, trainingContent.declineDialogue);
-          }
-        });
-      });
+      tp.enduranceUnlocked = true;
+      showDialogue(npc.name, trainingContent.enduranceAcceptedDialogue);
       return;
     }
 

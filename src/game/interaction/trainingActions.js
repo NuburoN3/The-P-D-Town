@@ -45,8 +45,13 @@ export function createTryTrainingAction({
     }
 
     if (gameFlags.completedTraining && !getTownProgress().enduranceUnlocked) {
+      const tp = getTownProgress();
       if (!isDialogueActive()) {
-        showDialogue("", trainingContent.enduranceLockedPrompt);
+        if (tp.rumorQuestActive && !tp.rumorQuestReported) {
+          showDialogue("", "Investigation comes first. Gather witness leads in this order: piazza, chapel, then bar.");
+        } else {
+          showDialogue("", trainingContent.enduranceLockedPrompt);
+        }
       }
       return;
     }

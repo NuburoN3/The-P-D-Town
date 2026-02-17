@@ -26,6 +26,7 @@ export function createInputBindings({
   handleTitleLeftClick,
   handlePauseMenuLeftClick
 }) {
+  const POINTER_LOCK_ENABLED = false;
   let pointerLockPrimed = false;
 
   function normalizeInputKey(key) {
@@ -50,7 +51,9 @@ export function createInputBindings({
   }
 
   function canUsePointerLock() {
-    return typeof canvas.requestPointerLock === "function" && typeof document.exitPointerLock === "function";
+    return POINTER_LOCK_ENABLED &&
+      typeof canvas.requestPointerLock === "function" &&
+      typeof document.exitPointerLock === "function";
   }
 
   function shouldUnlockPointerForCurrentState() {
@@ -229,6 +232,9 @@ export function createInputBindings({
   }
 
   function register() {
+    if (typeof document !== "undefined" && document.pointerLockElement === canvas && typeof document.exitPointerLock === "function") {
+      document.exitPointerLock();
+    }
     registerPointerBindings();
     registerKeyboardBindings();
   }
