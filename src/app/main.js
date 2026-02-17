@@ -249,6 +249,26 @@ function getTownProgressForCurrentTown() {
     : normalized.bogQuestTarget;
   normalized.bogQuestTarget = configuredBogTarget;
   normalized.bogQuestKills = Math.max(0, Math.min(normalized.bogQuestTarget, normalized.bogQuestKills));
+  const rumorClues = getRumorCluesFound(normalized);
+  if (rumorClues >= 3) normalized.rumorQuestCompleted = true;
+  if (normalized.rumorQuestReported) {
+    normalized.rumorQuestCompleted = true;
+    normalized.rumorQuestActive = false;
+    normalized.enduranceUnlocked = true;
+  }
+  if (
+    gameFlags.completedTraining &&
+    !normalized.rumorQuestOffered &&
+    !normalized.rumorQuestCompleted &&
+    !normalized.rumorQuestReported
+  ) {
+    normalized.rumorQuestOffered = true;
+    normalized.rumorQuestActive = true;
+    gameFlags.taikoHouseUnlocked = true;
+  }
+  if (gameFlags.completedTraining && normalized.rumorQuestOffered && !normalized.rumorQuestCompleted && !normalized.rumorQuestActive) {
+    normalized.rumorQuestActive = true;
+  }
   gameFlags.townProgress[townId] = normalized;
   return normalized;
 }
@@ -311,13 +331,6 @@ function deriveObjective() {
     };
   }
 
-  if (gameFlags.completedTraining && !tp.rumorQuestOffered) {
-    return {
-      id: "report-to-hanami",
-      text: "Objective: Return to Mr. Hanami for your next challenge."
-    };
-  }
-
   if (tp.rumorQuestActive && !tp.rumorQuestCompleted) {
     const nextClue = getNextMissingRumorClue(tp);
     if (nextClue) {
@@ -336,6 +349,13 @@ function deriveObjective() {
     return {
       id: "rumor-report-hanami",
       text: "Objective: Report your rumor findings to Mr. Hanami."
+    };
+  }
+
+  if (tp.rumorQuestReported && !tp.enduranceUnlocked) {
+    return {
+      id: "unlock-endurance",
+      text: "Objective: Speak to Mr. Hanami for your endurance assignment."
     };
   }
 
@@ -388,13 +408,6 @@ function deriveObjective() {
     };
   }
 
-  if (gameFlags.completedTraining && !tp.enduranceUnlocked) {
-    return {
-      id: "choose-next-route",
-      text: "Objective: Speak with Mr. Hanami to begin endurance training or continue the investigation."
-    };
-  }
-
   return {
     id: "town-discipline",
     text: "Objective: Continue building your discipline and speak with Mr. Hanami for guidance."
@@ -414,16 +427,21 @@ function resolveObjectiveMarker(objectiveId) {
     "report-to-hanami": [
       { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
     ],
-    "choose-next-route": [
+    "start-investigation": [
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
+    ],
+    "unlock-endurance": [
       { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
     ],
     "rumor-clue-piazza": [
       { townId: "hanamiTown", areaId: "overworld", tileX: 31, tileY: 16, label: "Mina in the piazza" }
     ],
     "rumor-clue-chapel": [
+      { townId: "hanamiTown", areaId: "overworld", tileX: 13, tileY: 15, label: "Chapel entrance" },
       { townId: "hanamiTown", areaId: "hanamiChurch", tileX: 6, tileY: 3, label: "Priest Miki" }
     ],
     "rumor-clue-bar": [
+      { townId: "hanamiTown", areaId: "overworld", tileX: 45, tileY: 31, label: "Bar entrance" },
       { townId: "hanamiTown", areaId: "hanamiBar", tileX: 4, tileY: 7, label: "Tomo at the bar" }
     ],
     "rumor-report-hanami": [

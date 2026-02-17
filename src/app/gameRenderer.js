@@ -52,28 +52,7 @@ export function createGameRenderer({
   getGameState,
   isConditionallyHiddenDoor
 }) {
-  function buildDoorHintText(currentTownId, currentAreaId, currentMap) {
-    const playerTx = Math.floor((player.x + tileSize * 0.5) / tileSize);
-    const playerTy = Math.floor((player.y + tileSize * 0.5) / tileSize);
-
-    for (let ty = playerTy - 1; ty <= playerTy + 1; ty++) {
-      const row = currentMap[ty];
-      if (!row) continue;
-      for (let tx = playerTx - 1; tx <= playerTx + 1; tx++) {
-        if (row[tx] !== tileTypes.DOOR) continue;
-        if (isConditionallyHiddenDoor(tx, ty)) continue;
-
-        const destination = worldService.resolveDoorDestination(currentTownId, currentAreaId, tx, ty);
-        if (!destination) continue;
-
-        const targetTown = worldService.getTown(destination.townId);
-        const targetArea = worldService.getArea(destination.townId, destination.areaId);
-        const townLabel = targetTown?.name || destination.townId;
-        const areaLabel = targetArea?.id || destination.areaId;
-        return `Door: ${townLabel} / ${areaLabel}`;
-      }
-    }
-
+  function buildDoorHintText() {
     return "";
   }
 
