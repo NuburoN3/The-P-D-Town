@@ -418,6 +418,18 @@ function drawSettingsOverlay(ctx, state, canvas, ui, colors) {
     }
   }
 
+  const listRightX = boxX + boxW - 18;
+  ctx.font = FONT_12;
+  if (scrollStart > 0) {
+    ctx.fillStyle = highContrast ? "rgba(210, 244, 255, 0.95)" : "rgba(92, 57, 23, 0.9)";
+    ctx.fillText("^ More", listRightX - 40, listY - 8);
+  }
+  if (visibleEnd < entries.length) {
+    const bottomY = listY + visibleRows * rowH + 4;
+    ctx.fillStyle = highContrast ? "rgba(210, 244, 255, 0.95)" : "rgba(92, 57, 23, 0.9)";
+    ctx.fillText("v More", listRightX - 40, bottomY);
+  }
+
   const instructionsY = boxY + boxH - 74;
   ctx.font = FONT_12;
   ctx.fillStyle = labelColor;
@@ -1083,66 +1095,12 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
     canvas.width * 0.7
   );
   topGlow.addColorStop(0, "rgba(255, 214, 158, 0.28)");
-  topGlow.addColorStop(1, "rgba(12, 10, 16, 0.78)");
+  topGlow.addColorStop(1, titleState.hasContinueSave ? "rgba(12, 10, 16, 0.58)" : "rgba(12, 10, 16, 0.78)");
   ctx.fillStyle = topGlow;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle = "rgba(8, 10, 16, 0.45)";
+  ctx.fillStyle = titleState.hasContinueSave ? "rgba(8, 10, 16, 0.28)" : "rgba(8, 10, 16, 0.45)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  const heroImage = state.titleHeroImage;
-  const heroFrameWidth = Math.min(460, Math.round(canvas.width * 0.38));
-  const heroFrameHeight = Math.min(560, Math.round(canvas.height * 0.72));
-  const heroFrameX = canvas.width - heroFrameWidth - 70;
-  const heroFrameY = Math.max(52, Math.round(canvas.height * 0.12));
-  drawSkinnedPanel(ctx, heroFrameX, heroFrameY, heroFrameWidth, heroFrameHeight, colors, { titleBand: false });
-
-  const heroInset = 14;
-  const heroX = heroFrameX + heroInset;
-  const heroY = heroFrameY + heroInset;
-  const heroW = heroFrameWidth - heroInset * 2;
-  const heroH = heroFrameHeight - heroInset * 2;
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(heroX, heroY, heroW, heroH);
-  ctx.clip();
-
-  if (heroImage && heroImage.complete && heroImage.naturalWidth > 0 && heroImage.naturalHeight > 0) {
-    const sourceRatio = heroImage.naturalWidth / heroImage.naturalHeight;
-    const targetRatio = heroW / heroH;
-    let srcX = 0;
-    let srcY = 0;
-    let srcW = heroImage.naturalWidth;
-    let srcH = heroImage.naturalHeight;
-
-    if (sourceRatio > targetRatio) {
-      srcW = Math.round(heroImage.naturalHeight * targetRatio);
-      srcX = Math.round((heroImage.naturalWidth - srcW) * 0.5);
-    } else if (sourceRatio < targetRatio) {
-      srcH = Math.round(heroImage.naturalWidth / targetRatio);
-      srcY = Math.round((heroImage.naturalHeight - srcH) * 0.5);
-    }
-
-    ctx.drawImage(heroImage, srcX, srcY, srcW, srcH, heroX, heroY, heroW, heroH);
-  } else {
-    const fallback = ctx.createLinearGradient(heroX, heroY, heroX, heroY + heroH);
-    fallback.addColorStop(0, "rgba(245, 222, 173, 0.4)");
-    fallback.addColorStop(1, "rgba(26, 34, 46, 0.6)");
-    ctx.fillStyle = fallback;
-    ctx.fillRect(heroX, heroY, heroW, heroH);
-  }
-
-  const heroShade = ctx.createLinearGradient(heroX, heroY, heroX, heroY + heroH);
-  heroShade.addColorStop(0, "rgba(10, 12, 19, 0.04)");
-  heroShade.addColorStop(1, "rgba(10, 12, 19, 0.32)");
-  ctx.fillStyle = heroShade;
-  ctx.fillRect(heroX, heroY, heroW, heroH);
-  ctx.restore();
-
-  ctx.strokeStyle = "rgba(255, 231, 191, 0.45)";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(heroX + 0.5, heroY + 0.5, heroW - 1, heroH - 1);
 
   ctx.font = FONT_28;
   ctx.fillStyle = "rgba(0,0,0,0.5)";
@@ -1168,7 +1126,8 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
   for (let i = 0; i < titleState.options.length; i++) {
     const y = panelY + 64 + i * 38;
     const hovered = Number.isInteger(titleState.hovered) ? titleState.hovered : -1;
-    const activeIndex = hovered >= 0 ? hovered : titleState.selected;
+    const useHoverOnly = Boolean(titleState.pointerNavigation);
+    const activeIndex = useHoverOnly ? hovered : (hovered >= 0 ? hovered : titleState.selected);
     const isSelected = i === activeIndex;
     if (isSelected) {
       const band = ctx.createLinearGradient(panelX + 14, y - 20, panelX + panelW - 14, y + 7);

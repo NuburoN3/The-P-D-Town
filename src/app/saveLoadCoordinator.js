@@ -108,8 +108,21 @@ export function createSaveLoadCoordinator({
   function applyTitlePreviewSnapshot() {
     const titlePreviewSnapshot = loadGameSnapshot();
     if (titlePreviewSnapshot) {
-      applyGameSnapshot(titlePreviewSnapshot, getSaveLoadContext());
+      const result = applyGameSnapshot(titlePreviewSnapshot, getSaveLoadContext());
+      if (result?.success && result.newWorldState) {
+        applyWorldState(result.newWorldState);
+      }
+      return Boolean(result?.success);
     }
+    return false;
+  }
+
+  function applyTitleStartPreview() {
+    const result = applyGameSnapshot(newGameBaselineSnapshot, getSaveLoadContext());
+    if (result?.success && result.newWorldState) {
+      applyWorldState(result.newWorldState);
+    }
+    return Boolean(result?.success);
   }
 
   return {
@@ -119,6 +132,7 @@ export function createSaveLoadCoordinator({
     performAutoSave,
     restoreGameFromSnapshot,
     applyTitlePreviewSnapshot,
+    applyTitleStartPreview,
     getNewGameBaselineSnapshot: () => newGameBaselineSnapshot
   };
 }

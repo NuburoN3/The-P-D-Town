@@ -20,6 +20,7 @@ export function createInputBindings({
   resumeFromPauseMenu,
   openInventoryFromPauseMenu,
   openAttributesFromPauseMenu,
+  openSettingsFromPauseMenu,
   returnToPauseMenu,
   openPauseMenu,
   isFreeExploreState,
@@ -150,6 +151,14 @@ export function createInputBindings({
         e.preventDefault();
       }
     });
+    canvas.addEventListener("wheel", (e) => {
+      const gameState = getGameState();
+      if (gameState !== gameStates.SETTINGS) return;
+      const handled = pauseMenuSystem.handleSettingsWheel(e.deltaY);
+      if (handled) {
+        e.preventDefault();
+      }
+    });
 
     document.addEventListener("pointerlockchange", () => {
       if (document.pointerLockElement === canvas) {
@@ -242,6 +251,8 @@ export function createInputBindings({
           onResume: resumeFromPauseMenu,
           onInventory: openInventoryFromPauseMenu,
           onAttributes: openAttributesFromPauseMenu,
+          onSettings: openSettingsFromPauseMenu,
+          onBackToPause: returnToPauseMenu,
           onSave: performSaveGame,
           onLoad: performLoadGame,
           onQuit: () => {

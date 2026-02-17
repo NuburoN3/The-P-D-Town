@@ -616,7 +616,8 @@ const {
   performLoadGame,
   performStartNewGame,
   performAutoSave,
-  applyTitlePreviewSnapshot
+  applyTitlePreviewSnapshot,
+  applyTitleStartPreview
 } = createSaveLoadCoordinator({
   buildGameSnapshot,
   applyGameSnapshot,
@@ -645,7 +646,7 @@ const {
   }
 });
 
-applyTitlePreviewSnapshot();
+const hasTitlePreviewSave = applyTitlePreviewSnapshot();
 
 const { isConditionallyHiddenDoor, getRespawnDestination } = createWorldStateHandlers({
   worldService,
@@ -657,9 +658,11 @@ const { isConditionallyHiddenDoor, getRespawnDestination } = createWorldStateHan
 
 const gameplayStartState = gameState;
 const titleScreenSystem = createTitleScreenSystem({ tileSize: TILE, cameraZoom: CAMERA_ZOOM, musicManager, canvas });
+titleScreenSystem.syncContinueAvailability(hasTitlePreviewSave);
 // Use system state for rendering access
 const titleState = titleScreenSystem.state;
 gameState = GAME_STATES.TITLE_SCREEN;
+let titlePreviewMode = hasTitlePreviewSave ? "continue" : "start";
 
 // Fountain healing / challenge / defeat systems (created after vfxSystem above)
 const fountainHealSystem = createFountainHealingSystem({ tileSize: TILE, worldService, vfxSystem });
@@ -789,7 +792,7 @@ function clearMenuHoverState() {
 function updateMenuHoverStateFromMouse(mouseX, mouseY) {
   clearMenuHoverState();
   if (!mouseUiState.insideCanvas) return;
-  if (gameState === GAME_STATES.PAUSE_MENU) {
+  if (gameState === GAME_STATES.PAUSE_MENU || gameState === GAME_STATES.SETTINGS) {
     pauseMenuSystem.handleMouseMove(mouseX, mouseY);
     return;
   }
@@ -798,14 +801,44 @@ function updateMenuHoverStateFromMouse(mouseX, mouseY) {
   }
 }
 
+function getActiveTitleOption() {
+  const hovered = Number.isInteger(titleState.hovered) ? titleState.hovered : -1;
+  const activeIndex = hovered >= 0 ? hovered : titleState.selected;
+  return titleState.options[activeIndex] || "";
+}
+
+function syncTitlePreviewBackground() {
+  if (gameState !== GAME_STATES.TITLE_SCREEN) return;
+
+  const activeOption = getActiveTitleOption();
+  const wantsStartPreview = !hasTitlePreviewSave || activeOption === "Start Journey" || activeOption === "How To Play";
+  const desiredMode = wantsStartPreview ? "start" : "continue";
+  if (desiredMode === titlePreviewMode) return;
+
+  const applied = desiredMode === "start"
+    ? applyTitleStartPreview()
+    : applyTitlePreviewSnapshot();
+  if (!applied) return;
+
+  titlePreviewMode = desiredMode;
+}
+
+function updateTitleScreenWithPreview(now) {
+  syncTitlePreviewBackground();
+  updateTitleScreen(now);
+}
+
 function handlePauseMenuLeftClick(mouseX, mouseY) {
-  if (gameState !== GAME_STATES.PAUSE_MENU) return false;
+  if (gameState !== GAME_STATES.PAUSE_MENU && gameState !== GAME_STATES.SETTINGS) return false;
 
   const openInventoryFromPause = () => {
     gameState = GAME_STATES.INVENTORY;
   };
   const openAttributesFromPause = () => {
     gameState = GAME_STATES.ATTRIBUTES;
+  };
+  const openSettingsFromPause = () => {
+    gameState = GAME_STATES.SETTINGS;
   };
 
   return pauseMenuSystem.handleClick(mouseX, mouseY, {
@@ -814,10 +847,11 @@ function handlePauseMenuLeftClick(mouseX, mouseY) {
     onAttributes: openAttributesFromPause,
     onSave: performSaveGame,
     onLoad: performLoadGame,
+    onSettings: openSettingsFromPause,
     onQuit: () => {
       location.reload();
     }
-  });
+  }, input);
 }
 
 function handleTitleLeftClick(mouseX, mouseY) {
@@ -1004,6 +1038,9 @@ const inputController = createInputController({
     onAttributes: () => {
       gameState = GAME_STATES.ATTRIBUTES;
     },
+    onSettings: () => {
+      gameState = GAME_STATES.SETTINGS;
+    },
     onSave: performSaveGame,
     onLoad: performLoadGame,
     onQuit: () => location.reload(),
@@ -1038,6 +1075,9 @@ const { syncPointerLockWithState, register: registerInputBindings } = createInpu
   },
   openAttributesFromPauseMenu: () => {
     gameState = GAME_STATES.ATTRIBUTES;
+  },
+  openSettingsFromPauseMenu: () => {
+    gameState = GAME_STATES.SETTINGS;
   },
   returnToPauseMenu,
   openPauseMenu,
@@ -1126,7 +1166,7 @@ const { startLoop } = createGameLoop({
   inputController,
   pauseMenuSystem,
   combatFeedback,
-  updateTitleScreen,
+  updateTitleScreen: updateTitleScreenWithPreview,
   updatePlayerDefeatSequence,
   gameController,
   prepareChallengeEnemies,

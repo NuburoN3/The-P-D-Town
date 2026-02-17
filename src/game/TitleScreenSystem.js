@@ -11,11 +11,15 @@ import { GAME_STATES } from "../core/constants.js";
  * @param {object} deps.canvas
  */
 export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, canvas }) {
+    const CONTINUE_OPTIONS = Object.freeze(["Continue", "Start Journey", "How To Play"]);
+    const NEW_GAME_OPTIONS = Object.freeze(["Start Journey", "How To Play"]);
     const state = {
         startedAt: performance.now(),
         selected: 0,
         hovered: -1,
-        options: ["Continue", "Start Journey", "How To Play"],
+        pointerNavigation: false,
+        options: [...CONTINUE_OPTIONS],
+        hasContinueSave: true,
         showHowTo: false,
         fadeOutActive: false,
         fadeOutStartedAt: 0,
@@ -29,6 +33,7 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
      */
     function handleMouseMove(mouseX, mouseY) {
         if (state.showHowTo) return false;
+        state.pointerNavigation = true;
 
         const hoverIndex = getTitleOptionIndexAtPosition(mouseX, mouseY);
         if (hoverIndex !== state.hovered) {
@@ -50,7 +55,7 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
         if (state.showHowTo) {
             // Close "How to Play" on click
             const helpW = Math.min(canvas.width - 120, 520);
-            const helpH = 236;
+            const helpH = 252;
             const helpX = Math.round((canvas.width - helpW) / 2);
             const helpY = Math.round((canvas.height - helpH) / 2);
             if (pointInRect(mouseX, mouseY, helpX, helpY, helpW, helpH)) {
@@ -84,12 +89,18 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
         }
 
         if (key === "arrowup" || key === "w") {
+            state.pointerNavigation = false;
+            state.hovered = -1;
             state.selected = (state.selected - 1 + state.options.length) % state.options.length;
             musicManager.playSfx("menuMove");
         } else if (key === "arrowdown" || key === "s") {
+            state.pointerNavigation = false;
+            state.hovered = -1;
             state.selected = (state.selected + 1) % state.options.length;
             musicManager.playSfx("menuMove");
         } else if (key === "enter" || key === "space" || key === " " || key === "e") {
+            state.pointerNavigation = false;
+            state.hovered = -1;
             confirmSelection({ onStartGame, onContinueGame });
         }
     }
@@ -110,6 +121,17 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
         }
     }
 
+    function syncContinueAvailability(hasSave) {
+        state.hasContinueSave = Boolean(hasSave);
+        state.options = state.hasContinueSave ? [...CONTINUE_OPTIONS] : [...NEW_GAME_OPTIONS];
+        if (state.options.length === 0) {
+            state.options = [...NEW_GAME_OPTIONS];
+        }
+        state.selected = Math.max(0, Math.min(state.selected, state.options.length - 1));
+        state.hovered = -1;
+        state.pointerNavigation = false;
+    }
+
     function update(now, { player, cam, currentMapW, currentMapH, onFadeOutComplete }) {
         // Camera drift
         const worldW = currentMapW * tileSize;
@@ -128,8 +150,11 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
         const minY = Math.min(0, worldH - visibleH);
         const maxY = Math.max(0, worldH - visibleH);
 
-        cam.x = clamp(baseX + driftX, minX, maxX);
-        cam.y = clamp(baseY + driftY, minY, maxY);
+        // If the preview world is smaller than the viewport, keep it centered.
+        const targetX = worldW <= visibleW ? (worldW - visibleW) * 0.5 : clamp(baseX + driftX, minX, maxX);
+        const targetY = worldH <= visibleH ? (worldH - visibleH) * 0.5 : clamp(baseY + driftY, minY, maxY);
+        cam.x = targetX;
+        cam.y = targetY;
 
         // Fade out logic
         if (state.fadeOutActive) {
@@ -166,6 +191,7 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
         handleMouseMove,
         handleClick,
         handleKeyDown,
-        update
+        update,
+        syncContinueAvailability
     };
 }

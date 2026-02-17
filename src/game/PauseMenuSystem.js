@@ -80,10 +80,24 @@ export function createPauseMenuSystem({
         }
     }
 
-    function handleKeyDown(key, { onResume, onInventory, onAttributes, onSave, onLoad, onQuit, inputManager }) {
+    function handleKeyDown(key, { onResume, onInventory, onAttributes, onSave, onLoad, onSettings, onBackToPause, onQuit, inputManager }) {
         if (state.mode === "settings") {
-            handleSettingsKeyDown(key, inputManager);
+            handleSettingsKeyDown(key, inputManager, onBackToPause);
             return;
+        }
+
+        if (
+            key === "arrowup" ||
+            key === "w" ||
+            key === "arrowdown" ||
+            key === "s" ||
+            key === "enter" ||
+            key === "space" ||
+            key === " " ||
+            key === "escape" ||
+            inputManager.matchesActionKey("pause", key)
+        ) {
+            state.hovered = -1;
         }
 
         if (key === "escape" || inputManager.matchesActionKey("pause", key)) {
@@ -98,11 +112,61 @@ export function createPauseMenuSystem({
             state.selected = (state.selected + 1) % options.length;
             musicManager.playSfx("menuMove");
         } else if (key === "enter" || key === "space") {
-            selectOption({ onResume, onInventory, onAttributes, onSave, onLoad, onQuit });
+            selectOption({ onResume, onInventory, onAttributes, onSave, onLoad, onSettings, onQuit });
         }
     }
 
-    function handleSettingsKeyDown(key, inputManager) {
+    function getSettingsListLayout() {
+        const boxW = Math.min(canvas.width - 60, 690);
+        const boxH = Math.min(canvas.height - 60, 470);
+        const boxX = (canvas.width - boxW) / 2;
+        const boxY = (canvas.height - boxH) / 2;
+        const listX = boxX + 24;
+        const listY = boxY + 76;
+        const rowH = 28;
+        const itemCount = settingsItems.length;
+        const visibleRows = Math.max(8, Math.floor((boxH - 170) / rowH));
+        const selected = Number.isFinite(state.settingsUiState.selected) ? state.settingsUiState.selected : 0;
+        const scrollStart = Math.max(0, Math.min(selected - Math.floor(visibleRows / 2), Math.max(0, itemCount - visibleRows)));
+        const visibleEnd = Math.min(itemCount, scrollStart + visibleRows);
+        return {
+            boxX,
+            boxY,
+            boxW,
+            boxH,
+            listX,
+            listY,
+            rowH,
+            itemCount,
+            visibleRows,
+            scrollStart,
+            visibleEnd
+        };
+    }
+
+    function getSettingsIndexAtPosition(mouseX, mouseY) {
+        const layout = getSettingsListLayout();
+        const {
+            listX,
+            listY,
+            rowH,
+            boxW,
+            scrollStart,
+            visibleEnd
+        } = layout;
+        const rowW = boxW - 48;
+
+        for (let i = scrollStart; i < visibleEnd; i++) {
+            const rowY = listY + (i - scrollStart) * rowH - 18;
+            const rowHHit = 24;
+            if (pointInRect(mouseX, mouseY, listX - 8, rowY, rowW, rowHHit)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    function handleSettingsKeyDown(key, inputManager, onBackToPause) {
         if (state.settingsUiState.awaitingRebindAction) {
             handleRebindKey(key, inputManager);
             return;
@@ -112,6 +176,9 @@ export function createPauseMenuSystem({
             // Return to main pause menu
             state.mode = "main";
             musicManager.playSfx("menuClose");
+            if (typeof onBackToPause === "function") {
+                onBackToPause();
+            }
             return;
         }
 
@@ -146,7 +213,7 @@ export function createPauseMenuSystem({
         }
     }
 
-    function selectOption({ onResume, onInventory, onAttributes, onSave, onLoad, onQuit }) {
+    function selectOption({ onResume, onInventory, onAttributes, onSave, onLoad, onSettings, onQuit }) {
         const option = options[state.selected];
         if (option === "Resume") {
             onResume();
@@ -162,12 +229,28 @@ export function createPauseMenuSystem({
             state.mode = "settings";
             state.settingsUiState.selected = 0;
             musicManager.playSfx("menuConfirm");
+            if (typeof onSettings === "function") {
+                onSettings();
+            }
         } else if (option === "Quit") {
             onQuit();
         }
     }
 
     function handleMouseMove(mouseX, mouseY) {
+        if (state.mode === "settings") {
+            const hoveredSettingsIndex = getSettingsIndexAtPosition(mouseX, mouseY);
+
+            if (
+                hoveredSettingsIndex >= 0 &&
+                hoveredSettingsIndex !== state.settingsUiState.selected
+            ) {
+                state.settingsUiState.selected = hoveredSettingsIndex;
+                musicManager.playSfx("menuMove");
+            }
+            return;
+        }
+
         const menuW = 340;
         const optionStartY = 106;
         const optionStep = 46;
@@ -199,10 +282,39 @@ export function createPauseMenuSystem({
         }
     }
 
-    function handleClick(mouseX, mouseY, callbacks) {
+    function handleClick(mouseX, mouseY, callbacks, inputManager = null) {
+        if (state.mode === "settings") {
+            const hoveredSettingsIndex = getSettingsIndexAtPosition(mouseX, mouseY);
+            if (hoveredSettingsIndex < 0) return false;
+            if (hoveredSettingsIndex !== state.settingsUiState.selected) {
+                state.settingsUiState.selected = hoveredSettingsIndex;
+                musicManager.playSfx("menuMove");
+            }
+            activateSettingsItem(inputManager);
+            return true;
+        }
+
         handleMouseMove(mouseX, mouseY);
         if (state.hovered >= 0) {
             selectOption(callbacks);
+            return true;
+        }
+        return false;
+    }
+
+    function handleSettingsWheel(deltaY) {
+        if (state.mode !== "settings") return false;
+        if (!Number.isFinite(deltaY) || deltaY === 0) return false;
+        const itemCount = settingsItems.length;
+        if (itemCount <= 0) return false;
+        const previous = state.settingsUiState.selected;
+        if (deltaY > 0) {
+            state.settingsUiState.selected = Math.min(itemCount - 1, state.settingsUiState.selected + 1);
+        } else {
+            state.settingsUiState.selected = Math.max(0, state.settingsUiState.selected - 1);
+        }
+        if (state.settingsUiState.selected !== previous) {
+            musicManager.playSfx("menuMove");
             return true;
         }
         return false;
@@ -240,6 +352,7 @@ export function createPauseMenuSystem({
         handleKeyDown,
         handleMouseMove,
         handleClick,
+        handleSettingsWheel,
         setStatus: setSettingsStatus
     };
 }

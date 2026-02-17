@@ -72,6 +72,8 @@ export function createInputController({
                 onResume: actions.onResume,
                 onInventory: actions.onInventory,
                 onAttributes: actions.onAttributes,
+                onSettings: actions.onSettings,
+                onBackToPause: actions.closePauseMenu,
                 onSave: actions.onSave,
                 onLoad: actions.onLoad,
                 onQuit: actions.onQuit,
@@ -114,7 +116,11 @@ export function createInputController({
             // Similar to PauseMenu logic, but simpler mapping?
             // Previous code called moveSettingsSelection(direction).
             // PauseMenuSystem handles Settings input via handleKeyDown too if mode is settings.
-            const settingsActions = { ...actions, inputManager };
+            const settingsActions = {
+                ...actions,
+                onBackToPause: actions.closePauseMenu,
+                inputManager
+            };
 
             if (direction !== 0 && (direction !== gamepadMenuState.heldDirection || now >= gamepadMenuState.nextMoveAt)) {
                 pauseMenuSystem.handleKeyDown(direction === 1 ? "arrowdown" : "arrowup", settingsActions);
