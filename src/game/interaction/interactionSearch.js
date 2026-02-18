@@ -73,3 +73,40 @@ export function findNearbySignpost({
 
   return null;
 }
+
+export function findClosestInteractableLeftover({
+  leftovers,
+  currentTownId,
+  currentAreaId,
+  playerCenterX,
+  playerCenterY,
+  interactReach
+}) {
+  if (!Array.isArray(leftovers) || leftovers.length === 0) return null;
+
+  const hasLoot = (leftover) => {
+    const silver = Number.isFinite(leftover?.silver) ? leftover.silver : 0;
+    const gold = Number.isFinite(leftover?.gold) ? leftover.gold : 0;
+    const items = Array.isArray(leftover?.items) ? leftover.items : [];
+    return gold > 0 || silver > 0 || items.length > 0;
+  };
+
+  let closest = null;
+  let closestDistance = Number.POSITIVE_INFINITY;
+  for (const leftover of leftovers) {
+    if (!leftover) continue;
+    if (leftover.depleted || !hasLoot(leftover)) continue;
+    if (leftover.townId !== currentTownId || leftover.areaId !== currentAreaId) continue;
+    const lx = Number.isFinite(leftover.x) ? leftover.x : 0;
+    const ly = Number.isFinite(leftover.y) ? leftover.y : 0;
+    const dx = Math.abs(playerCenterX - lx);
+    const dy = Math.abs(playerCenterY - ly);
+    if (dx > interactReach || dy > interactReach) continue;
+    const distance = Math.hypot(playerCenterX - lx, playerCenterY - ly);
+    if (distance < closestDistance) {
+      closest = leftover;
+      closestDistance = distance;
+    }
+  }
+  return closest;
+}

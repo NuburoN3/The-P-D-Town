@@ -53,6 +53,15 @@ function createDefaultsForType(type) {
     };
   }
 
+  if (type === "xpGainText") {
+    return {
+      durationMs: 1450,
+      size: 24,
+      color: "rgba(188, 236, 255, 0.98)",
+      glowColor: "rgba(106, 199, 255, 0.34)"
+    };
+  }
+
   if (type === "warningRing") {
     return {
       durationMs: 280,

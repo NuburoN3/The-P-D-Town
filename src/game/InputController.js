@@ -149,7 +149,21 @@ export function createInputController({
                 // pauseMenuSystem.handleKeyDown("escape", ...).
                 pauseMenuSystem.handleKeyDown("escape", settingsActions);
             }
-        } else if (gameState === GAME_STATES.INVENTORY || gameState === GAME_STATES.ATTRIBUTES) {
+        } else if (gameState === GAME_STATES.INVENTORY) {
+            if (
+                (confirmPressed && !gamepadMenuState.confirmHeld) ||
+                (backPressed && !gamepadMenuState.backHeld) ||
+                (startPressed && !gamepadMenuState.startHeld)
+            ) {
+                if (actions.isInventoryOpenedFromPauseMenu && actions.isInventoryOpenedFromPauseMenu()) {
+                    actions.closePauseMenu();
+                } else if (typeof actions.closeInventory === "function") {
+                    actions.closeInventory();
+                } else {
+                    actions.closePauseMenu();
+                }
+            }
+        } else if (gameState === GAME_STATES.ATTRIBUTES) {
             if (
                 (confirmPressed && !gamepadMenuState.confirmHeld) ||
                 (backPressed && !gamepadMenuState.backHeld) ||

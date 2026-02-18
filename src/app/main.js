@@ -7,6 +7,7 @@ import {
   COLORS,
   UI,
   TRAINING,
+  AREA_KINDS,
   GAME_STATES,
   TILE_TYPES,
   AUDIO_TRACKS,
@@ -45,6 +46,7 @@ const { canvas, ctx, assets, worldService, musicManager, state } = createGameRun
 const {
   gameFlags,
   playerInventory,
+  playerCurrency,
   playerEquipment,
   playerStats,
   trainingPopup,
@@ -55,7 +57,8 @@ const {
   player,
   cam,
   doorSequence,
-  playerDefeatSequence
+  playerDefeatSequence,
+  leftoversState
 } = state;
 
 const TITLE_SCREEN_MUSIC_KEY = "__title_screen_music__";
@@ -83,6 +86,30 @@ const setPreviousWorldState = (nextState) => {
 const setPreviousGameState = (nextState) => {
   previousGameState = nextState;
 };
+let inventoryOpenedFromPauseMenu = false;
+const setInventoryOpenedFromPauseMenu = (openedFromPause) => {
+  inventoryOpenedFromPauseMenu = Boolean(openedFromPause);
+};
+const isInventoryOpenedFromPauseMenu = () => inventoryOpenedFromPauseMenu;
+const getSimulationGameState = (stateToEvaluate = gameState) => {
+  if (stateToEvaluate !== GAME_STATES.INVENTORY || inventoryOpenedFromPauseMenu) return stateToEvaluate;
+  if (isFreeExploreState(previousWorldState)) return previousWorldState;
+  const currentAreaKind = worldService.getAreaKind(currentTownId, currentAreaId);
+  return currentAreaKind === AREA_KINDS.OVERWORLD ? GAME_STATES.OVERWORLD : GAME_STATES.INTERIOR;
+};
+const closeInventoryToWorld = () => {
+  if (gameState !== GAME_STATES.INVENTORY) return;
+  setInventoryOpenedFromPauseMenu(false);
+  leftoversUiState.active = false;
+  leftoversUiState.leftoverId = "";
+  leftoversUiState.openedFromInteraction = false;
+  leftoversUiState.requestCloseInventory = false;
+  if (interactionSystem) interactionSystem.toggleInventory();
+};
+const openInventoryFromPauseMenu = () => {
+  setInventoryOpenedFromPauseMenu(true);
+  gameState = GAME_STATES.INVENTORY;
+};
 const mouseUiState = {
   x: 0,
   y: 0,
@@ -95,6 +122,7 @@ const mouseUiState = {
   inventoryDragSource: "",
   inventoryDragSourceSlot: "",
   inventoryClickRequest: false,
+  inventoryDoubleClickRequest: false,
   inventoryDetailsRequest: false,
   inventoryDetailsIndex: -1,
   inventoryDetailsSource: "",
@@ -102,16 +130,23 @@ const mouseUiState = {
   inventoryDetailsAnchorX: -1,
   inventoryDetailsAnchorY: -1,
   inventoryDetailsCloseGraceUntil: 0,
-  inventorySlotOrder: []
+  inventoryPage: 0,
+  inventorySlotOrder: [],
+  inventoryPanelDragTarget: "",
+  inventoryPanelDragOffsetX: 0,
+  inventoryPanelDragOffsetY: 0
 };
 let menuStateController = null;
 const openPauseMenu = () => {
+  setInventoryOpenedFromPauseMenu(false);
   if (menuStateController) menuStateController.openPauseMenu();
 };
 const resumeFromPauseMenu = () => {
+  setInventoryOpenedFromPauseMenu(false);
   if (menuStateController) menuStateController.resumeFromPauseMenu();
 };
 const returnToPauseMenu = () => {
+  setInventoryOpenedFromPauseMenu(false);
   if (menuStateController) menuStateController.returnToPauseMenu();
 };
 
@@ -140,6 +175,7 @@ const input = new InputManager({
   keyBindings: userSettings.keybindings,
   onToggleInventory: () => {
     if (interactionSystem) {
+      setInventoryOpenedFromPauseMenu(false);
       interactionSystem.toggleInventory();
     }
   },
@@ -200,6 +236,19 @@ const objectiveState = {
 
 const uiMotionState = {
   minimapRevealAt: performance.now()
+};
+
+const inventoryUiLayout = {
+  inventoryPanelX: null,
+  inventoryPanelY: null,
+  equipmentPanelX: null,
+  equipmentPanelY: null
+};
+const leftoversUiState = {
+  active: false,
+  leftoverId: "",
+  openedFromInteraction: false,
+  requestCloseInventory: false
 };
 
 const minimapDiscoveryState = {
@@ -703,10 +752,129 @@ function queueCombatReward(reward) {
   }
 }
 
+function normalizeLootEntries(entries) {
+  if (!Array.isArray(entries)) return [];
+  const normalized = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") continue;
+    const name = typeof entry.name === "string" ? entry.name.trim() : "";
+    const amount = Number.isFinite(entry.amount) ? Math.max(0, Math.floor(entry.amount)) : 0;
+    if (!name || amount <= 0) continue;
+    normalized.push({ name, amount });
+  }
+  return normalized;
+}
+
+function resolveEnemyLootDrop(enemy) {
+  if (!enemy || typeof enemy !== "object") return null;
+  const chancePercentRaw = Number(enemy.lootDropChancePercent);
+  const hasChance = Number.isFinite(chancePercentRaw) && chancePercentRaw > 0;
+  if (!hasChance) return null;
+  const chancePercent = Math.max(0, Math.min(100, chancePercentRaw));
+  if (Math.random() * 100 >= chancePercent) return null;
+
+  const items = [];
+  const lootTable = Array.isArray(enemy.lootTable) ? enemy.lootTable : [];
+  for (const entry of lootTable) {
+    if (!entry || typeof entry !== "object") continue;
+    const itemName = typeof entry.item === "string" ? entry.item.trim() : "";
+    if (!itemName) continue;
+    const entryChanceRaw = Number(entry.chancePercent);
+    const entryChance = Number.isFinite(entryChanceRaw)
+      ? Math.max(0, Math.min(100, entryChanceRaw))
+      : 100;
+    if (Math.random() * 100 >= entryChance) continue;
+    const min = Number.isFinite(entry.min) ? Math.max(1, Math.floor(entry.min)) : 1;
+    const max = Number.isFinite(entry.max) ? Math.max(min, Math.floor(entry.max)) : min;
+    const amount = min + Math.floor(Math.random() * (max - min + 1));
+    if (amount > 0) {
+      items.push({ name: itemName, amount });
+    }
+  }
+
+  const rollCoinFromRange = (range) => {
+    if (!Array.isArray(range) || range.length < 2) return 0;
+    const min = Number.isFinite(range[0]) ? Math.max(0, Math.floor(range[0])) : 0;
+    const max = Number.isFinite(range[1]) ? Math.max(min, Math.floor(range[1])) : min;
+    return min + Math.floor(Math.random() * (max - min + 1));
+  };
+
+  const silver = rollCoinFromRange(enemy.lootSilverRange);
+  const gold = rollCoinFromRange(enemy.lootGoldRange);
+  if (items.length === 0 && silver <= 0 && gold <= 0) return null;
+  return {
+    items: normalizeLootEntries(items),
+    silver,
+    gold
+  };
+}
+
+function spawnEnemyLeftovers(enemy, now = performance.now()) {
+  const loot = resolveEnemyLootDrop(enemy);
+  if (!loot) return null;
+
+  const enemyWidth = Number.isFinite(enemy?.width) ? enemy.width : TILE;
+  const enemyHeight = Number.isFinite(enemy?.height) ? enemy.height : TILE;
+  const centerX = (Number.isFinite(enemy?.x) ? enemy.x : player.x) + enemyWidth * 0.5;
+  const centerY = (Number.isFinite(enemy?.y) ? enemy.y : player.y) + enemyHeight * 0.68;
+  const nextId = Number.isFinite(leftoversState?.nextId) ? leftoversState.nextId : 1;
+  leftoversState.nextId = nextId + 1;
+  const leftover = {
+    id: `leftovers-${nextId}`,
+    townId: currentTownId,
+    areaId: currentAreaId,
+    x: centerX,
+    y: centerY,
+    items: loot.items,
+    silver: loot.silver,
+    gold: loot.gold,
+    createdAt: now
+  };
+  leftoversState.entries.push(leftover);
+  return leftover;
+}
+
+function openLeftoversInventory(leftover) {
+  if (!leftover || !leftover.id) return;
+  if (!isFreeExploreState(gameState)) return;
+  setPreviousWorldState(gameState);
+  setInventoryOpenedFromPauseMenu(false);
+  leftoversUiState.active = true;
+  leftoversUiState.leftoverId = leftover.id;
+  leftoversUiState.openedFromInteraction = true;
+  leftoversUiState.requestCloseInventory = false;
+  gameState = GAME_STATES.INVENTORY;
+}
+
+function findClosestNearbyLeftoverForInteraction() {
+  if (!Array.isArray(leftoversState?.entries) || leftoversState.entries.length === 0) return null;
+  const playerCenterX = player.x + TILE * 0.5;
+  const playerCenterY = player.y + TILE * 0.5;
+  let closest = null;
+  let closestDistance = Number.POSITIVE_INFINITY;
+  for (const entry of leftoversState.entries) {
+    if (!entry) continue;
+    if (entry.depleted) continue;
+    const hasLoot = (Number(entry.gold) > 0) || (Number(entry.silver) > 0) || (Array.isArray(entry.items) && entry.items.length > 0);
+    if (!hasLoot) continue;
+    if (entry.townId !== currentTownId || entry.areaId !== currentAreaId) continue;
+    const lx = Number.isFinite(entry.x) ? entry.x : 0;
+    const ly = Number.isFinite(entry.y) ? entry.y : 0;
+    const dx = Math.abs(playerCenterX - lx);
+    const dy = Math.abs(playerCenterY - ly);
+    if (dx > UI.INTERACT_REACH || dy > UI.INTERACT_REACH) continue;
+    const d = Math.hypot(playerCenterX - lx, playerCenterY - ly);
+    if (d < closestDistance) {
+      closest = entry;
+      closestDistance = d;
+    }
+  }
+  return closest;
+}
+
 function grantCombatXpAndCollectSummary(enemy, now) {
   const xpGained = enemy?.countsForChallenge ? 3 : 2;
   let levelsGained = 0;
-  let hpGainedFromLevels = 0;
 
   playerStats.combatXP += xpGained;
   while (playerStats.combatXP >= playerStats.combatXPNeeded) {
@@ -714,9 +882,8 @@ function grantCombatXpAndCollectSummary(enemy, now) {
     playerStats.combatLevel += 1;
     playerStats.combatXPNeeded = Math.min(60, playerStats.combatXPNeeded + 4);
     levelsGained += 1;
-    player.maxHp += 5;
-    player.hp = Math.min(player.maxHp, player.hp + 5);
-    hpGainedFromLevels += 5;
+    player.maxHp += 1;
+    player.hp = Math.min(player.maxHp, player.hp + 1);
     musicManager.playSfx("levelUp");
   }
   if (levelsGained > 0) {
@@ -724,19 +891,8 @@ function grantCombatXpAndCollectSummary(enemy, now) {
     playerStats.combatLevelFxLevelsGained = levelsGained;
   }
 
-  const lines = [
-    `Combat XP +${xpGained}`,
-    `Combat Lv.${playerStats.combatLevel} (${playerStats.combatXP}/${playerStats.combatXPNeeded})`
-  ];
-  if (levelsGained > 0) {
-    lines.push(`Level up! +${levelsGained} combat level`);
-    lines.push(`Vitality up! +${hpGainedFromLevels} Max HP`);
-  }
-  lines.push("Items: none");
-
   return {
-    title: `Defeated ${enemy?.name || "Enemy"}`,
-    lines,
+    xpGained,
     completedLevelUp: levelsGained > 0
   };
 }
@@ -1010,6 +1166,110 @@ function updateHanamiDojoExitSequence(now) {
 }
 
 function updateRuntimeUi(now) {
+  if (
+    isFreeExploreState(gameState) &&
+    !dialogue.isActive() &&
+    !choiceState.active &&
+    !doorSequence.active &&
+    input.getInteractPressed()
+  ) {
+    const nearbyLeftover = findClosestNearbyLeftoverForInteraction();
+    if (nearbyLeftover) {
+      openLeftoversInventory(nearbyLeftover);
+      input.clearInteractPressed();
+    }
+  }
+
+  const normalizeCoins = () => {
+    const safeGold = Number.isFinite(playerCurrency.gold) ? Math.max(0, Math.floor(playerCurrency.gold)) : 0;
+    const safeSilver = Number.isFinite(playerCurrency.silver) ? Math.max(0, Math.floor(playerCurrency.silver)) : 0;
+    const gainedGold = Math.floor(safeSilver / 100);
+    playerCurrency.gold = safeGold + gainedGold;
+    playerCurrency.silver = safeSilver % 100;
+  };
+  const moveInventoryCoinItemsToCurrency = () => {
+    const silverKeys = ["Silver Coin", "Silver Coins"];
+    const goldKeys = ["Gold Coin", "Gold Coins"];
+    let silverAdded = 0;
+    let goldAdded = 0;
+    for (const key of silverKeys) {
+      const count = Number(playerInventory[key] || 0);
+      if (count > 0) {
+        silverAdded += Math.floor(count);
+        delete playerInventory[key];
+      }
+    }
+    for (const key of goldKeys) {
+      const count = Number(playerInventory[key] || 0);
+      if (count > 0) {
+        goldAdded += Math.floor(count);
+        delete playerInventory[key];
+      }
+    }
+    if (silverAdded > 0) playerCurrency.silver = (Number(playerCurrency.silver) || 0) + silverAdded;
+    if (goldAdded > 0) playerCurrency.gold = (Number(playerCurrency.gold) || 0) + goldAdded;
+  };
+  moveInventoryCoinItemsToCurrency();
+  normalizeCoins();
+  const pruneInvalidLeftovers = () => {
+    if (!Array.isArray(leftoversState?.entries)) return;
+    const activeLeftoverId = leftoversUiState?.active ? leftoversUiState.leftoverId : "";
+    const valid = [];
+    for (const entry of leftoversState.entries) {
+      if (!entry || typeof entry !== "object") continue;
+      const items = normalizeLootEntries(entry.items);
+      const silver = Number.isFinite(entry.silver) ? Math.max(0, Math.floor(entry.silver)) : 0;
+      const gold = Number.isFinite(entry.gold) ? Math.max(0, Math.floor(entry.gold)) : 0;
+      const isEmpty = items.length === 0 && silver <= 0 && gold <= 0;
+      if (isEmpty && (!activeLeftoverId || entry.id !== activeLeftoverId)) continue;
+      entry.items = items;
+      entry.silver = silver;
+      entry.gold = gold;
+      valid.push(entry);
+    }
+    leftoversState.entries = valid;
+  };
+  pruneInvalidLeftovers();
+  if (gameState === GAME_STATES.INVENTORY && leftoversUiState.requestCloseInventory) {
+    leftoversUiState.requestCloseInventory = false;
+    closeInventoryToWorld();
+    return;
+  }
+  if (leftoversUiState.active) {
+    const activeLeftover = leftoversState.entries.find((entry) => entry?.id === leftoversUiState.leftoverId) || null;
+    if (!activeLeftover) {
+      const shouldReturnToWorld =
+        leftoversUiState.openedFromInteraction &&
+        gameState === GAME_STATES.INVENTORY &&
+        !inventoryOpenedFromPauseMenu &&
+        isFreeExploreState(previousWorldState);
+      leftoversUiState.active = false;
+      leftoversUiState.leftoverId = "";
+      leftoversUiState.openedFromInteraction = false;
+      leftoversUiState.requestCloseInventory = false;
+      if (shouldReturnToWorld) {
+        gameState = previousWorldState;
+      }
+    }
+  } else if (leftoversUiState.leftoverId) {
+    leftoversUiState.leftoverId = "";
+    leftoversUiState.openedFromInteraction = false;
+    leftoversUiState.requestCloseInventory = false;
+  }
+  if (gameState !== GAME_STATES.INVENTORY && leftoversUiState.active) {
+    leftoversUiState.active = false;
+    leftoversUiState.leftoverId = "";
+    leftoversUiState.openedFromInteraction = false;
+    leftoversUiState.requestCloseInventory = false;
+  }
+  if (gameState !== GAME_STATES.INVENTORY && Array.isArray(leftoversState?.entries)) {
+    leftoversState.entries = leftoversState.entries.filter((entry) => {
+      if (!entry) return false;
+      const hasLoot = (Number(entry.gold) > 0) || (Number(entry.silver) > 0) || (Array.isArray(entry.items) && entry.items.length > 0);
+      return hasLoot;
+    });
+  }
+
   updateHanamiDojoExitSequence(now);
   updatePatInnIntroSequence(now);
   syncObjectiveState(now);
@@ -1040,7 +1300,10 @@ function getSaveLoadContext() {
     gameFlags,
     playerStats,
     playerInventory,
+    playerCurrency,
     playerEquipment,
+    inventoryUiLayout,
+    leftoversState,
     objectiveState,
     currentGameState: gameState,
     townId: currentTownId,
@@ -1079,6 +1342,10 @@ const {
   onAfterRestore: () => {
     ensurePlayerSkillState(player);
     player.lastManaRegenTickAt = performance.now();
+    leftoversUiState.active = false;
+    leftoversUiState.leftoverId = "";
+    leftoversUiState.openedFromInteraction = false;
+    leftoversUiState.requestCloseInventory = false;
     applyStoryNpcVisibility();
     uiMotionState.minimapRevealAt = performance.now();
     syncObjectiveState(performance.now());
@@ -1173,21 +1440,19 @@ const combatSystem = createCombatSystem({
       handleCombatHitConfirmed(event);
     },
     onEntityDefeated: (enemy, now) => {
-      const challengeOutcome = handleChallengeEnemyDefeat(enemy, now);
+      handleChallengeEnemyDefeat(enemy, now);
       const reward = grantCombatXpAndCollectSummary(enemy, now);
-      if (challengeOutcome?.challengeProgressText) {
-        reward.lines.push(`Challenge: ${challengeOutcome.challengeProgressText}`);
-      }
-      if (challengeOutcome?.bogProgressText) {
-        reward.lines.push(`Bog trial: ${challengeOutcome.bogProgressText}`);
-      }
-      if (challengeOutcome?.completedNow) {
-        reward.lines.push("Objective updated: return to Mr. Hanami.");
-      }
-      if (challengeOutcome?.bogCompletedNow) {
-        reward.lines.push("Objective updated: report to Mr. Hanami in Bogland.");
-      }
-      queueCombatReward(reward);
+      spawnEnemyLeftovers(enemy, now);
+      const ex = Number.isFinite(enemy?.x) ? enemy.x + (Number(enemy?.width) || TILE) * 0.5 : player.x + TILE * 0.5;
+      const ey = Number.isFinite(enemy?.y) ? enemy.y + (Number(enemy?.height) || TILE) * 0.25 : player.y;
+      vfxSystem.spawn("xpGainText", {
+        x: ex,
+        y: ey,
+        text: `+${reward.xpGained} xp`,
+        color: reward.completedLevelUp ? "#fff2ba" : "#a8e4ff",
+        glowColor: reward.completedLevelUp ? "rgba(255, 206, 96, 0.4)" : "rgba(101, 197, 255, 0.34)",
+        durationMs: 1450
+      });
       syncObjectiveState(now);
     },
     onPlayerDefeated: ({ player: defeatedPlayer }) => {
@@ -1289,7 +1554,7 @@ function handlePauseMenuLeftClick(mouseX, mouseY) {
   if (gameState !== GAME_STATES.PAUSE_MENU && gameState !== GAME_STATES.SETTINGS) return false;
 
   const openInventoryFromPause = () => {
-    gameState = GAME_STATES.INVENTORY;
+    openInventoryFromPauseMenu();
   };
   const openAttributesFromPause = () => {
     gameState = GAME_STATES.ATTRIBUTES;
@@ -1351,6 +1616,7 @@ interactionSystem = createInteractionSystem({
   inventoryHint,
   player,
   npcs,
+  leftovers: leftoversState.entries,
   doorSequence,
   musicManager,
   worldService,
@@ -1424,6 +1690,9 @@ interactionSystem = createInteractionSystem({
       durationMs: 220,
       startedAt: now
     });
+  },
+  onLeftoversInteracted: (leftover) => {
+    openLeftoversInventory(leftover);
   },
   handleFeatureNPCInteraction: (npc) => featureCoordinator.tryHandleNPCInteraction(npc),
   handleFeatureStateInteraction: (activeGameState) => {
@@ -1500,6 +1769,7 @@ gameController = createGameController({
     getCurrentMapW: () => currentMapW,
     getCurrentMapH: () => currentMapH,
     getGameState: () => gameState,
+    resolveGameplayState: () => getSimulationGameState(gameState),
     isPlayerMovementLocked: () => patInnIntroState.active,
     setGameState: (nextState) => {
       gameState = nextState;
@@ -1546,8 +1816,10 @@ const inputController = createInputController({
     },
     onResume: resumeFromPauseMenu,
     onInventory: () => {
-      gameState = GAME_STATES.INVENTORY;
+      openInventoryFromPauseMenu();
     },
+    closeInventory: closeInventoryToWorld,
+    isInventoryOpenedFromPauseMenu,
     onAttributes: () => {
       gameState = GAME_STATES.ATTRIBUTES;
     },
@@ -1583,9 +1855,10 @@ const { syncPointerLockWithState, register: registerInputBindings } = createInpu
   performStartNewGame,
   performLoadGame,
   resumeFromPauseMenu,
-  openInventoryFromPauseMenu: () => {
-    gameState = GAME_STATES.INVENTORY;
-  },
+  openInventoryFromPauseMenu,
+  closeInventory: closeInventoryToWorld,
+  isInventoryOpenedFromPauseMenu,
+  isLeftoversInventoryOpen: () => Boolean(leftoversUiState.active && gameState === GAME_STATES.INVENTORY),
   openAttributesFromPauseMenu: () => {
     gameState = GAME_STATES.ATTRIBUTES;
   },
@@ -1596,6 +1869,15 @@ const { syncPointerLockWithState, register: registerInputBindings } = createInpu
   openPauseMenu,
   isFreeExploreState,
   handleSkillSlotPressed: tryActivateSkillSlot,
+  tryOpenLeftoversFromInteract: () => {
+    if (!isFreeExploreState(gameState)) return false;
+    if (dialogue.isActive() || choiceState.active || doorSequence.active) return false;
+    const nearbyLeftover = findClosestNearbyLeftoverForInteraction();
+    if (!nearbyLeftover) return false;
+    openLeftoversInventory(nearbyLeftover);
+    input.clearInteractPressed();
+    return true;
+  },
   updateMenuHoverStateFromMouse,
   clearMenuHoverState,
   handleTitleLeftClick,
@@ -1642,6 +1924,7 @@ const { render } = createGameRenderer({
   player,
   npcs,
   enemies,
+  leftoversState,
   gameFlags,
   input,
   settingsUiState,
@@ -1649,7 +1932,10 @@ const { render } = createGameRenderer({
   trainingPopup,
   playerStats,
   playerInventory,
+  playerCurrency,
   playerEquipment,
+  inventoryUiLayout,
+  leftoversUiState,
   objectiveState,
   uiMotionState,
   minimapDiscoveryState,
@@ -1667,6 +1953,7 @@ const { render } = createGameRenderer({
   getCurrentMapW,
   getCurrentMapH,
   getGameState,
+  getSimulationGameState,
   isConditionallyHiddenDoor
 });
 
@@ -1679,6 +1966,7 @@ if (gameState === GAME_STATES.TITLE_SCREEN) {
 const { startLoop } = createGameLoop({
   gameStates: GAME_STATES,
   getGameState,
+  getSimulationGameState,
   syncPointerLockWithState,
   inputController,
   pauseMenuSystem,

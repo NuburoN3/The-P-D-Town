@@ -71,6 +71,7 @@ export function createGameRenderer({
   player,
   npcs,
   enemies,
+  leftoversState,
   gameFlags,
   input,
   settingsUiState,
@@ -78,7 +79,10 @@ export function createGameRenderer({
   trainingPopup,
   playerStats,
   playerInventory,
+  playerCurrency,
   playerEquipment,
+  inventoryUiLayout,
+  leftoversUiState,
   objectiveState,
   uiMotionState,
   minimapDiscoveryState,
@@ -96,8 +100,12 @@ export function createGameRenderer({
   getCurrentMapW,
   getCurrentMapH,
   getGameState,
+  getSimulationGameState,
   isConditionallyHiddenDoor
 }) {
+  let atmosphereTimeSec = 0;
+  let lastAtmosphereNowMs = performance.now();
+
   function buildDoorHintText(currentTownId, currentAreaId) {
     if (
       doorAccessNoticeState?.active &&
@@ -107,6 +115,19 @@ export function createGameRenderer({
       doorAccessNoticeState.text.length > 0
     ) {
       return doorAccessNoticeState.text;
+    }
+    const hasNearbyLeftovers = Array.isArray(leftoversState?.entries) && leftoversState.entries.some((entry) => {
+      if (!entry) return false;
+      if (entry.depleted) return false;
+      const hasLoot = (Number(entry.gold) > 0) || (Number(entry.silver) > 0) || (Array.isArray(entry.items) && entry.items.length > 0);
+      if (!hasLoot) return false;
+      if (entry.townId !== currentTownId || entry.areaId !== currentAreaId) return false;
+      const dx = Math.abs((Number.isFinite(entry.x) ? entry.x : 0) - (player.x + tileSize * 0.5));
+      const dy = Math.abs((Number.isFinite(entry.y) ? entry.y : 0) - (player.y + tileSize * 0.5));
+      return dx <= tileSize && dy <= tileSize;
+    });
+    if (hasNearbyLeftovers) {
+      return "Open Leftovers";
     }
     return "";
   }
@@ -222,6 +243,8 @@ export function createGameRenderer({
 
   function render() {
     const now = performance.now();
+    const dtSec = Math.max(0, Math.min(0.1, (now - lastAtmosphereNowMs) / 1000));
+    lastAtmosphereNowMs = now;
     const renderCam = computeRenderCamera(now);
     const currentTownId = getCurrentTownId();
     const currentAreaId = getCurrentAreaId();
@@ -229,6 +252,12 @@ export function createGameRenderer({
     const currentMapW = getCurrentMapW();
     const currentMapH = getCurrentMapH();
     const gameState = getGameState();
+    const simulationGameState = typeof getSimulationGameState === "function"
+      ? getSimulationGameState(gameState)
+      : gameState;
+    if (isFreeExploreState(simulationGameState)) {
+      atmosphereTimeSec += dtSec;
+    }
     const useStylizedMenuCursor = (
       gameState === GAME_STATES.TITLE_SCREEN ||
       gameState === GAME_STATES.PAUSE_MENU ||
@@ -258,6 +287,7 @@ export function createGameRenderer({
       ui,
       drawTile,
       getHandstandSprite: () => assets.getSprite("protagonist_handstand"),
+      getEquippedTrainingHeadbandSprite: () => assets.getSprite("equipTrainingHeadband"),
       getItemSprite: (name) => assets.getSprite(name),
       drawCustomOverlays: ({ ctx: frameCtx, canvas: frameCanvas, colors: frameColors, ui: frameUi, state: frameState }) => {
         featureCoordinator.renderOverlays({
@@ -280,6 +310,8 @@ export function createGameRenderer({
         currentAreaId,
         currentAreaKind: worldService.getAreaKind(currentTownId, currentAreaId),
         gameState,
+        simulationGameState,
+        atmosphereTimeSec,
         titleState,
         introState: studioIntroState,
         titleHeroImage: assets.getSprite(ASSET_KEYS.TITLE_HERO_IMAGE),
@@ -288,6 +320,8 @@ export function createGameRenderer({
         player,
         npcs,
         enemies,
+        leftovers: leftoversState?.entries || [],
+        leftoversSprite: assets.getSprite("leftovers"),
         gameFlags,
         cam: renderCam,
         inputPromptMode: input.getInputMethod(),
@@ -300,7 +334,10 @@ export function createGameRenderer({
         trainingPopup,
         playerStats,
         playerInventory,
+        playerCurrency,
         playerEquipment,
+        inventoryUiLayout,
+        leftoversUiState,
         objectiveState,
         uiMotionState,
         itemAlert,

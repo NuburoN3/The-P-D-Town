@@ -1,6 +1,7 @@
 export function createGameLoop({
   gameStates,
   getGameState,
+  getSimulationGameState,
   syncPointerLockWithState,
   inputController,
   pauseMenuSystem,
@@ -41,6 +42,9 @@ export function createGameLoop({
     pauseMenuSystem.update(dtScale);
 
     const gameState = getGameState();
+    const simulationGameState = typeof getSimulationGameState === "function"
+      ? getSimulationGameState(gameState)
+      : gameState;
     const hitstopActive = now < combatFeedback.hitstopUntil;
 
     if (gameState === gameStates.TITLE_SCREEN || gameState === gameStates.INTRO_CUTSCENE) {
@@ -55,7 +59,7 @@ export function createGameLoop({
         enemyAiSystem.update({
           now,
           dtScale,
-          gameState,
+          gameState: simulationGameState,
           isDialogueActive: isDialogueActive(),
           choiceActive: choiceState.active,
           enemies,
@@ -69,7 +73,7 @@ export function createGameLoop({
 
         combatSystem.update({
           now,
-          gameState,
+          gameState: simulationGameState,
           isDialogueActive: isDialogueActive(),
           choiceActive: choiceState.active,
           attackPressed: input.getAttackPressed(),
@@ -80,7 +84,7 @@ export function createGameLoop({
           currentAreaId: getCurrentAreaId()
         });
 
-        updateFountainHealing(now);
+        updateFountainHealing(now, simulationGameState);
       }
 
       input.clearAttackPressed();

@@ -19,6 +19,9 @@ export function createInputBindings({
   performLoadGame,
   resumeFromPauseMenu,
   openInventoryFromPauseMenu,
+  closeInventory,
+  isInventoryOpenedFromPauseMenu,
+  isLeftoversInventoryOpen = () => false,
   openAttributesFromPauseMenu,
   openSettingsFromPauseMenu,
   returnToPauseMenu,
@@ -28,7 +31,8 @@ export function createInputBindings({
   clearMenuHoverState,
   handleTitleLeftClick,
   handlePauseMenuLeftClick,
-  handleSkillSlotPressed
+  handleSkillSlotPressed,
+  tryOpenLeftoversFromInteract = () => false
 }) {
   const POINTER_LOCK_ENABLED = true;
   let pointerLockPrimed = false;
@@ -117,7 +121,9 @@ export function createInputBindings({
       mouseUiState.insideCanvas = false;
       mouseUiState.sprintPressed = false;
       mouseUiState.inventoryLeftDown = false;
+      mouseUiState.inventoryPanelDragTarget = "";
       mouseUiState.inventoryClickRequest = false;
+      mouseUiState.inventoryDoubleClickRequest = false;
       clearMenuHoverState();
     });
     canvas.addEventListener("contextmenu", (e) => {
@@ -144,6 +150,7 @@ export function createInputBindings({
     canvas.addEventListener("mouseup", (e) => {
       if (e.button === 0) {
         mouseUiState.inventoryLeftDown = false;
+        mouseUiState.inventoryPanelDragTarget = "";
         if (mouseUiState.inventoryDragItemName) {
           mouseUiState.inventoryDragReleaseRequest = true;
         }
@@ -155,6 +162,7 @@ export function createInputBindings({
     window.addEventListener("mouseup", (e) => {
       if (e.button === 0) {
         mouseUiState.inventoryLeftDown = false;
+        mouseUiState.inventoryPanelDragTarget = "";
         if (mouseUiState.inventoryDragItemName) {
           mouseUiState.inventoryDragReleaseRequest = true;
         }
@@ -166,7 +174,9 @@ export function createInputBindings({
     window.addEventListener("blur", () => {
       mouseUiState.sprintPressed = false;
       mouseUiState.inventoryLeftDown = false;
+      mouseUiState.inventoryPanelDragTarget = "";
       mouseUiState.inventoryClickRequest = false;
+      mouseUiState.inventoryDoubleClickRequest = false;
       if (mouseUiState.inventoryDragItemName) {
         mouseUiState.inventoryDragReleaseRequest = true;
       }
@@ -188,6 +198,14 @@ export function createInputBindings({
       }
       if (isFreeExploreState(gameState)) {
         input.triggerAttackPressed();
+        e.preventDefault();
+      }
+    });
+    canvas.addEventListener("dblclick", (e) => {
+      if (e.button !== 0) return;
+      updateMouseUiPosition(e);
+      if (getGameState() === gameStates.INVENTORY) {
+        mouseUiState.inventoryDoubleClickRequest = true;
         e.preventDefault();
       }
     });
@@ -309,7 +327,34 @@ export function createInputBindings({
         return;
       }
 
-      if (gameState === gameStates.INVENTORY || gameState === gameStates.ATTRIBUTES) {
+      if (gameState === gameStates.INVENTORY) {
+        if (input.matchesActionKey("interact", key) && !e.repeat && isLeftoversInventoryOpen()) {
+          if (typeof closeInventory === "function") {
+            closeInventory();
+          } else {
+            returnToPauseMenu();
+          }
+          e.preventDefault();
+          return;
+        }
+        if ((
+          key === "enter" ||
+          key === "escape" ||
+          isPauseKey(key)
+        ) && !e.repeat) {
+          if (typeof isInventoryOpenedFromPauseMenu === "function" && isInventoryOpenedFromPauseMenu()) {
+            returnToPauseMenu();
+          } else if (typeof closeInventory === "function") {
+            closeInventory();
+          } else {
+            returnToPauseMenu();
+          }
+          e.preventDefault();
+        }
+        return;
+      }
+
+      if (gameState === gameStates.ATTRIBUTES) {
         if ((
           key === "enter" ||
           key === "escape" ||
@@ -322,6 +367,13 @@ export function createInputBindings({
       }
 
       if (isFreeExploreState(gameState) && !e.repeat) {
+        if (input.matchesActionKey("interact", key)) {
+          const openedLeftovers = tryOpenLeftoversFromInteract();
+          if (openedLeftovers) {
+            e.preventDefault();
+            return;
+          }
+        }
         const skillSlotIndex = getSkillSlotIndexFromKeyboardEvent(e, key);
         if (skillSlotIndex >= 0 && typeof handleSkillSlotPressed === "function") {
           handleSkillSlotPressed(skillSlotIndex);

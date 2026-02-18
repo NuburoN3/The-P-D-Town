@@ -33,6 +33,9 @@ export const DEFAULT_SPRITE_MANIFEST = {
   protagonist: "assets/sprites/protagonist.png",
   protagonist_handstand: "assets/sprites/protagonist_handstand.png",
   trainingHeadband: "assets/sprites/TrainingHeadband.png",
+  equipTrainingHeadband: "assets/sprites/Equip_TrainingHeadband.png",
+  leftovers: "assets/sprites/Leftovers.png",
+  silverCoins: "assets/sprites/SilverCoins.png",
   dojoMembership: "assets/sprites/DojoMembership.png",
   [ASSET_KEYS.TITLE_HERO_IMAGE]: ASSET_PATHS.TITLE_HERO_IMAGE
 };

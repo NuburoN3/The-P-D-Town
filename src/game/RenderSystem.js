@@ -678,17 +678,41 @@ function drawCombatLevelHud(ctx, state, colors) {
 
   const panelX = 14;
   const panelY = 14;
-  const panelW = 210;
-  const panelH = 44;
-  drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors);
+  const panelW = 238;
+  const panelH = 58;
 
-  ctx.font = FONT_12;
-  const levelText = `Combat Lv. ${combatLevel}`;
+  const frameGlow = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+  frameGlow.addColorStop(0, "rgba(255, 223, 150, 0.18)");
+  frameGlow.addColorStop(1, "rgba(148, 98, 44, 0.1)");
+  ctx.fillStyle = frameGlow;
+  ctx.fillRect(panelX - 2, panelY - 2, panelW + 4, panelH + 4);
+
+  const outerFrame = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+  outerFrame.addColorStop(0, "rgba(59, 75, 93, 0.95)");
+  outerFrame.addColorStop(1, "rgba(18, 27, 39, 0.96)");
+  ctx.fillStyle = outerFrame;
+  ctx.fillRect(panelX, panelY, panelW, panelH);
+
+  const innerFrame = ctx.createLinearGradient(panelX + 2, panelY + 2, panelX + 2, panelY + panelH - 2);
+  innerFrame.addColorStop(0, "rgba(30, 45, 60, 0.95)");
+  innerFrame.addColorStop(1, "rgba(10, 18, 28, 0.96)");
+  ctx.fillStyle = innerFrame;
+  ctx.fillRect(panelX + 2, panelY + 2, panelW - 4, panelH - 4);
+
+  ctx.strokeStyle = "rgba(246, 220, 159, 0.86)";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1);
+  ctx.strokeStyle = "rgba(76, 98, 124, 0.85)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(panelX + 3.5, panelY + 3.5, panelW - 7, panelH - 7);
+
+  ctx.font = FONT_16;
+  const levelText = `Level ${combatLevel}`;
   if (levelFxActive) {
     const textFlashT = clamp01(levelFxElapsed / 420);
     const textScale = 1 + (0.24 * (1 - easeOutCubic(textFlashT)) * levelFxIntensity);
-    const textX = panelX + 10;
-    const textY = panelY + 17;
+    const textX = panelX + 14;
+    const textY = panelY + 22;
     const textWidth = ctx.measureText(levelText).width;
     const anchorX = textX + textWidth / 2;
     ctx.save();
@@ -697,17 +721,38 @@ function drawCombatLevelHud(ctx, state, colors) {
     drawUiText(ctx, levelText, -textWidth / 2, 0, colors);
     ctx.restore();
   } else {
-    drawUiText(ctx, levelText, panelX + 10, panelY + 17, colors);
+    drawUiText(ctx, levelText, panelX + 14, panelY + 22, {
+      ...colors,
+      TEXT: "#eaf6ff",
+      TEXT_SHADOW: "rgba(6, 11, 18, 0.82)"
+    });
   }
 
-  const barX = panelX + 10;
-  const barY = panelY + 24;
-  const barW = panelW - 20;
-  const barH = 12;
-  ctx.fillStyle = "rgba(10, 12, 18, 0.9)";
+  const barX = panelX + 12;
+  const barY = panelY + 35;
+  const barW = panelW - 24;
+  const barH = 14;
+  const barBack = ctx.createLinearGradient(barX, barY, barX, barY + barH);
+  barBack.addColorStop(0, "rgba(7, 12, 18, 0.96)");
+  barBack.addColorStop(1, "rgba(20, 31, 44, 0.94)");
+  ctx.fillStyle = barBack;
   ctx.fillRect(barX, barY, barW, barH);
-  ctx.fillStyle = "rgba(234, 187, 92, 0.95)";
-  ctx.fillRect(barX, barY, Math.round(barW * progress), barH);
+
+  const fillW = Math.max(0, Math.round(barW * progress));
+  const fillGradient = ctx.createLinearGradient(barX, barY, barX, barY + barH);
+  fillGradient.addColorStop(0, "rgba(112, 204, 150, 0.97)");
+  fillGradient.addColorStop(0.55, "rgba(36, 140, 84, 0.96)");
+  fillGradient.addColorStop(1, "rgba(14, 82, 51, 0.95)");
+  ctx.fillStyle = fillGradient;
+  ctx.fillRect(barX, barY, fillW, barH);
+
+  if (fillW > 4) {
+    const fillSheen = ctx.createLinearGradient(barX, barY, barX, barY + barH * 0.65);
+    fillSheen.addColorStop(0, "rgba(255, 255, 255, 0.48)");
+    fillSheen.addColorStop(1, "rgba(255, 255, 255, 0)");
+    ctx.fillStyle = fillSheen;
+    ctx.fillRect(barX + 1, barY + 1, fillW - 2, Math.max(4, barH * 0.55));
+  }
 
   if (levelFxActive) {
     const burstT = clamp01(levelFxElapsed / 540);
@@ -747,9 +792,18 @@ function drawCombatLevelHud(ctx, state, colors) {
     }
   }
 
-  ctx.strokeStyle = "rgba(255,255,255,0.45)";
+  ctx.strokeStyle = "rgba(255, 240, 209, 0.74)";
   ctx.lineWidth = 1;
   ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
+
+  const xpNeededRemaining = Math.max(0, combatXpNeeded - combatXp);
+  const xpText = `${xpNeededRemaining} xp required`;
+  ctx.font = "600 10px 'Spectral', 'Garamond', 'Trebuchet MS', serif";
+  const xpTextW = Math.ceil(ctx.measureText(xpText).width);
+  const xpTextX = Math.round(barX + (barW - xpTextW) * 0.5);
+  const xpTextY = barY + 10;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.98)";
+  ctx.fillText(xpText, xpTextX, xpTextY);
 }
 
 function drawObjectiveTracker(ctx, state, colors) {
@@ -986,13 +1040,63 @@ function drawMinimap(ctx, state, colors) {
   ctx.restore();
 }
 
-function drawDoorHint(ctx, state, colors, dialogue) {
+function drawDoorHint(ctx, state, colors, dialogue, cameraZoom = 1) {
   if (!isFreeExploreState(state.gameState)) return;
   if (dialogue && typeof dialogue.isActive === "function" && dialogue.isActive()) return;
   const text = state.doorHintText;
   if (!text) return;
 
   const destinationText = text.startsWith("Door:") ? text.slice(5).trim() : text;
+  const isLeftoversHint = destinationText.toLowerCase() === "open leftovers";
+
+  if (isLeftoversHint) {
+    ctx.font = "500 10px 'Spectral', 'Garamond', 'Trebuchet MS', serif";
+    const textW = Math.ceil(ctx.measureText(destinationText).width);
+    const boxW = Math.max(104, textW + 14);
+    const boxH = 20;
+    let boxX = Math.round((ctx.canvas.width - boxW) / 2);
+    let boxY = Math.round((ctx.canvas.height - boxH) / 2);
+
+    const leftovers = Array.isArray(state?.leftovers) ? state.leftovers : [];
+    const nearest = leftovers
+      .filter((entry) => {
+        if (!entry) return false;
+        if (entry.depleted) return false;
+        const hasLoot = (Number(entry.gold) > 0) || (Number(entry.silver) > 0) || (Array.isArray(entry.items) && entry.items.length > 0);
+        if (!hasLoot) return false;
+        return entry.townId === state.currentTownId && entry.areaId === state.currentAreaId;
+      })
+      .sort((a, b) => {
+        const ax = Number(a.x) || 0;
+        const ay = Number(a.y) || 0;
+        const bx = Number(b.x) || 0;
+        const by = Number(b.y) || 0;
+        const px = (Number(state?.player?.x) || 0) + 16;
+        const py = (Number(state?.player?.y) || 0) + 16;
+        const da = Math.hypot(ax - px, ay - py);
+        const db = Math.hypot(bx - px, by - py);
+        return da - db;
+      })[0];
+    if (nearest) {
+      const sx = (Number(nearest.x || 0) - (Number(state?.cam?.x) || 0)) * cameraZoom;
+      const sy = (Number(nearest.y || 0) - (Number(state?.cam?.y) || 0)) * cameraZoom;
+      boxX = Math.round(sx - boxW * 0.5);
+      boxY = Math.round(sy - boxH - 14);
+      boxX = Math.max(6, Math.min(ctx.canvas.width - boxW - 6, boxX));
+      boxY = Math.max(6, Math.min(ctx.canvas.height - boxH - 6, boxY));
+    }
+    ctx.fillStyle = "rgba(20, 34, 48, 0.5)";
+    ctx.fillRect(boxX, boxY, boxW, boxH);
+    ctx.strokeStyle = "rgba(154, 204, 236, 0.62)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(boxX + 0.5, boxY + 0.5, boxW - 1, boxH - 1);
+    drawUiText(ctx, destinationText, boxX + 7, boxY + 14, {
+      ...colors,
+      TEXT: "rgba(231, 245, 255, 0.95)",
+      TEXT_SHADOW: "rgba(8, 14, 18, 0.62)"
+    });
+    return;
+  }
 
   ctx.font = FONT_12;
   const textW = ctx.measureText(destinationText).width;
@@ -1132,7 +1236,9 @@ function drawAtmosphere(ctx, canvas, colors, state) {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
-  const now = performance.now() * 0.001;
+  const now = Number.isFinite(state?.atmosphereTimeSec)
+    ? state.atmosphereTimeSec
+    : performance.now() * 0.001;
   const particleCount = Math.round((isOverworld ? 42 : 18) * intensity);
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
@@ -1279,6 +1385,28 @@ function drawWorldVfx(ctx, state) {
       ctx.lineWidth = 2;
       const text = String(effect.text || "");
       ctx.strokeText(text, x, floatY);
+      ctx.fillText(text, x, floatY);
+      ctx.textAlign = "start";
+      ctx.textBaseline = "alphabetic";
+    } else if (effect.type === "xpGainText") {
+      const pulse = 0.7 + Math.sin(t * Math.PI * 5) * 0.3;
+      const floatY = y - t * 30;
+      const halo = ctx.createRadialGradient(x, floatY - 3, 0, x, floatY - 3, baseSize * (0.8 + pulse * 0.4));
+      halo.addColorStop(0, effect.glowColor || "rgba(106, 199, 255, 0.38)");
+      halo.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(x, floatY - 3, baseSize * (0.65 + pulse * 0.3), 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.font = FONT_20;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const text = String(effect.text || "");
+      ctx.strokeStyle = "rgba(12, 22, 34, 0.72)";
+      ctx.lineWidth = 3;
+      ctx.strokeText(text, x, floatY);
+      ctx.fillStyle = effect.color || "rgba(188, 236, 255, 0.98)";
       ctx.fillText(text, x, floatY);
       ctx.textAlign = "start";
       ctx.textBaseline = "alphabetic";
@@ -1495,6 +1623,7 @@ export function renderGameFrame({
   ui,
   drawTile,
   getHandstandSprite,
+  getEquippedTrainingHeadbandSprite = () => null,
   getItemSprite = () => null,
   drawCustomOverlays = null,
   state,
@@ -1531,6 +1660,7 @@ export function renderGameFrame({
     tileSize,
     colors,
     getHandstandSprite,
+    getEquippedTrainingHeadbandSprite,
     spriteFrameWidth,
     spriteFrameHeight,
     spriteFramesPerRow
@@ -1559,8 +1689,8 @@ export function renderGameFrame({
   drawCombatLevelHud(ctx, state, uiColors);
   drawObjectiveTracker(ctx, state, uiColors);
   drawMinimap(ctx, state, uiColors);
-  drawDoorHint(ctx, state, uiColors, dialogue);
-  drawCombatRewardPanel(ctx, state, uiColors);
+  drawDoorHint(ctx, state, uiColors, dialogue, cameraZoom);
+  // Enemy XP feedback now uses world-space floating VFX instead of panel notifications.
   if (typeof drawCustomOverlays === "function") {
     drawCustomOverlays({ ctx, canvas, colors: uiColors, ui, state });
   }

@@ -1,6 +1,15 @@
 import { drawEntityShadow } from "./uiPrimitives.js";
 
-function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, spriteFrameHeight, spriteFramesPerRow) {
+function drawPlayer(
+  ctx,
+  state,
+  getHandstandSprite,
+  getEquippedTrainingHeadbandSprite,
+  tileSize,
+  spriteFrameWidth,
+  spriteFrameHeight,
+  spriteFramesPerRow
+) {
   const { player, cam } = state;
   if (!player.sprite || !player.sprite.width || !player.sprite.height) return;
   const now = performance.now();
@@ -53,6 +62,15 @@ function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, 
   const frame = player.walking ? player.animFrame : 1;
   const sx = frame * spriteFrameWidth;
   const sy = row * spriteFrameHeight;
+  const hasTrainingHeadbandEquipped = state.playerEquipment?.head === "Training Headband";
+  const equippedHeadbandSprite = hasTrainingHeadbandEquipped
+    ? getEquippedTrainingHeadbandSprite?.()
+    : null;
+  const shouldDrawEquippedHeadband = Boolean(
+    equippedHeadbandSprite &&
+    equippedHeadbandSprite.width &&
+    equippedHeadbandSprite.height
+  );
   const defeatFallProgress = isDefeatFallActive
     ? Math.max(0, Math.min(1, defeatSequence.fallProgress || 0))
     : 0;
@@ -78,6 +96,19 @@ function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, 
       drawWidth,
       drawHeight
     );
+    if (shouldDrawEquippedHeadband) {
+      ctx.drawImage(
+        equippedHeadbandSprite,
+        sx,
+        sy,
+        spriteFrameWidth,
+        spriteFrameHeight,
+        drawX,
+        drawY,
+        drawWidth,
+        drawHeight
+      );
+    }
     ctx.restore();
     ctx.restore();
     return;
@@ -94,6 +125,19 @@ function drawPlayer(ctx, state, getHandstandSprite, tileSize, spriteFrameWidth, 
     drawWidth,
     drawHeight
   );
+  if (shouldDrawEquippedHeadband) {
+    ctx.drawImage(
+      equippedHeadbandSprite,
+      sx,
+      sy,
+      spriteFrameWidth,
+      spriteFrameHeight,
+      drawX,
+      drawY,
+      drawWidth,
+      drawHeight
+    );
+  }
   ctx.restore();
 }
 
@@ -386,6 +430,69 @@ function drawEnemies(ctx, state, canvas, tileSize) {
   }
 }
 
+function drawLeftovers(ctx, state, canvas, tileSize) {
+  const { leftovers, currentTownId, currentAreaId, cam } = state;
+  if (!Array.isArray(leftovers) || leftovers.length === 0) return;
+  const leftoversSprite = state?.leftoversSprite;
+  const hasSprite = Boolean(leftoversSprite && (leftoversSprite.width > 0 || leftoversSprite.naturalWidth > 0));
+
+  for (const leftover of leftovers) {
+    if (!leftover) continue;
+    if (leftover.depleted) continue;
+    const hasLoot = (Number(leftover.gold) > 0) || (Number(leftover.silver) > 0) || (Array.isArray(leftover.items) && leftover.items.length > 0);
+    if (!hasLoot) continue;
+    if (leftover.townId !== currentTownId || leftover.areaId !== currentAreaId) continue;
+
+    const worldX = Number.isFinite(leftover.x) ? leftover.x : 0;
+    const worldY = Number.isFinite(leftover.y) ? leftover.y : 0;
+    const ex = Math.round(worldX - cam.x - tileSize * 0.34);
+    const ey = Math.round(worldY - cam.y - tileSize * 0.2);
+    const drawSize = Math.max(12, Math.round(tileSize * 0.58));
+    if (ex > canvas.width || ey > canvas.height || ex < -drawSize || ey < -drawSize) continue;
+
+    const pulse = 0.5 + Math.sin((performance.now() + worldX * 0.2) * 0.005) * 0.5;
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
+    ctx.beginPath();
+    ctx.ellipse(ex + drawSize * 0.5, ey + drawSize * 0.86, drawSize * 0.34, drawSize * 0.12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (hasSprite) {
+      ctx.globalAlpha = 0.94;
+      ctx.drawImage(leftoversSprite, ex, ey, drawSize, drawSize);
+    } else {
+      ctx.fillStyle = "rgba(241, 233, 217, 0.95)";
+      ctx.fillRect(ex + drawSize * 0.39, ey + drawSize * 0.42, drawSize * 0.22, drawSize * 0.3);
+      ctx.fillRect(ex + drawSize * 0.28, ey + drawSize * 0.52, drawSize * 0.12, drawSize * 0.08);
+      ctx.fillRect(ex + drawSize * 0.6, ey + drawSize * 0.52, drawSize * 0.12, drawSize * 0.08);
+      ctx.fillRect(ex + drawSize * 0.42, ey + drawSize * 0.72, drawSize * 0.08, drawSize * 0.2);
+      ctx.fillRect(ex + drawSize * 0.5, ey + drawSize * 0.72, drawSize * 0.08, drawSize * 0.2);
+
+      ctx.beginPath();
+      ctx.arc(ex + drawSize * 0.5, ey + drawSize * 0.25, drawSize * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(41, 34, 27, 0.82)";
+      ctx.fillRect(ex + drawSize * 0.43, ey + drawSize * 0.22, 2, 2);
+      ctx.fillRect(ex + drawSize * 0.55, ey + drawSize * 0.22, 2, 2);
+    }
+
+    const glowR = drawSize * (0.48 + pulse * 0.08);
+    const glow = ctx.createRadialGradient(
+      ex + drawSize * 0.5,
+      ey + drawSize * 0.5,
+      2,
+      ex + drawSize * 0.5,
+      ey + drawSize * 0.5,
+      glowR
+    );
+    glow.addColorStop(0, "rgba(215, 255, 233, 0.14)");
+    glow.addColorStop(1, "rgba(215, 255, 233, 0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(ex - 6, ey - 6, drawSize + 12, drawSize + 12);
+    ctx.restore();
+  }
+}
+
 function drawPlayerAttackReadability(ctx, state, tileSize) {
   const { player, cam } = state;
   if (!player || player.attackState !== "active") return;
@@ -429,6 +536,7 @@ export function drawEntitiesLayer({
   tileSize,
   colors,
   getHandstandSprite,
+  getEquippedTrainingHeadbandSprite,
   spriteFrameWidth,
   spriteFrameHeight,
   spriteFramesPerRow
@@ -436,11 +544,13 @@ export function drawEntitiesLayer({
   const owBubbleQueue = [];
   drawNPCs(ctx, state, canvas, tileSize, colors, owBubbleQueue);
   drawEnemies(ctx, state, canvas, tileSize);
+  drawLeftovers(ctx, state, canvas, tileSize);
   drawPlayerAttackReadability(ctx, state, tileSize);
   drawPlayer(
     ctx,
     state,
     getHandstandSprite,
+    getEquippedTrainingHeadbandSprite,
     tileSize,
     spriteFrameWidth,
     spriteFrameHeight,

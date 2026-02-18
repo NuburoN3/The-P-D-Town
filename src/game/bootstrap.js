@@ -79,6 +79,10 @@ export function createGameRuntime() {
   };
 
   const playerInventory = {};
+  const playerCurrency = {
+    gold: 0,
+    silver: 0
+  };
   const playerEquipment = {
     head: null,
     torso: null,
@@ -228,6 +232,10 @@ export function createGameRuntime() {
     blackoutHoldMs: 1000,
     fadeInDurationMs: 420
   };
+  const leftoversState = {
+    nextId: 1,
+    entries: []
+  };
 
   return {
     canvas,
@@ -238,6 +246,7 @@ export function createGameRuntime() {
     state: {
       gameFlags,
       playerInventory,
+      playerCurrency,
       playerEquipment,
       playerStats,
       trainingPopup,
@@ -255,7 +264,8 @@ export function createGameRuntime() {
       player,
       cam,
       doorSequence,
-      playerDefeatSequence
+      playerDefeatSequence,
+      leftoversState
     }
   };
 }

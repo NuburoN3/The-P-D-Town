@@ -108,7 +108,10 @@ export function createGameController({
     updateTransientUi(now);
 
     const gameState = state.getGameState();
-    if (isFreeExploreState(gameState) && !dialogue.isDialogueActive()) {
+    const gameplayState = typeof state.resolveGameplayState === "function"
+      ? state.resolveGameplayState(gameState)
+      : gameState;
+    if (isFreeExploreState(gameplayState) && !dialogue.isDialogueActive()) {
       updateRoamingNPCs(now, dtScale);
       const movementLocked = typeof state.isPlayerMovementLocked === "function" && state.isPlayerMovementLocked();
       if (!state.player.isTraining && !movementLocked) {
@@ -116,7 +119,7 @@ export function createGameController({
       }
     } else if (dialogue.isDialogueActive()) {
       state.player.walking = false;
-    } else if (typeof actions.updateFeatureState === "function" && actions.updateFeatureState(gameState)) {
+    } else if (typeof actions.updateFeatureState === "function" && actions.updateFeatureState(gameplayState)) {
       state.player.walking = false;
     } else if (gameState === GAME_STATES.ENTERING_DOOR) {
       updateDoorEntry(dtScale);
@@ -135,7 +138,7 @@ export function createGameController({
       currentMapW: state.getCurrentMapW(),
       currentMapH: state.getCurrentMapH(),
       canvas: state.canvas,
-      gameState
+      gameState: gameplayState
     });
   }
 

@@ -226,8 +226,8 @@ export function createRuntimeStateHandlers({
     );
   }
 
-  function updateFountainHealing(now) {
-    const gameState = getGameState();
+  function updateFountainHealing(now, overrideGameState = null) {
+    const gameState = overrideGameState || getGameState();
     fountainHealSystem.update({
       now,
       gameState,

@@ -1,7 +1,12 @@
 import { AREA_KINDS, GAME_STATES, isFreeExploreState } from "../core/constants.js";
 import { getTownProgress, playerTilePosition as getPlayerTilePosition } from "./interaction/contextUtils.js";
 import { createDoorSequenceStarter } from "./interaction/doorSequence.js";
-import { findClosestInteractableNpc, findNearbySignpost, orientNpcTowardPlayer } from "./interaction/interactionSearch.js";
+import {
+  findClosestInteractableLeftover,
+  findClosestInteractableNpc,
+  findNearbySignpost,
+  orientNpcTowardPlayer
+} from "./interaction/interactionSearch.js";
 import { createNPCInteractionHandler } from "./interaction/npcInteractions.js";
 import { createTryTrainingAction } from "./interaction/trainingActions.js";
 
@@ -20,6 +25,7 @@ export function createInteractionSystem({
   inventoryHint,
   player,
   npcs,
+  leftovers = [],
   doorSequence,
   musicManager,
   worldService,
@@ -45,6 +51,7 @@ export function createInteractionSystem({
   spawnVisualEffect = () => { },
   canEnterDoor = () => ({ allowed: true, message: "" }),
   onDoorEntryBlocked = () => { },
+  onLeftoversInteracted = () => { },
   handleFeatureNPCInteraction = () => false,
   handleFeatureStateInteraction = () => false
 }) {
@@ -170,6 +177,20 @@ export function createInteractionSystem({
 
     const playerCenterX = player.x + tileSize / 2;
     const playerCenterY = player.y + tileSize / 2;
+
+    const closestLeftover = findClosestInteractableLeftover({
+      leftovers,
+      currentTownId,
+      currentAreaId,
+      playerCenterX,
+      playerCenterY,
+      interactReach: ui.INTERACT_REACH
+    });
+    if (closestLeftover) {
+      onLeftoversInteracted(closestLeftover);
+      clearInteractPressed();
+      return;
+    }
 
     const closestNpc = findClosestInteractableNpc({
       npcs,

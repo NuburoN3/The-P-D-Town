@@ -9,7 +9,10 @@ import { TILE, AREA_KINDS, GAME_STATES } from "../core/constants.js";
  * @param {object} context.gameFlags
  * @param {object} context.playerStats
  * @param {object} context.playerInventory
+ * @param {object} context.playerCurrency
  * @param {object} context.playerEquipment
+ * @param {object} context.inventoryUiLayout
+ * @param {object} context.leftoversState
  * @returns {object} The snapshot object
  */
 export function buildGameSnapshot({
@@ -19,7 +22,10 @@ export function buildGameSnapshot({
     gameFlags,
     playerStats,
     playerInventory,
+    playerCurrency,
     playerEquipment,
+    inventoryUiLayout,
+    leftoversState,
     objectiveState = null
 }) {
     const snapshotObjective = objectiveState && typeof objectiveState === "object"
@@ -63,7 +69,42 @@ export function buildGameSnapshot({
         },
         playerStats: { ...playerStats },
         playerInventory: { ...playerInventory },
+        playerCurrency: {
+            gold: Number.isFinite(playerCurrency?.gold) ? Math.max(0, Math.floor(playerCurrency.gold)) : 0,
+            silver: Number.isFinite(playerCurrency?.silver) ? Math.max(0, Math.floor(playerCurrency.silver)) : 0
+        },
         playerEquipment: { ...(playerEquipment || {}) },
+        inventoryUiLayout: {
+            inventoryPanelX: Number.isFinite(inventoryUiLayout?.inventoryPanelX) ? inventoryUiLayout.inventoryPanelX : null,
+            inventoryPanelY: Number.isFinite(inventoryUiLayout?.inventoryPanelY) ? inventoryUiLayout.inventoryPanelY : null,
+            equipmentPanelX: Number.isFinite(inventoryUiLayout?.equipmentPanelX) ? inventoryUiLayout.equipmentPanelX : null,
+            equipmentPanelY: Number.isFinite(inventoryUiLayout?.equipmentPanelY) ? inventoryUiLayout.equipmentPanelY : null
+        },
+        leftoversState: {
+            nextId: Number.isFinite(leftoversState?.nextId) ? Math.max(1, Math.floor(leftoversState.nextId)) : 1,
+            entries: Array.isArray(leftoversState?.entries)
+                ? leftoversState.entries
+                    .map((entry) => ({
+                        id: String(entry?.id || ""),
+                        townId: String(entry?.townId || ""),
+                        areaId: String(entry?.areaId || ""),
+                        x: Number.isFinite(entry?.x) ? entry.x : 0,
+                        y: Number.isFinite(entry?.y) ? entry.y : 0,
+                        silver: Number.isFinite(entry?.silver) ? Math.max(0, Math.floor(entry.silver)) : 0,
+                        gold: Number.isFinite(entry?.gold) ? Math.max(0, Math.floor(entry.gold)) : 0,
+                        createdAt: Number.isFinite(entry?.createdAt) ? entry.createdAt : 0,
+                        items: Array.isArray(entry?.items)
+                            ? entry.items
+                                .map((lootItem) => ({
+                                    name: String(lootItem?.name || ""),
+                                    amount: Number.isFinite(lootItem?.amount) ? Math.max(0, Math.floor(lootItem.amount)) : 0
+                                }))
+                                .filter((lootItem) => lootItem.name && lootItem.amount > 0)
+                            : []
+                    }))
+                    .filter((entry) => entry.id && entry.townId && entry.areaId && (entry.gold > 0 || entry.silver > 0 || entry.items.length > 0))
+                : []
+        },
         objectiveState: snapshotObjective
     };
 }
@@ -78,7 +119,10 @@ export function buildGameSnapshot({
  * @param {object} context.gameFlags
  * @param {object} context.playerStats
  * @param {object} context.playerInventory
+ * @param {object} context.playerCurrency
  * @param {object} context.playerEquipment
+ * @param {object} context.inventoryUiLayout
+ * @param {object} context.leftoversState
  * @param {Array} context.npcs
  * @param {Array} context.enemies
  * @param {object} context.camera
@@ -98,7 +142,10 @@ export function applyGameSnapshot(snapshot, context) {
         gameFlags,
         playerStats,
         playerInventory,
+        playerCurrency,
         playerEquipment,
+        inventoryUiLayout,
+        leftoversState,
         objectiveState
     } = context;
 
@@ -176,6 +223,16 @@ export function applyGameSnapshot(snapshot, context) {
         Object.assign(playerInventory, snapshot.playerInventory);
     }
 
+    if (playerCurrency && typeof playerCurrency === "object") {
+        const nextCurrency = snapshot.playerCurrency && typeof snapshot.playerCurrency === "object"
+            ? snapshot.playerCurrency
+            : {};
+        const safeGold = Number.isFinite(nextCurrency.gold) ? Math.max(0, Math.floor(nextCurrency.gold)) : 0;
+        const safeSilver = Number.isFinite(nextCurrency.silver) ? Math.max(0, Math.floor(nextCurrency.silver)) : 0;
+        playerCurrency.gold = safeGold + Math.floor(safeSilver / 100);
+        playerCurrency.silver = safeSilver % 100;
+    }
+
     if (playerEquipment && typeof playerEquipment === "object") {
         const nextEquipment = snapshot.playerEquipment && typeof snapshot.playerEquipment === "object"
             ? snapshot.playerEquipment
@@ -186,6 +243,45 @@ export function applyGameSnapshot(snapshot, context) {
         playerEquipment.shield = typeof nextEquipment.shield === "string" ? nextEquipment.shield : null;
         playerEquipment.legs = typeof nextEquipment.legs === "string" ? nextEquipment.legs : null;
         playerEquipment.feet = typeof nextEquipment.feet === "string" ? nextEquipment.feet : null;
+    }
+
+    if (inventoryUiLayout && typeof inventoryUiLayout === "object") {
+        const nextLayout = snapshot.inventoryUiLayout && typeof snapshot.inventoryUiLayout === "object"
+            ? snapshot.inventoryUiLayout
+            : {};
+        inventoryUiLayout.inventoryPanelX = Number.isFinite(nextLayout.inventoryPanelX) ? nextLayout.inventoryPanelX : null;
+        inventoryUiLayout.inventoryPanelY = Number.isFinite(nextLayout.inventoryPanelY) ? nextLayout.inventoryPanelY : null;
+        inventoryUiLayout.equipmentPanelX = Number.isFinite(nextLayout.equipmentPanelX) ? nextLayout.equipmentPanelX : null;
+        inventoryUiLayout.equipmentPanelY = Number.isFinite(nextLayout.equipmentPanelY) ? nextLayout.equipmentPanelY : null;
+    }
+
+    if (leftoversState && typeof leftoversState === "object") {
+        const snapshotLeftovers = snapshot.leftoversState && typeof snapshot.leftoversState === "object"
+            ? snapshot.leftoversState
+            : {};
+        const nextId = Number.isFinite(snapshotLeftovers.nextId) ? Math.max(1, Math.floor(snapshotLeftovers.nextId)) : 1;
+        const entries = Array.isArray(snapshotLeftovers.entries) ? snapshotLeftovers.entries : [];
+        leftoversState.nextId = nextId;
+        leftoversState.entries = entries
+            .map((entry) => ({
+                id: String(entry?.id || ""),
+                townId: String(entry?.townId || ""),
+                areaId: String(entry?.areaId || ""),
+                x: Number.isFinite(entry?.x) ? entry.x : 0,
+                y: Number.isFinite(entry?.y) ? entry.y : 0,
+                silver: Number.isFinite(entry?.silver) ? Math.max(0, Math.floor(entry.silver)) : 0,
+                gold: Number.isFinite(entry?.gold) ? Math.max(0, Math.floor(entry.gold)) : 0,
+                createdAt: Number.isFinite(entry?.createdAt) ? entry.createdAt : 0,
+                items: Array.isArray(entry?.items)
+                    ? entry.items
+                        .map((lootItem) => ({
+                            name: String(lootItem?.name || ""),
+                            amount: Number.isFinite(lootItem?.amount) ? Math.max(0, Math.floor(lootItem.amount)) : 0
+                        }))
+                        .filter((lootItem) => lootItem.name && lootItem.amount > 0)
+                    : []
+            }))
+            .filter((entry) => entry.id && entry.townId && entry.areaId && (entry.gold > 0 || entry.silver > 0 || entry.items.length > 0));
     }
 
     if (objectiveState && snapshot.objectiveState && typeof snapshot.objectiveState === "object") {

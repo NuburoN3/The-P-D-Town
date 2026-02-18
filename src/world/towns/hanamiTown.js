@@ -1019,7 +1019,9 @@ export const hanamiTown = {
             behaviorType: "meleeChaser",
             attackType: "lightSlash",
             respawnEnabled: false,
-            countsForChallenge: true
+            countsForChallenge: true,
+            lootDropChancePercent: 100,
+            lootSilverRange: [3, 5]
         },
         {
             id: "hanamiChallengeFighterB",
@@ -1041,7 +1043,9 @@ export const hanamiTown = {
             behaviorType: "orbitStriker",
             attackType: "heavySlash",
             respawnEnabled: false,
-            countsForChallenge: true
+            countsForChallenge: true,
+            lootDropChancePercent: 100,
+            lootSilverRange: [3, 5]
         },
         {
             id: "hanamiChallengeFighterC",
@@ -1063,7 +1067,9 @@ export const hanamiTown = {
             behaviorType: "zoneKeeper",
             attackType: "chiBolt",
             respawnEnabled: false,
-            countsForChallenge: true
+            countsForChallenge: true,
+            lootDropChancePercent: 100,
+            lootSilverRange: [3, 5]
         },
         {
             id: "bogStalkerA",
@@ -1085,7 +1091,9 @@ export const hanamiTown = {
             behaviorType: "orbitStriker",
             attackType: "heavySlash",
             respawnEnabled: false,
-            countsForBogTrial: true
+            countsForBogTrial: true,
+            lootDropChancePercent: 100,
+            lootSilverRange: [3, 5]
         },
         {
             id: "bogStalkerB",
@@ -1107,7 +1115,9 @@ export const hanamiTown = {
             behaviorType: "meleeChaser",
             attackType: "heavySlash",
             respawnEnabled: false,
-            countsForBogTrial: true
+            countsForBogTrial: true,
+            lootDropChancePercent: 100,
+            lootSilverRange: [3, 5]
         },
         {
             id: "bogStalkerC",
@@ -1129,7 +1139,9 @@ export const hanamiTown = {
             behaviorType: "zoneKeeper",
             attackType: "chiBolt",
             respawnEnabled: false,
-            countsForBogTrial: true
+            countsForBogTrial: true,
+            lootDropChancePercent: 100,
+            lootSilverRange: [3, 5]
         }
     ]
 };
