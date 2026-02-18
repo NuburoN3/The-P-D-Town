@@ -105,6 +105,8 @@ export function createInputBindings({
     canvas.addEventListener("mouseleave", () => {
       mouseUiState.insideCanvas = false;
       mouseUiState.sprintPressed = false;
+      mouseUiState.inventoryLeftDown = false;
+      mouseUiState.inventoryClickRequest = false;
       clearMenuHoverState();
     });
     canvas.addEventListener("contextmenu", (e) => {
@@ -113,6 +115,11 @@ export function createInputBindings({
     canvas.addEventListener("mousedown", (e) => {
       pointerLockPrimed = true;
       updateMouseUiPosition(e);
+      if (e.button === 0 && getGameState() === gameStates.INVENTORY) {
+        mouseUiState.inventoryLeftDown = true;
+        mouseUiState.inventoryDragStartRequest = true;
+        e.preventDefault();
+      }
       if (e.button === 2) {
         if (getGameState() === gameStates.INVENTORY) {
           mouseUiState.inventoryDetailsRequest = true;
@@ -124,22 +131,44 @@ export function createInputBindings({
       syncPointerLockWithState({ fromUserGesture: true });
     });
     canvas.addEventListener("mouseup", (e) => {
+      if (e.button === 0) {
+        mouseUiState.inventoryLeftDown = false;
+        if (mouseUiState.inventoryDragItemName) {
+          mouseUiState.inventoryDragReleaseRequest = true;
+        }
+      }
       if (e.button === 2) {
         mouseUiState.sprintPressed = false;
       }
     });
     window.addEventListener("mouseup", (e) => {
+      if (e.button === 0) {
+        mouseUiState.inventoryLeftDown = false;
+        if (mouseUiState.inventoryDragItemName) {
+          mouseUiState.inventoryDragReleaseRequest = true;
+        }
+      }
       if (e.button === 2) {
         mouseUiState.sprintPressed = false;
       }
     });
     window.addEventListener("blur", () => {
       mouseUiState.sprintPressed = false;
+      mouseUiState.inventoryLeftDown = false;
+      mouseUiState.inventoryClickRequest = false;
+      if (mouseUiState.inventoryDragItemName) {
+        mouseUiState.inventoryDragReleaseRequest = true;
+      }
     });
     canvas.addEventListener("click", (e) => {
       if (e.button !== 0) return;
       updateMouseUiPosition(e);
       const gameState = getGameState();
+      if (gameState === gameStates.INVENTORY) {
+        mouseUiState.inventoryClickRequest = true;
+        e.preventDefault();
+        return;
+      }
       const handledByTitle = handleTitleLeftClick(mouseUiState.x, mouseUiState.y);
       const handledByPause = handledByTitle ? false : handlePauseMenuLeftClick(mouseUiState.x, mouseUiState.y);
       if (handledByTitle || handledByPause) {

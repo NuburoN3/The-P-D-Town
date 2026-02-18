@@ -13,7 +13,9 @@ export function createDoorSequenceStarter({
   getGameState,
   setGameState,
   clearInteractPressed,
-  spawnVisualEffect
+  spawnVisualEffect,
+  canEnterDoor = () => ({ allowed: true, message: "" }),
+  onDoorEntryBlocked = () => { }
 }) {
   return function beginDoorSequence(doorTile) {
     const gameState = getGameState();
@@ -26,6 +28,22 @@ export function createDoorSequenceStarter({
       doorTile.ty
     );
     if (!destination) return;
+
+    const gate = canEnterDoor({
+      doorTile,
+      destination,
+      townId: getCurrentTownId(),
+      areaId: getCurrentAreaId()
+    });
+    if (gate && gate.allowed === false) {
+      onDoorEntryBlocked({
+        doorTile,
+        destination,
+        message: gate.message || ""
+      });
+      clearInteractPressed();
+      return;
+    }
 
     musicManager.playSfx("enterDoor");
 

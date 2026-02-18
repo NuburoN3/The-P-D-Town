@@ -9,6 +9,7 @@ import { TILE, AREA_KINDS, GAME_STATES } from "../core/constants.js";
  * @param {object} context.gameFlags
  * @param {object} context.playerStats
  * @param {object} context.playerInventory
+ * @param {object} context.playerEquipment
  * @returns {object} The snapshot object
  */
 export function buildGameSnapshot({
@@ -18,6 +19,7 @@ export function buildGameSnapshot({
     gameFlags,
     playerStats,
     playerInventory,
+    playerEquipment,
     objectiveState = null
 }) {
     const snapshotObjective = objectiveState && typeof objectiveState === "object"
@@ -48,6 +50,7 @@ export function buildGameSnapshot({
         },
         playerStats: { ...playerStats },
         playerInventory: { ...playerInventory },
+        playerEquipment: { ...(playerEquipment || {}) },
         objectiveState: snapshotObjective
     };
 }
@@ -62,6 +65,7 @@ export function buildGameSnapshot({
  * @param {object} context.gameFlags
  * @param {object} context.playerStats
  * @param {object} context.playerInventory
+ * @param {object} context.playerEquipment
  * @param {Array} context.npcs
  * @param {Array} context.enemies
  * @param {object} context.camera
@@ -81,6 +85,7 @@ export function applyGameSnapshot(snapshot, context) {
         gameFlags,
         playerStats,
         playerInventory,
+        playerEquipment,
         objectiveState
     } = context;
 
@@ -139,6 +144,18 @@ export function applyGameSnapshot(snapshot, context) {
             delete playerInventory[key];
         }
         Object.assign(playerInventory, snapshot.playerInventory);
+    }
+
+    if (playerEquipment && typeof playerEquipment === "object") {
+        const nextEquipment = snapshot.playerEquipment && typeof snapshot.playerEquipment === "object"
+            ? snapshot.playerEquipment
+            : {};
+        playerEquipment.head = typeof nextEquipment.head === "string" ? nextEquipment.head : null;
+        playerEquipment.torso = typeof nextEquipment.torso === "string" ? nextEquipment.torso : null;
+        playerEquipment.weapon = typeof nextEquipment.weapon === "string" ? nextEquipment.weapon : null;
+        playerEquipment.shield = typeof nextEquipment.shield === "string" ? nextEquipment.shield : null;
+        playerEquipment.legs = typeof nextEquipment.legs === "string" ? nextEquipment.legs : null;
+        playerEquipment.feet = typeof nextEquipment.feet === "string" ? nextEquipment.feet : null;
     }
 
     if (objectiveState && snapshot.objectiveState && typeof snapshot.objectiveState === "object") {

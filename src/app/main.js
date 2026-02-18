@@ -45,6 +45,7 @@ const { canvas, ctx, assets, worldService, musicManager, state } = createGameRun
 const {
   gameFlags,
   playerInventory,
+  playerEquipment,
   playerStats,
   trainingPopup,
   itemAlert,
@@ -87,6 +88,13 @@ const mouseUiState = {
   y: 0,
   insideCanvas: false,
   sprintPressed: false,
+  inventoryLeftDown: false,
+  inventoryDragStartRequest: false,
+  inventoryDragReleaseRequest: false,
+  inventoryDragItemName: "",
+  inventoryDragSource: "",
+  inventoryDragSourceSlot: "",
+  inventoryClickRequest: false,
   inventoryDetailsRequest: false,
   inventoryDetailsIndex: -1,
   inventoryDetailsAnchorX: -1,
@@ -211,6 +219,39 @@ const combatRewardPanel = {
   queue: []
 };
 
+const PAT_INN_TOWN_ID = "hanamiTown";
+const PAT_INN_AREA_ID = "patBnBDownstairs";
+const PAT_INNKEEPER_ID = "innkeeperPat";
+const HANAMI_NPC_ID = "mrHanami";
+const HANAMI_DOJO_AREA_ID = "hanamiDojo";
+const HANAMI_DOJO_UPSTAIRS_AREA_ID = "hanamiDojoUpstairs";
+const HANAMI_DOJO_UPSTAIRS_DOOR_X = 9;
+const HANAMI_DOJO_UPSTAIRS_DOOR_Y = 3;
+const HANAMI_DOJO_EXIT_X = 6 * TILE;
+const HANAMI_DOJO_EXIT_Y = 8 * TILE;
+const patInnIntroState = {
+  pendingStart: false,
+  active: false,
+  phase: "idle",
+  targetX: 0,
+  targetY: 0,
+  homeX: 0,
+  homeY: 0,
+  lastUpdateAt: 0,
+  previousCanRoam: false
+};
+const hanamiDojoExitState = {
+  active: false,
+  lastUpdateAt: 0
+};
+const doorAccessNoticeState = {
+  active: false,
+  text: "",
+  townId: "",
+  areaId: "",
+  until: 0
+};
+
 if (!Number.isFinite(playerStats.combatLevel) || playerStats.combatLevel < 1) {
   playerStats.combatLevel = 1;
 }
@@ -232,6 +273,15 @@ function persistUserSettings() {
 function setSettingsStatus(text, durationMs = 1700) {
   settingsUiState.statusText = text;
   settingsUiState.statusUntil = performance.now() + durationMs;
+}
+
+function setDoorAccessNotice(text, durationMs = 1700) {
+  if (!text) return;
+  doorAccessNoticeState.active = true;
+  doorAccessNoticeState.text = text;
+  doorAccessNoticeState.townId = currentTownId;
+  doorAccessNoticeState.areaId = currentAreaId;
+  doorAccessNoticeState.until = performance.now() + Math.max(900, durationMs);
 }
 
 function pushSaveNotice({ text, type = "save", durationMs = 1700 }) {
@@ -379,7 +429,7 @@ function deriveObjective() {
   if (tp.membershipAwarded && !tp.bogQuestOffered) {
     return {
       id: "south-path",
-      text: "Objective: Follow the southern path into Bogland and meet Mr. Hanami."
+      text: "Objective: Meet with Mr. Hanami at Bogland Training Ground, South of the dojo."
     };
   }
 
@@ -562,6 +612,7 @@ function grantCombatXpAndCollectSummary(enemy, now) {
     playerStats.combatLevel += 1;
     playerStats.combatXPNeeded = Math.min(60, playerStats.combatXPNeeded + 4);
     levelsGained += 1;
+    musicManager.playSfx("levelUp");
   }
 
   const lines = [
@@ -580,9 +631,267 @@ function grantCombatXpAndCollectSummary(enemy, now) {
   };
 }
 
+function getPatInnkeeperNpc() {
+  return npcs.find((npc) => npc && npc.id === PAT_INNKEEPER_ID && npc.world === PAT_INN_AREA_ID) || null;
+}
+
+function clearPlayerActionInputs() {
+  input.actionStates.moveUp = false;
+  input.actionStates.moveDown = false;
+  input.actionStates.moveLeft = false;
+  input.actionStates.moveRight = false;
+  player.walking = false;
+}
+
+function orientEntityTowardTarget(entity, targetX, targetY) {
+  const dx = targetX - entity.x;
+  const dy = targetY - entity.y;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    entity.dir = dx >= 0 ? "right" : "left";
+  } else {
+    entity.dir = dy >= 0 ? "down" : "up";
+  }
+}
+
+function moveNpcToward(npc, targetX, targetY, dtScale) {
+  const dx = targetX - npc.x;
+  const dy = targetY - npc.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance <= 0.5) {
+    npc.x = targetX;
+    npc.y = targetY;
+    return true;
+  }
+
+  const speedPxPerFrame = 1.2;
+  const step = Math.min(distance, speedPxPerFrame * dtScale);
+  npc.x += (dx / distance) * step;
+  npc.y += (dy / distance) * step;
+  orientEntityTowardTarget(npc, targetX, targetY);
+  return false;
+}
+
+function removeNpcById(npcId, areaId = null) {
+  for (let i = npcs.length - 1; i >= 0; i--) {
+    const npc = npcs[i];
+    if (!npc || npc.id !== npcId) continue;
+    if (areaId && npc.world !== areaId) continue;
+    npcs.splice(i, 1);
+  }
+}
+
+function applyStoryNpcVisibility() {
+  if (gameFlags.hanamiLeftDojo) {
+    gameFlags.hanamiDojoExitPending = false;
+    hanamiDojoExitState.active = false;
+    removeNpcById(HANAMI_NPC_ID, HANAMI_DOJO_AREA_ID);
+  }
+}
+
+function getDojoHanamiNpc() {
+  return npcs.find((npc) => npc && npc.id === HANAMI_NPC_ID && npc.world === HANAMI_DOJO_AREA_ID) || null;
+}
+
+function isPatIntroTileWalkable(tx, ty, patNpc) {
+  if (tx < 0 || ty < 0 || tx >= currentMapW || ty >= currentMapH) return false;
+
+  const worldX = tx * TILE;
+  const worldY = ty * TILE;
+  if (collisionService.collides(worldX, worldY, currentMap, currentMapW, currentMapH)) return false;
+
+  for (const npc of npcs) {
+    if (!npc || npc === patNpc || npc.world !== currentAreaId) continue;
+    if (npc.blocking === false) continue;
+    if (Math.abs(npc.x - worldX) < TILE * 0.6 && Math.abs(npc.y - worldY) < TILE * 0.6) {
+      return false;
+    }
+  }
+
+  if (Math.abs(player.x - worldX) < TILE * 0.6 && Math.abs(player.y - worldY) < TILE * 0.6) {
+    return false;
+  }
+
+  return true;
+}
+
+function findPatApproachTarget(patNpc) {
+  const playerTileX = Math.floor((player.x + TILE * 0.5) / TILE);
+  const playerTileY = Math.floor((player.y + TILE * 0.5) / TILE);
+  const candidates = [
+    { tx: playerTileX, ty: playerTileY - 1 },
+    { tx: playerTileX, ty: playerTileY + 1 },
+    { tx: playerTileX - 1, ty: playerTileY },
+    { tx: playerTileX + 1, ty: playerTileY }
+  ];
+
+  const viable = candidates
+    .filter((candidate) => isPatIntroTileWalkable(candidate.tx, candidate.ty, patNpc))
+    .sort((a, b) => {
+      const ax = a.tx * TILE;
+      const ay = a.ty * TILE;
+      const bx = b.tx * TILE;
+      const by = b.ty * TILE;
+      const ad = Math.hypot(ax - patNpc.x, ay - patNpc.y);
+      const bd = Math.hypot(bx - patNpc.x, by - patNpc.y);
+      return ad - bd;
+    });
+
+  if (viable.length === 0) return null;
+  return {
+    x: viable[0].tx * TILE,
+    y: viable[0].ty * TILE
+  };
+}
+
+function updatePatInnIntroSequence(now) {
+  if (currentTownId !== PAT_INN_TOWN_ID || currentAreaId !== PAT_INN_AREA_ID) {
+    if (patInnIntroState.active || patInnIntroState.pendingStart) {
+      const patNpc = getPatInnkeeperNpc();
+      if (patNpc) {
+        patNpc.canRoam = patInnIntroState.previousCanRoam;
+      }
+    }
+    patInnIntroState.pendingStart = false;
+    patInnIntroState.active = false;
+    patInnIntroState.phase = "idle";
+    return;
+  }
+
+  if (gameFlags.patInnIntroSeen) {
+    return;
+  }
+
+  if (
+    !isFreeExploreState(gameState) &&
+    gameState !== GAME_STATES.TRANSITION &&
+    gameState !== GAME_STATES.ENTERING_DOOR
+  ) {
+    return;
+  }
+
+  if (patInnIntroState.pendingStart) {
+    if (doorSequence.active || gameState === GAME_STATES.TRANSITION || gameState === GAME_STATES.ENTERING_DOOR) {
+      return;
+    }
+
+    const patNpc = getPatInnkeeperNpc();
+    if (!patNpc) {
+      gameFlags.patInnIntroSeen = true;
+      patInnIntroState.pendingStart = false;
+      return;
+    }
+
+    const approachTarget = findPatApproachTarget(patNpc);
+    if (!approachTarget) {
+      gameFlags.patInnIntroSeen = true;
+      patInnIntroState.pendingStart = false;
+      return;
+    }
+
+    patInnIntroState.pendingStart = false;
+    patInnIntroState.active = true;
+    patInnIntroState.phase = "walkToPlayer";
+    patInnIntroState.targetX = approachTarget.x;
+    patInnIntroState.targetY = approachTarget.y;
+    patInnIntroState.homeX = patNpc.x;
+    patInnIntroState.homeY = patNpc.y;
+    patInnIntroState.lastUpdateAt = now;
+    patInnIntroState.previousCanRoam = Boolean(patNpc.canRoam);
+    patNpc.canRoam = false;
+  }
+
+  if (!patInnIntroState.active) return;
+
+  const patNpc = getPatInnkeeperNpc();
+  if (!patNpc) {
+    patInnIntroState.active = false;
+    patInnIntroState.phase = "idle";
+    gameFlags.patInnIntroSeen = true;
+    return;
+  }
+
+  const rawDt = Number.isFinite(patInnIntroState.lastUpdateAt) ? (now - patInnIntroState.lastUpdateAt) : 16.667;
+  patInnIntroState.lastUpdateAt = now;
+  const dtScale = Math.max(0.2, Math.min(2.2, rawDt / 16.667));
+
+  if (patInnIntroState.phase === "walkToPlayer") {
+    clearPlayerActionInputs();
+    input.clearInteractPressed();
+    input.clearAttackPressed();
+
+    const arrived = moveNpcToward(patNpc, patInnIntroState.targetX, patInnIntroState.targetY, dtScale);
+    if (arrived) {
+      orientEntityTowardTarget(patNpc, player.x, player.y);
+      orientEntityTowardTarget(player, patNpc.x, patNpc.y);
+      patInnIntroState.phase = "dialogue";
+      showDialogue(patNpc.name, patNpc.dialogue, () => {
+        patInnIntroState.phase = "walkHome";
+        patInnIntroState.targetX = patInnIntroState.homeX;
+        patInnIntroState.targetY = patInnIntroState.homeY;
+        patInnIntroState.lastUpdateAt = performance.now();
+      });
+    }
+    return;
+  }
+
+  if (patInnIntroState.phase === "walkHome") {
+    clearPlayerActionInputs();
+    input.clearInteractPressed();
+    input.clearAttackPressed();
+
+    const arrived = moveNpcToward(patNpc, patInnIntroState.targetX, patInnIntroState.targetY, dtScale);
+    if (arrived) {
+      patNpc.canRoam = patInnIntroState.previousCanRoam;
+      patInnIntroState.active = false;
+      patInnIntroState.phase = "idle";
+      gameFlags.patInnIntroSeen = true;
+    }
+  }
+}
+
+function updateHanamiDojoExitSequence(now) {
+  applyStoryNpcVisibility();
+  if (gameFlags.hanamiLeftDojo || !gameFlags.hanamiDojoExitPending) return;
+  if (currentTownId !== PAT_INN_TOWN_ID || currentAreaId !== HANAMI_DOJO_AREA_ID) return;
+  if (!isFreeExploreState(gameState)) return;
+
+  const hanamiNpc = getDojoHanamiNpc();
+  if (!hanamiNpc) {
+    gameFlags.hanamiLeftDojo = true;
+    gameFlags.hanamiDojoExitPending = false;
+    hanamiDojoExitState.active = false;
+    return;
+  }
+
+  if (!hanamiDojoExitState.active) {
+    hanamiDojoExitState.active = true;
+    hanamiDojoExitState.lastUpdateAt = now;
+    hanamiNpc.canRoam = false;
+    hanamiNpc.blocking = false;
+  }
+
+  const rawDt = Number.isFinite(hanamiDojoExitState.lastUpdateAt) ? (now - hanamiDojoExitState.lastUpdateAt) : 16.667;
+  hanamiDojoExitState.lastUpdateAt = now;
+  const dtScale = Math.max(0.2, Math.min(2.2, rawDt / 16.667));
+
+  const arrived = moveNpcToward(hanamiNpc, HANAMI_DOJO_EXIT_X, HANAMI_DOJO_EXIT_Y, dtScale);
+  if (!arrived) return;
+
+  removeNpcById(HANAMI_NPC_ID, HANAMI_DOJO_AREA_ID);
+  hanamiDojoExitState.active = false;
+  gameFlags.hanamiLeftDojo = true;
+  gameFlags.hanamiDojoExitPending = false;
+}
+
 function updateRuntimeUi(now) {
+  updateHanamiDojoExitSequence(now);
+  updatePatInnIntroSequence(now);
   syncObjectiveState(now);
   markNearbyDoorsDiscovered();
+  if (doorAccessNoticeState.active && now >= doorAccessNoticeState.until) {
+    doorAccessNoticeState.active = false;
+    doorAccessNoticeState.text = "";
+  }
 
   if (saveNoticeState.active && now - saveNoticeState.startedAt >= saveNoticeState.durationMs) {
     saveNoticeState.active = false;
@@ -604,6 +913,7 @@ function getSaveLoadContext() {
     gameFlags,
     playerStats,
     playerInventory,
+    playerEquipment,
     objectiveState,
     currentGameState: gameState,
     townId: currentTownId,
@@ -615,7 +925,6 @@ const {
   performSaveGame,
   performLoadGame,
   performStartNewGame,
-  performAutoSave,
   applyTitlePreviewSnapshot,
   applyTitleStartPreview
 } = createSaveLoadCoordinator({
@@ -641,12 +950,14 @@ const {
   musicManager,
   onSaveNotice: pushSaveNotice,
   onAfterRestore: () => {
+    applyStoryNpcVisibility();
     uiMotionState.minimapRevealAt = performance.now();
     syncObjectiveState(performance.now());
   }
 });
 
 const hasTitlePreviewSave = applyTitlePreviewSnapshot();
+applyStoryNpcVisibility();
 
 const { isConditionallyHiddenDoor, getRespawnDestination } = createWorldStateHandlers({
   worldService,
@@ -736,11 +1047,9 @@ const combatSystem = createCombatSystem({
       }
       if (challengeOutcome?.completedNow) {
         reward.lines.push("Objective updated: return to Mr. Hanami.");
-        performAutoSave("Challenge complete");
       }
       if (challengeOutcome?.bogCompletedNow) {
         reward.lines.push("Objective updated: report to Mr. Hanami in Bogland.");
-        performAutoSave("Bog trial complete");
       }
       queueCombatReward(reward);
       syncObjectiveState(now);
@@ -887,6 +1196,7 @@ interactionSystem = createInteractionSystem({
   cameraZoom: CAMERA_ZOOM,
   gameFlags,
   playerInventory,
+  playerEquipment,
   playerStats,
   trainingPopup,
   itemAlert,
@@ -921,6 +1231,52 @@ interactionSystem = createInteractionSystem({
   clearInteractPressed: () => input.clearInteractPressed(),
   syncObjectiveState: () => syncObjectiveState(performance.now()),
   spawnVisualEffect: (type, options) => vfxSystem.spawn(type, options),
+  canEnterDoor: ({ doorTile, destination, townId, areaId, playerEquipment: equipment }) => {
+    const isDojoUpstairsDoor =
+      townId === PAT_INN_TOWN_ID &&
+      areaId === HANAMI_DOJO_AREA_ID &&
+      doorTile?.tx === HANAMI_DOJO_UPSTAIRS_DOOR_X &&
+      doorTile?.ty === HANAMI_DOJO_UPSTAIRS_DOOR_Y &&
+      destination?.areaId === HANAMI_DOJO_UPSTAIRS_AREA_ID;
+    if (!isDojoUpstairsDoor) {
+      return { allowed: true };
+    }
+    const equippedHead = equipment && typeof equipment === "object" ? equipment.head : null;
+    if (equippedHead === "Training Headband") {
+      return { allowed: true };
+    }
+    return {
+      allowed: false,
+      message: "You must have the training headband equipped to enter"
+    };
+  },
+  onDoorEntryBlocked: ({ doorTile, message }) => {
+    const now = performance.now();
+    const doorCenterX = doorTile.tx * TILE + TILE * 0.5;
+    const doorCenterY = doorTile.ty * TILE + TILE * 0.5;
+    const playerCenterX = player.x + TILE * 0.5;
+    const playerCenterY = player.y + TILE * 0.5;
+    let vx = doorCenterX - playerCenterX;
+    let vy = doorCenterY - playerCenterY;
+    const length = Math.hypot(vx, vy) || 1;
+    vx /= length;
+    vy /= length;
+
+    const bounceDistance = TILE * 0.65;
+    player.x = Math.max(0, Math.min(currentMapW * TILE - TILE, player.x - vx * bounceDistance));
+    player.y = Math.max(0, Math.min(currentMapH * TILE - TILE, player.y - vy * bounceDistance));
+    player.walking = false;
+
+    setDoorAccessNotice(message, 1800);
+    musicManager.playSfx("collision");
+    vfxSystem.spawn("interactionPulse", {
+      x: doorCenterX,
+      y: doorCenterY,
+      size: 20,
+      durationMs: 220,
+      startedAt: now
+    });
+  },
   handleFeatureNPCInteraction: (npc) => featureCoordinator.tryHandleNPCInteraction(npc),
   handleFeatureStateInteraction: (activeGameState) => {
     if (!featureCoordinator.handlesGameState(activeGameState)) return false;
@@ -996,6 +1352,7 @@ gameController = createGameController({
     getCurrentMapW: () => currentMapW,
     getCurrentMapH: () => currentMapH,
     getGameState: () => gameState,
+    isPlayerMovementLocked: () => patInnIntroState.active,
     setGameState: (nextState) => {
       gameState = nextState;
     }
@@ -1011,8 +1368,16 @@ gameController = createGameController({
     updateFeatureState: (activeGameState) => featureCoordinator.updateForState(activeGameState),
     onAreaChanged: ({ previousTownId, previousAreaId, townId, areaId }) => {
       if (previousTownId !== townId || previousAreaId !== areaId) {
-        performAutoSave("Area transition");
         uiMotionState.minimapRevealAt = performance.now();
+      }
+      applyStoryNpcVisibility();
+      if (
+        !gameFlags.patInnIntroSeen &&
+        townId === PAT_INN_TOWN_ID &&
+        areaId === PAT_INN_AREA_ID &&
+        (previousTownId !== townId || previousAreaId !== areaId)
+      ) {
+        patInnIntroState.pendingStart = true;
       }
       syncObjectiveState(performance.now());
     }
@@ -1134,12 +1499,14 @@ const { render } = createGameRenderer({
   trainingPopup,
   playerStats,
   playerInventory,
+  playerEquipment,
   objectiveState,
   uiMotionState,
   minimapDiscoveryState,
   itemAlert,
   inventoryHint,
   saveNoticeState,
+  doorAccessNoticeState,
   combatRewardPanel,
   pauseMenuState,
   mouseUiState,

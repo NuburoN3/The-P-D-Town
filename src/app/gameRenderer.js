@@ -77,12 +77,14 @@ export function createGameRenderer({
   trainingPopup,
   playerStats,
   playerInventory,
+  playerEquipment,
   objectiveState,
   uiMotionState,
   minimapDiscoveryState,
   itemAlert,
   inventoryHint,
   saveNoticeState,
+  doorAccessNoticeState,
   combatRewardPanel,
   pauseMenuState,
   mouseUiState,
@@ -95,7 +97,16 @@ export function createGameRenderer({
   getGameState,
   isConditionallyHiddenDoor
 }) {
-  function buildDoorHintText() {
+  function buildDoorHintText(currentTownId, currentAreaId) {
+    if (
+      doorAccessNoticeState?.active &&
+      doorAccessNoticeState.townId === currentTownId &&
+      doorAccessNoticeState.areaId === currentAreaId &&
+      typeof doorAccessNoticeState.text === "string" &&
+      doorAccessNoticeState.text.length > 0
+    ) {
+      return doorAccessNoticeState.text;
+    }
     return "";
   }
 
@@ -230,7 +241,7 @@ export function createGameRenderer({
       canvas.style.cursor = "none";
     }
     const minimap = buildMinimapState(currentMap, currentMapW, currentMapH, currentTownId, currentAreaId);
-    const doorHintText = buildDoorHintText(currentTownId, currentAreaId, currentMap);
+    const doorHintText = buildDoorHintText(currentTownId, currentAreaId);
     const currentTown = worldService.getTown(currentTownId);
     const currentArea = worldService.getArea(currentTownId, currentAreaId);
 
@@ -287,6 +298,7 @@ export function createGameRenderer({
         trainingPopup,
         playerStats,
         playerInventory,
+        playerEquipment,
         objectiveState,
         itemAlert,
         inventoryHint,

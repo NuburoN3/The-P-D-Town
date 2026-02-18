@@ -48,6 +48,8 @@ export function normalizeTownProgress(progress = {}) {
 
 export function normalizeGlobalStoryFlags(gameFlags) {
   if (!gameFlags || typeof gameFlags !== "object") return;
+  if (typeof gameFlags.hanamiDojoExitPending !== "boolean") gameFlags.hanamiDojoExitPending = false;
+  if (typeof gameFlags.hanamiLeftDojo !== "boolean") gameFlags.hanamiLeftDojo = false;
   if (typeof gameFlags.taikoHouseUnlocked !== "boolean") gameFlags.taikoHouseUnlocked = false;
   if (typeof gameFlags.townRumorResolved !== "boolean") gameFlags.townRumorResolved = false;
 }

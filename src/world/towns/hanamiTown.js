@@ -559,9 +559,10 @@ export const hanamiTown = {
             y: 4,
             dir: "right",
             dialogue: [
-                "Good morning, dear. Welcome to Pat's Bed and Breakfast.",
-                "I'm making breakfast downstairs right now.",
-                "Would you like a warm plate before you head out?"
+                "Oh good, you're awake!",
+                "I wasn't expecting any guests last night but...",
+                "My name's Pat, and this is my bed and breakfast!",
+                "You can stay as long as you like, but next time please give me time to prepare your room properly!"
             ],
             hasTrainingChoice: false
         },

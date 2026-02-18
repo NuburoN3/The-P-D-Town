@@ -55,6 +55,7 @@ export function createGameRuntime() {
       enemyTelegraph: "assets/audio/collision_sound.wav",
       hitImpact: "assets/audio/Item_Unlock.wav",
       hurt: "assets/audio/collision_sound.wav",
+      levelUp: "assets/audio/Level up_Sound.ogg",
       saveGame: "assets/audio/EnterDoor_Sound.wav",
       loadGame: "assets/audio/PauseMenu_Sound.wav",
       uiError: "assets/audio/collision_sound.wav"
@@ -66,6 +67,9 @@ export function createGameRuntime() {
   const gameFlags = {
     acceptedTraining: false,
     completedTraining: false,
+    patInnIntroSeen: false,
+    hanamiDojoExitPending: false,
+    hanamiLeftDojo: false,
     taikoHouseUnlocked: false,
     townRumorResolved: false,
     townProgress: {
@@ -74,6 +78,14 @@ export function createGameRuntime() {
   };
 
   const playerInventory = {};
+  const playerEquipment = {
+    head: null,
+    torso: null,
+    weapon: null,
+    shield: null,
+    legs: null,
+    feet: null
+  };
 
   const playerStats = {
     disciplineLevel: 1,
@@ -202,6 +214,7 @@ export function createGameRuntime() {
     state: {
       gameFlags,
       playerInventory,
+      playerEquipment,
       playerStats,
       trainingPopup,
       itemAlert,

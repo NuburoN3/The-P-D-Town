@@ -10,6 +10,7 @@ export function createTryTrainingAction({
   doorSequence,
   worldService,
   trainingContent,
+  musicManager,
   getCurrentTownId,
   getCurrentAreaId,
   getCurrentAreaKind,
@@ -92,6 +93,9 @@ export function createTryTrainingAction({
       trainingPopup.levelUp = true;
       trainingPopup.pendingLevelUpDialogueAt = trainingPopup.startedAt + trainingPopup.animDurationMs;
       playerStats.disciplineLevel += 1;
+      if (musicManager && typeof musicManager.playSfx === "function") {
+        musicManager.playSfx("levelUp");
+      }
       if (!gameFlags.completedTraining && playerStats.disciplineLevel >= 2) {
         gameFlags.completedTraining = true;
       }

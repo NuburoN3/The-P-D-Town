@@ -13,11 +13,6 @@ export function createSaveLoadCoordinator({
   onAfterRestore = null
 }) {
   const newGameBaselineSnapshot = buildGameSnapshot(getSaveLoadContext());
-  let lastAutoSaveAt = 0;
-  const autoSaveCooldownMs = 7000;
-  const nowMs = () => (typeof performance !== "undefined" && typeof performance.now === "function")
-    ? performance.now()
-    : Date.now();
 
   function pushSaveNotice(text, type = "save", durationMs = 1700) {
     if (typeof onSaveNotice === "function") {
@@ -90,21 +85,6 @@ export function createSaveLoadCoordinator({
     restoreGameFromSnapshot(newGameBaselineSnapshot, "New game started.");
   }
 
-  function performAutoSave(reason = "Checkpoint") {
-    const now = nowMs();
-    if (now - lastAutoSaveAt < autoSaveCooldownMs) {
-      return false;
-    }
-
-    const snapshot = buildGameSnapshot(getSaveLoadContext());
-    const ok = saveGameSnapshot(snapshot);
-    if (!ok) return false;
-
-    lastAutoSaveAt = now;
-    pushSaveNotice(`Autosaved: ${reason}`, "autosave", 1450);
-    return true;
-  }
-
   function applyTitlePreviewSnapshot() {
     const titlePreviewSnapshot = loadGameSnapshot();
     if (titlePreviewSnapshot) {
@@ -129,7 +109,6 @@ export function createSaveLoadCoordinator({
     performSaveGame,
     performLoadGame,
     performStartNewGame,
-    performAutoSave,
     restoreGameFromSnapshot,
     applyTitlePreviewSnapshot,
     applyTitleStartPreview,

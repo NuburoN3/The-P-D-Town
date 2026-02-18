@@ -110,7 +110,8 @@ export function createGameController({
     const gameState = state.getGameState();
     if (isFreeExploreState(gameState) && !dialogue.isDialogueActive()) {
       updateRoamingNPCs(now, dtScale);
-      if (!state.player.isTraining) {
+      const movementLocked = typeof state.isPlayerMovementLocked === "function" && state.isPlayerMovementLocked();
+      if (!state.player.isTraining && !movementLocked) {
         updatePlayerMovement(dtScale);
       }
     } else if (dialogue.isDialogueActive()) {

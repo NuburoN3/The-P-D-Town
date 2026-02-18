@@ -249,11 +249,14 @@ export function createNPCInteractionHandler({
   }
 
   function maybeAwardMembershipCard(tp, npcName) {
+    const nextTp = normalizeProgressState(getTownProgress());
+    nextTp.membershipAwarded = true;
+    syncObjectiveState();
+
     showDialogue(npcName, [
       trainingContent.enduranceCompleteDialogue,
       trainingContent.membershipCardGiveDialogue
     ], () => {
-      tp.membershipAwarded = true;
       if (!playerInventory[trainingContent.membershipCardItemName]) {
         playerInventory[trainingContent.membershipCardItemName] = 1;
       }
@@ -271,14 +274,19 @@ export function createNPCInteractionHandler({
       try {
         musicManager.playSfx("itemUnlock");
       } catch (_) { }
+
+      // Story beat: after awarding the dojo card, Hanami departs the dojo.
+      gameFlags.hanamiDojoExitPending = true;
+      gameFlags.hanamiLeftDojo = false;
     });
   }
 
-  function startInvestigationRoute(tp, npcName) {
-    tp.rumorQuestOffered = true;
-    tp.rumorQuestActive = true;
-    tp.rumorQuestCompleted = false;
-    tp.rumorQuestReported = false;
+  function startInvestigationRoute(npcName) {
+    const nextTp = normalizeProgressState(getTownProgress());
+    nextTp.rumorQuestOffered = true;
+    nextTp.rumorQuestActive = true;
+    nextTp.rumorQuestCompleted = false;
+    nextTp.rumorQuestReported = false;
     gameFlags.taikoHouseUnlocked = true;
     itemAlert.active = true;
     itemAlert.text = "Investigation started. Follow leads: piazza -> chapel -> bar.";
@@ -419,12 +427,12 @@ export function createNPCInteractionHandler({
     }
 
     if (gameFlags.completedTraining) {
-      if (!tp.rumorQuestOffered) {
+      if (!tp.rumorQuestOffered && !tp.rumorQuestActive && !tp.rumorQuestCompleted && !tp.rumorQuestReported) {
         showDialogue(npc.name, trainingContent.postCompleteDialogue, () => {
           showDialogue(npc.name, trainingContent.nextChallengeQuestion, () => {
             openYesNoChoice((selectedOption) => {
               if (selectedOption === "Yes") {
-                startInvestigationRoute(tp, npc.name);
+                startInvestigationRoute(npc.name);
               } else {
                 showDialogue(npc.name, trainingContent.declineDialogue);
               }
@@ -435,7 +443,7 @@ export function createNPCInteractionHandler({
       }
 
       if (!tp.rumorQuestActive && !tp.rumorQuestCompleted) {
-        startInvestigationRoute(tp, npc.name);
+        startInvestigationRoute(npc.name);
         return;
       }
 

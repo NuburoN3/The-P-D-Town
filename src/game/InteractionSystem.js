@@ -13,6 +13,7 @@ export function createInteractionSystem({
   cameraZoom = 1,
   gameFlags,
   playerInventory,
+  playerEquipment,
   playerStats,
   trainingPopup,
   itemAlert,
@@ -42,6 +43,8 @@ export function createInteractionSystem({
   clearInteractPressed,
   syncObjectiveState = () => { },
   spawnVisualEffect = () => { },
+  canEnterDoor = () => ({ allowed: true, message: "" }),
+  onDoorEntryBlocked = () => { },
   handleFeatureNPCInteraction = () => false,
   handleFeatureStateInteraction = () => false
 }) {
@@ -58,6 +61,7 @@ export function createInteractionSystem({
     doorSequence,
     worldService,
     trainingContent,
+    musicManager,
     getCurrentTownId,
     getCurrentAreaId,
     getCurrentAreaKind,
@@ -101,7 +105,10 @@ export function createInteractionSystem({
     getGameState,
     setGameState,
     clearInteractPressed,
-    spawnVisualEffect
+    spawnVisualEffect,
+    canEnterDoor: ({ doorTile, destination, townId, areaId }) =>
+      canEnterDoor({ doorTile, destination, townId, areaId, playerEquipment }),
+    onDoorEntryBlocked
   });
 
   function toggleInventory() {

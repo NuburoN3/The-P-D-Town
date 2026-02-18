@@ -44,15 +44,10 @@ export function createChallengeSystem({ tileSize, vfxSystem }) {
 
     if (tp.challengeKills >= tp.challengeTarget) {
       gameFlags.completedTraining = true;
-      if (!tp.rumorQuestReported && !tp.rumorQuestCompleted) {
-        tp.rumorQuestOffered = true;
-        tp.rumorQuestActive = true;
-        gameFlags.taikoHouseUnlocked = true;
-      }
       if (!tp.challengeCompleteAnnounced) {
         tp.challengeCompleteAnnounced = true;
         itemAlert.active = true;
-        itemAlert.text = "Challenge complete! Investigation started. First lead: piazza.";
+        itemAlert.text = "Challenge complete! Return to Mr. Hanami for your next challenge.";
         itemAlert.startedAt = now;
         vfxSystem.spawn("trainingBurst", {
           x: player.x + tileSize / 2,
