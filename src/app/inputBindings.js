@@ -286,6 +286,11 @@ export function createInputBindings({
         return;
       }
 
+      if (gameState === gameStates.INTRO_CUTSCENE) {
+        e.preventDefault();
+        return;
+      }
+
       if (gameState === gameStates.PAUSE_MENU || gameState === gameStates.SETTINGS) {
         pauseMenuSystem.handleKeyDown(key, {
           onResume: resumeFromPauseMenu,

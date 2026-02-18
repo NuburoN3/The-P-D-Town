@@ -1101,7 +1101,14 @@ const titleScreenSystem = createTitleScreenSystem({ tileSize: TILE, cameraZoom: 
 titleScreenSystem.syncContinueAvailability(hasTitlePreviewSave);
 // Use system state for rendering access
 const titleState = titleScreenSystem.state;
-gameState = GAME_STATES.TITLE_SCREEN;
+const studioIntroState = {
+  startedAt: performance.now(),
+  blackHoldMs: 700,
+  fadeInMs: 2200,
+  holdMs: 900,
+  fadeOutMs: 900
+};
+gameState = GAME_STATES.INTRO_CUTSCENE;
 let titlePreviewMode = hasTitlePreviewSave ? "continue" : "start";
 
 // Fountain healing / challenge / defeat systems (created after vfxSystem above)
@@ -1262,6 +1269,18 @@ function syncTitlePreviewBackground() {
 }
 
 function updateTitleScreenWithPreview(now) {
+  if (gameState === GAME_STATES.INTRO_CUTSCENE) {
+    const intro = studioIntroState;
+    const totalDurationMs = intro.blackHoldMs + intro.fadeInMs + intro.holdMs + intro.fadeOutMs;
+    const elapsed = now - intro.startedAt;
+    if (elapsed >= totalDurationMs) {
+      gameState = GAME_STATES.TITLE_SCREEN;
+      titleState.startedAt = now;
+      musicManager.playMusicForArea(TITLE_SCREEN_MUSIC_KEY);
+    }
+    return;
+  }
+  if (gameState !== GAME_STATES.TITLE_SCREEN) return;
   syncTitlePreviewBackground();
   updateTitleScreen(now);
 }
@@ -1618,6 +1637,7 @@ const { render } = createGameRenderer({
   ui: UI,
   doorSequence,
   titleState,
+  studioIntroState,
   playerDefeatSequence,
   player,
   npcs,
@@ -1652,7 +1672,7 @@ const { render } = createGameRenderer({
 
 if (gameState === GAME_STATES.TITLE_SCREEN) {
   musicManager.playMusicForArea(TITLE_SCREEN_MUSIC_KEY);
-} else {
+} else if (gameState !== GAME_STATES.INTRO_CUTSCENE) {
   gameController.syncMusicForCurrentArea();
 }
 

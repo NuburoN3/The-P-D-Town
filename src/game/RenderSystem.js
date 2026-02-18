@@ -1413,6 +1413,46 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
   }
 }
 
+function drawIntroCutsceneOverlay(ctx, canvas, state) {
+  const intro = state.introState;
+  if (!intro || state.gameState !== GAME_STATES.INTRO_CUTSCENE) return;
+
+  const now = performance.now();
+  const elapsed = Math.max(0, now - (Number.isFinite(intro.startedAt) ? intro.startedAt : now));
+  const blackHoldMs = Math.max(0, intro.blackHoldMs || 0);
+  const fadeInMs = Math.max(1, intro.fadeInMs || 1);
+  const holdMs = Math.max(0, intro.holdMs || 0);
+  const fadeOutMs = Math.max(1, intro.fadeOutMs || 1);
+
+  let textAlpha = 0;
+  if (elapsed < blackHoldMs) {
+    textAlpha = 0;
+  } else if (elapsed < blackHoldMs + fadeInMs) {
+    const t = (elapsed - blackHoldMs) / fadeInMs;
+    textAlpha = easeOutCubic(t);
+  } else if (elapsed < blackHoldMs + fadeInMs + holdMs) {
+    textAlpha = 1;
+  } else {
+    const t = (elapsed - blackHoldMs - fadeInMs - holdMs) / fadeOutMs;
+    textAlpha = 1 - easeInCubic(t);
+  }
+
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const label = "ZETA LOTUS STUDIOS";
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const fontSize = Math.max(28, Math.min(62, Math.floor(canvas.width * 0.08)));
+  ctx.font = `700 ${fontSize}px 'Cinzel', 'Palatino Linotype', 'Book Antiqua', serif`;
+  ctx.fillStyle = `rgba(255,255,255,${Math.max(0, Math.min(1, textAlpha * 0.35))})`;
+  ctx.fillText(label, canvas.width * 0.5 + 1, canvas.height * 0.5 + 1);
+  ctx.fillStyle = `rgba(255,255,255,${Math.max(0, Math.min(1, textAlpha))})`;
+  ctx.fillText(label, canvas.width * 0.5, canvas.height * 0.5);
+  ctx.restore();
+}
+
 function drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoom, drawTile) {
   if (typeof state.getBuildingAtWorldTile !== "function") return;
 
@@ -1507,6 +1547,10 @@ export function renderGameFrame({
   drawAtmosphere(ctx, canvas, colors, state);
   drawMoodGrading(ctx, canvas, state);
   drawCombatDamageFlash(ctx, state);
+  if (state.gameState === GAME_STATES.INTRO_CUTSCENE) {
+    drawIntroCutsceneOverlay(ctx, canvas, state);
+    return;
+  }
   if (state.gameState === GAME_STATES.TITLE_SCREEN) {
     drawTitleScreenOverlay(ctx, canvas, state, colors);
     return;

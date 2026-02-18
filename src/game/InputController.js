@@ -47,6 +47,15 @@ export function createInputController({
 
         const gameState = getGameState();
 
+        if (gameState === GAME_STATES.INTRO_CUTSCENE) {
+            gamepadMenuState.heldDirection = 0;
+            gamepadMenuState.confirmHeld = confirmPressed || startPressed;
+            gamepadMenuState.backHeld = backPressed;
+            gamepadMenuState.startHeld = startPressed;
+            gamepadMenuState.attackHeld = attackPressed;
+            return;
+        }
+
         if (gameState === GAME_STATES.TITLE_SCREEN) {
             if (direction !== 0 && (direction !== gamepadMenuState.heldDirection || now >= gamepadMenuState.nextMoveAt)) {
                 titleScreenSystem.handleKeyDown(direction === 1 ? "arrowdown" : "arrowup", actions.titleCallbacks);

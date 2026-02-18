@@ -43,7 +43,7 @@ export function createGameLoop({
     const gameState = getGameState();
     const hitstopActive = now < combatFeedback.hitstopUntil;
 
-    if (gameState === gameStates.TITLE_SCREEN) {
+    if (gameState === gameStates.TITLE_SCREEN || gameState === gameStates.INTRO_CUTSCENE) {
       updateTitleScreen(now);
     } else {
       updatePlayerDefeatSequence(now);

@@ -15,6 +15,7 @@ export const AREA_KINDS = Object.freeze({
 });
 
 export const GAME_STATES = Object.freeze({
+  INTRO_CUTSCENE: "introCutscene",
   TITLE_SCREEN: "titleScreen",
   OVERWORLD: "overworld",
   INTERIOR: "interior",
