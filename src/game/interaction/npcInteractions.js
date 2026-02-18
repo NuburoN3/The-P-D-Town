@@ -266,6 +266,8 @@ export function createNPCInteractionHandler({
       itemAlert.startedAt = performance.now();
       inventoryHint.active = true;
       inventoryHint.startedAt = performance.now();
+      inventoryHint.durationMs = 5000;
+      inventoryHint.itemName = trainingContent.membershipCardItemName;
       spawnVisualEffect("pickupGlow", {
         x: player.x + tileSize / 2,
         y: player.y + tileSize * 0.4,
@@ -524,6 +526,8 @@ export function createNPCInteractionHandler({
             itemAlert.startedAt = performance.now();
             inventoryHint.active = true;
             inventoryHint.startedAt = performance.now();
+            inventoryHint.durationMs = 5000;
+            inventoryHint.itemName = trainingContent.itemName;
             spawnVisualEffect("pickupGlow", {
               x: player.x + tileSize / 2,
               y: player.y + tileSize * 0.4,

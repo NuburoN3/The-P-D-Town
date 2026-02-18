@@ -10,6 +10,8 @@ import {
 } from "./uiPrimitives.js";
 
 const CATEGORY_ORDER = ["Key Item", "Gear", "Consumable", "Material", "Misc"];
+const INVENTORY_DETAILS_CLOSE_GRACE_MS = 260;
+const INVENTORY_DETAILS_HOVER_PADDING = 12;
 const EQUIPMENT_SLOT_ORDER = [
   { id: "head", label: "Headgear" },
   { id: "torso", label: "Torso" },
@@ -83,6 +85,52 @@ function sortInventoryItems(playerInventory) {
   return items;
 }
 
+function ensureInventorySlotOrder(mouseUiState, items, totalSlots) {
+  const emptySlots = Array.from({ length: totalSlots }, () => "");
+  if (!mouseUiState || typeof mouseUiState !== "object") return emptySlots;
+
+  const existing = Array.isArray(mouseUiState.inventorySlotOrder) ? mouseUiState.inventorySlotOrder : [];
+  const draggedInventoryItemName = (
+    mouseUiState.inventoryDragSource === "inventoryGrid" &&
+    typeof mouseUiState.inventoryDragItemName === "string"
+  )
+    ? mouseUiState.inventoryDragItemName
+    : "";
+  const validNames = new Set(items.map((item) => item.name));
+  const seen = new Set();
+  const normalized = Array.from({ length: totalSlots }, (_, index) => {
+    const name = typeof existing[index] === "string" ? existing[index] : "";
+    if (!validNames.has(name) || seen.has(name) || (draggedInventoryItemName && name === draggedInventoryItemName)) return "";
+    seen.add(name);
+    return name;
+  });
+
+  const placed = new Set(normalized.filter(Boolean));
+  for (const item of items) {
+    if (draggedInventoryItemName && item.name === draggedInventoryItemName) continue;
+    if (placed.has(item.name)) continue;
+    const emptyIndex = normalized.indexOf("");
+    if (emptyIndex === -1) break;
+    normalized[emptyIndex] = item.name;
+    placed.add(item.name);
+  }
+
+  mouseUiState.inventorySlotOrder = normalized;
+  return normalized;
+}
+
+function placeInFirstEmptyInventorySlot(slotOrder, itemName, disallowIndex = -1) {
+  if (!Array.isArray(slotOrder) || !itemName) return false;
+  for (let i = 0; i < slotOrder.length; i++) {
+    if (i === disallowIndex) continue;
+    if (!slotOrder[i]) {
+      slotOrder[i] = itemName;
+      return true;
+    }
+  }
+  return false;
+}
+
 function drawCategorySummary(ctx, items, boxX, boxY, colors) {
   const counts = new Map();
   for (const item of items) {
@@ -135,12 +183,12 @@ function getGridHitTest(mouseX, mouseY, gridX, gridY, slotSize, margin, cols, ro
 }
 
 function buildEquipmentLayout(panelX, panelY, slotSize) {
-  const centerX = panelX + 74;
-  const headY = panelY + 24;
-  const torsoY = headY + slotSize + 20;
-  const armY = torsoY + 4;
-  const legsY = torsoY + slotSize + 20;
-  const feetY = legsY + slotSize + 14;
+  const centerX = panelX + 91;
+  const headY = panelY + 22;
+  const torsoY = headY + slotSize + 26;
+  const armY = torsoY + 6;
+  const legsY = torsoY + slotSize + 26;
+  const feetY = legsY + slotSize + 18;
 
   const slots = {
     head: { x: centerX, y: headY, w: slotSize, h: slotSize },
@@ -213,8 +261,20 @@ function isDojoUpstairsHeadbandLock(state, slotId, equippedItemName) {
 function clearItemInspection(mouseUiState) {
   if (!mouseUiState) return;
   mouseUiState.inventoryDetailsIndex = -1;
+  mouseUiState.inventoryDetailsSource = "";
+  mouseUiState.inventoryDetailsEquipmentSlot = "";
   mouseUiState.inventoryDetailsAnchorX = -1;
   mouseUiState.inventoryDetailsAnchorY = -1;
+  mouseUiState.inventoryDetailsCloseGraceUntil = 0;
+}
+
+function isPointInsideExpandedRect(mouseX, mouseY, x, y, w, h, padding = 0) {
+  return (
+    mouseX >= x - padding &&
+    mouseX <= x + w + padding &&
+    mouseY >= y - padding &&
+    mouseY <= y + h + padding
+  );
 }
 
 function restoreDraggedItem(mouseUiState, playerInventory, playerEquipment) {
@@ -285,31 +345,37 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   const gridWidth = sampleGrid.width;
   const gridHeight = sampleGrid.height;
 
-  const equipmentPanelW = 188;
-  const slotBodySize = 40;
+  const equipmentPanelW = 228;
+  const slotBodySize = 46;
   const roomOnRight = (boxX + boxW - 24) - (gridX + gridWidth + 24) >= equipmentPanelW;
   const equipmentPanelX = roomOnRight
     ? gridX + gridWidth + 24
     : boxX + boxW - equipmentPanelW - 24;
   const equipmentPanelY = roomOnRight ? gridY + 4 : (gridY + gridHeight + 20);
   const equipmentLayout = buildEquipmentLayout(equipmentPanelX, equipmentPanelY, slotBodySize);
+  const equipmentPanelH = Math.max(250, Math.round((equipmentLayout.bottomY - equipmentPanelY) + 44));
 
   let sortedItems = sortInventoryItems(playerInventory);
-  drawCategorySummary(ctx, sortedItems, boxX, boxY, colors);
+  let itemsByName = new Map(sortedItems.map((item) => [item.name, item]));
+  let slotOrder = ensureInventorySlotOrder(mouseUiState, sortedItems, totalSlots);
 
   const mouseInsideCanvas = Boolean(mouseUiState?.insideCanvas);
   const mouseX = mouseUiState?.x || 0;
   const mouseY = mouseUiState?.y || 0;
 
   const computeHoverState = (items) => {
+    const itemMap = new Map(items.map((item) => [item.name, item]));
     const gridHit = mouseInsideCanvas
       ? getGridHitTest(mouseX, mouseY, gridX, gridY, slotSize, margin, cols, rows)
       : { isOverGridSlot: false, slotIndex: -1 };
-    const hoveredItemIndex = gridHit.isOverGridSlot && gridHit.slotIndex < items.length ? gridHit.slotIndex : -1;
-    const hoveredItem = hoveredItemIndex >= 0 ? items[hoveredItemIndex] : null;
+    const hoveredGridSlotIndex = gridHit.isOverGridSlot ? gridHit.slotIndex : -1;
+    const hoveredItemName = hoveredGridSlotIndex >= 0 ? slotOrder[hoveredGridSlotIndex] : "";
+    const hoveredItem = hoveredItemName ? (itemMap.get(hoveredItemName) || null) : null;
+    const hoveredItemIndex = hoveredItem ? hoveredGridSlotIndex : -1;
     const hoveredEquipmentSlotId = mouseInsideCanvas ? findHoveredEquipmentSlot(mouseX, mouseY, equipmentLayout) : "";
     const hoveredEquipmentItem = hoveredEquipmentSlotId ? playerEquipment?.[hoveredEquipmentSlotId] || null : null;
     return {
+      hoveredGridSlotIndex,
       hoveredItemIndex,
       hoveredItem,
       hoveredEquipmentSlotId,
@@ -323,6 +389,16 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   if (mouseUiState && mouseUiState.inventoryDetailsRequest) {
     if (hover.hoveredItemIndex >= 0) {
       mouseUiState.inventoryDetailsIndex = hover.hoveredItemIndex;
+      mouseUiState.inventoryDetailsSource = "inventory";
+      mouseUiState.inventoryDetailsEquipmentSlot = "";
+      mouseUiState.inventoryDetailsCloseGraceUntil = 0;
+      mouseUiState.inventoryDetailsAnchorX = mouseX;
+      mouseUiState.inventoryDetailsAnchorY = mouseY;
+    } else if (hover.hoveredEquipmentSlotId && hover.hoveredEquipmentItem) {
+      mouseUiState.inventoryDetailsIndex = -1;
+      mouseUiState.inventoryDetailsSource = "equipment";
+      mouseUiState.inventoryDetailsEquipmentSlot = hover.hoveredEquipmentSlotId;
+      mouseUiState.inventoryDetailsCloseGraceUntil = 0;
       mouseUiState.inventoryDetailsAnchorX = mouseX;
       mouseUiState.inventoryDetailsAnchorY = mouseY;
     } else {
@@ -333,11 +409,12 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
 
   if (mouseUiState?.inventoryDragStartRequest) {
     if (hover.hoveredItemIndex >= 0) {
-      const draggedItem = sortedItems[hover.hoveredItemIndex];
-      if (draggedItem && removeItemFromInventory(playerInventory, draggedItem.name, 1)) {
+      const draggedItem = hover.hoveredItem;
+      if (draggedItem) {
         mouseUiState.inventoryDragItemName = draggedItem.name;
-        mouseUiState.inventoryDragSource = "inventory";
-        mouseUiState.inventoryDragSourceSlot = "";
+        mouseUiState.inventoryDragSource = "inventoryGrid";
+        mouseUiState.inventoryDragSourceSlot = String(hover.hoveredItemIndex);
+        slotOrder[hover.hoveredItemIndex] = "";
         clearItemInspection(mouseUiState);
       }
     } else if (hover.hoveredEquipmentSlotId && playerEquipment?.[hover.hoveredEquipmentSlotId]) {
@@ -357,6 +434,8 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     }
     mouseUiState.inventoryDragStartRequest = false;
     sortedItems = sortInventoryItems(playerInventory);
+    itemsByName = new Map(sortedItems.map((item) => [item.name, item]));
+    slotOrder = ensureInventorySlotOrder(mouseUiState, sortedItems, totalSlots);
     hover = computeHoverState(sortedItems);
   }
 
@@ -364,7 +443,71 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     const draggedItemName = mouseUiState.inventoryDragItemName;
     if (draggedItemName) {
       let placed = false;
-      if (hover.hoveredEquipmentSlotId && canEquipItemInSlot(draggedItemName, hover.hoveredEquipmentSlotId)) {
+      const sourceSlotIndex = Number.parseInt(mouseUiState.inventoryDragSourceSlot, 10);
+
+      if (mouseUiState.inventoryDragSource === "inventoryGrid") {
+        if (hover.hoveredEquipmentSlotId && canEquipItemInSlot(draggedItemName, hover.hoveredEquipmentSlotId)) {
+          if (
+            isDojoUpstairsHeadbandLock(
+              state,
+              hover.hoveredEquipmentSlotId,
+              playerEquipment[hover.hoveredEquipmentSlotId]
+            ) &&
+            draggedItemName !== "Training Headband"
+          ) {
+            if (Number.isInteger(sourceSlotIndex) && sourceSlotIndex >= 0 && sourceSlotIndex < totalSlots) {
+              slotOrder[sourceSlotIndex] = draggedItemName;
+            } else {
+              placeInFirstEmptyInventorySlot(slotOrder, draggedItemName);
+            }
+            mouseUiState.inventoryDragItemName = "";
+            mouseUiState.inventoryDragSource = "";
+            mouseUiState.inventoryDragSourceSlot = "";
+            clearItemInspection(mouseUiState);
+            mouseUiState.inventoryDragReleaseRequest = false;
+            sortedItems = sortInventoryItems(playerInventory);
+            itemsByName = new Map(sortedItems.map((item) => [item.name, item]));
+            slotOrder = ensureInventorySlotOrder(mouseUiState, sortedItems, totalSlots);
+            hover = computeHoverState(sortedItems);
+            return;
+          }
+
+          const swappedItem = playerEquipment[hover.hoveredEquipmentSlotId];
+          if (removeItemFromInventory(playerInventory, draggedItemName, 1)) {
+            playerEquipment[hover.hoveredEquipmentSlotId] = draggedItemName;
+            if (swappedItem) {
+              addItemToInventory(playerInventory, swappedItem, 1);
+              if (Number.isInteger(sourceSlotIndex) && sourceSlotIndex >= 0 && sourceSlotIndex < totalSlots) {
+                slotOrder[sourceSlotIndex] = swappedItem;
+              } else {
+                placeInFirstEmptyInventorySlot(slotOrder, swappedItem);
+              }
+            }
+            placed = true;
+          } else if (Number.isInteger(sourceSlotIndex) && sourceSlotIndex >= 0 && sourceSlotIndex < totalSlots) {
+            slotOrder[sourceSlotIndex] = draggedItemName;
+          } else {
+            placeInFirstEmptyInventorySlot(slotOrder, draggedItemName);
+          }
+        } else if (hover.isOverGridSlot && hover.hoveredGridSlotIndex >= 0) {
+          const targetIndex = hover.hoveredGridSlotIndex;
+          const displaced = slotOrder[targetIndex];
+          slotOrder[targetIndex] = draggedItemName;
+          if (displaced && displaced !== draggedItemName) {
+            if (
+              Number.isInteger(sourceSlotIndex) &&
+              sourceSlotIndex >= 0 &&
+              sourceSlotIndex < totalSlots &&
+              !slotOrder[sourceSlotIndex]
+            ) {
+              slotOrder[sourceSlotIndex] = displaced;
+            } else {
+              placeInFirstEmptyInventorySlot(slotOrder, displaced, targetIndex);
+            }
+          }
+          placed = true;
+        }
+      } else if (hover.hoveredEquipmentSlotId && canEquipItemInSlot(draggedItemName, hover.hoveredEquipmentSlotId)) {
         if (
           isDojoUpstairsHeadbandLock(
             state,
@@ -374,26 +517,33 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
           draggedItemName !== "Training Headband"
         ) {
           restoreDraggedItem(mouseUiState, playerInventory, playerEquipment);
-          mouseUiState.inventoryDragItemName = "";
-          mouseUiState.inventoryDragSource = "";
-          mouseUiState.inventoryDragSourceSlot = "";
-          clearItemInspection(mouseUiState);
-          mouseUiState.inventoryDragReleaseRequest = false;
-          sortedItems = sortInventoryItems(playerInventory);
-          hover = computeHoverState(sortedItems);
-          return;
+        } else {
+          const swappedItem = playerEquipment[hover.hoveredEquipmentSlotId];
+          playerEquipment[hover.hoveredEquipmentSlotId] = draggedItemName;
+          if (swappedItem) addItemToInventory(playerInventory, swappedItem, 1);
+          placed = true;
         }
-        const swappedItem = playerEquipment[hover.hoveredEquipmentSlotId];
-        playerEquipment[hover.hoveredEquipmentSlotId] = draggedItemName;
-        if (swappedItem) addItemToInventory(playerInventory, swappedItem, 1);
-        placed = true;
-      } else if (hover.isOverGridSlot) {
+      } else if (hover.isOverGridSlot && hover.hoveredGridSlotIndex >= 0) {
         addItemToInventory(playerInventory, draggedItemName, 1);
+        const targetIndex = hover.hoveredGridSlotIndex;
+        const displaced = slotOrder[targetIndex];
+        slotOrder[targetIndex] = draggedItemName;
+        if (displaced && displaced !== draggedItemName) {
+          placeInFirstEmptyInventorySlot(slotOrder, displaced, targetIndex);
+        }
         placed = true;
       }
 
       if (!placed) {
-        restoreDraggedItem(mouseUiState, playerInventory, playerEquipment);
+        if (mouseUiState.inventoryDragSource === "inventoryGrid") {
+          if (Number.isInteger(sourceSlotIndex) && sourceSlotIndex >= 0 && sourceSlotIndex < totalSlots) {
+            slotOrder[sourceSlotIndex] = draggedItemName;
+          } else {
+            placeInFirstEmptyInventorySlot(slotOrder, draggedItemName);
+          }
+        } else {
+          restoreDraggedItem(mouseUiState, playerInventory, playerEquipment);
+        }
       }
       mouseUiState.inventoryDragItemName = "";
       mouseUiState.inventoryDragSource = "";
@@ -402,19 +552,47 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     }
     mouseUiState.inventoryDragReleaseRequest = false;
     sortedItems = sortInventoryItems(playerInventory);
+    itemsByName = new Map(sortedItems.map((item) => [item.name, item]));
+    slotOrder = ensureInventorySlotOrder(mouseUiState, sortedItems, totalSlots);
     hover = computeHoverState(sortedItems);
   }
 
   let inspectedItem = null;
-  if (mouseUiState && !mouseUiState.insideCanvas && mouseUiState.inventoryDetailsIndex !== -1) {
+  if (mouseUiState && !mouseUiState.insideCanvas && (
+    mouseUiState.inventoryDetailsIndex !== -1 ||
+    mouseUiState.inventoryDetailsSource ||
+    mouseUiState.inventoryDetailsEquipmentSlot
+  )) {
     clearItemInspection(mouseUiState);
   }
+  const inspectedSource = typeof mouseUiState?.inventoryDetailsSource === "string"
+    ? mouseUiState.inventoryDetailsSource
+    : "";
+  const inspectedEquipmentSlot = typeof mouseUiState?.inventoryDetailsEquipmentSlot === "string"
+    ? mouseUiState.inventoryDetailsEquipmentSlot
+    : "";
   const inspectedIndex = Number.isInteger(mouseUiState?.inventoryDetailsIndex)
     ? mouseUiState.inventoryDetailsIndex
     : -1;
-  if (inspectedIndex >= 0 && inspectedIndex < sortedItems.length) {
-    inspectedItem = sortedItems[inspectedIndex];
-  } else if (mouseUiState && mouseUiState.inventoryDetailsIndex !== -1) {
+  if (inspectedSource === "inventory" && inspectedIndex >= 0 && inspectedIndex < totalSlots) {
+    const inspectedName = slotOrder[inspectedIndex];
+    if (inspectedName) {
+      inspectedItem = itemsByName.get(inspectedName) || getItemInfo(inspectedName, Number(playerInventory[inspectedName] || 1));
+    } else if (mouseUiState) {
+      clearItemInspection(mouseUiState);
+    }
+  } else if (inspectedSource === "equipment" && inspectedEquipmentSlot) {
+    const equippedName = playerEquipment?.[inspectedEquipmentSlot] || null;
+    if (equippedName) {
+      inspectedItem = getItemInfo(equippedName, 1);
+    } else {
+      clearItemInspection(mouseUiState);
+    }
+  } else if (mouseUiState && (
+    mouseUiState.inventoryDetailsIndex !== -1 ||
+    mouseUiState.inventoryDetailsSource ||
+    mouseUiState.inventoryDetailsEquipmentSlot
+  )) {
     clearItemInspection(mouseUiState);
   }
 
@@ -430,8 +608,9 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     ctx.lineWidth = 1;
     ctx.strokeRect(x, y, slotSize, slotSize);
 
-    if (i < sortedItems.length) {
-      const item = sortedItems[i];
+    const itemNameAtSlot = slotOrder[i];
+    if (itemNameAtSlot) {
+      const item = itemsByName.get(itemNameAtSlot) || getItemInfo(itemNameAtSlot, Number(playerInventory[itemNameAtSlot] || 1));
       drawItemInSlot(ctx, item.name, x, y, slotSize, colors, getItemSprite);
 
       if (item.count > 1) {
@@ -452,10 +631,10 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   }
 
   ctx.fillStyle = "rgba(20, 16, 12, 0.35)";
-  ctx.fillRect(equipmentPanelX, equipmentPanelY, equipmentPanelW, 250);
+  ctx.fillRect(equipmentPanelX, equipmentPanelY, equipmentPanelW, equipmentPanelH);
   ctx.strokeStyle = "rgba(255, 231, 167, 0.5)";
   ctx.lineWidth = 1;
-  ctx.strokeRect(equipmentPanelX + 0.5, equipmentPanelY + 0.5, equipmentPanelW - 1, 249);
+  ctx.strokeRect(equipmentPanelX + 0.5, equipmentPanelY + 0.5, equipmentPanelW - 1, equipmentPanelH - 1);
 
   ctx.font = FONT_16;
   drawUiText(ctx, "Equipment", equipmentPanelX + 12, equipmentPanelY + 18, colors);
@@ -543,6 +722,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     const paddingX = 10;
     const lineH = 14;
     const showEquipAction = EQUIPMENT_SLOT_ORDER.some((slot) => slot.id === inspectedItem.equipSlot);
+    const showUnequipAction = inspectedSource === "equipment" && Boolean(inspectedEquipmentSlot);
     const actionGapY = 8;
     const actionHeight = 20;
     const actionHintHeight = 14;
@@ -551,7 +731,8 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
       Math.ceil(lines.reduce((max, line) => Math.max(max, ctx.measureText(line).width), 0)) + paddingX * 2
     );
     const textSectionH = lines.length * lineH + 12;
-    const bubbleH = textSectionH + (showEquipAction ? actionGapY + actionHeight + actionHintHeight + 8 : 0);
+    const showActionRow = showEquipAction || showUnequipAction;
+    const bubbleH = textSectionH + (showActionRow ? actionGapY + actionHeight + actionHintHeight + 8 : 0);
     const anchorX = Number.isFinite(mouseUiState.inventoryDetailsAnchorX)
       ? mouseUiState.inventoryDetailsAnchorX
       : mouseX;
@@ -563,23 +744,53 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     const bubbleX = Math.max(8, Math.min(maxX, anchorX + 14));
     const bubbleY = Math.max(8, Math.min(maxY, anchorY - bubbleH - 12));
 
-    const inspectedCol = inspectedIndex % cols;
-    const inspectedRow = Math.floor(inspectedIndex / cols);
-    const inspectedSlotX = gridX + inspectedCol * (slotSize + margin);
-    const inspectedSlotY = gridY + inspectedRow * (slotSize + margin);
-    const hoveringSlot =
-      mouseX >= inspectedSlotX &&
-      mouseX <= inspectedSlotX + slotSize &&
-      mouseY >= inspectedSlotY &&
-      mouseY <= inspectedSlotY + slotSize;
-    const hoveringBubble =
-      mouseX >= bubbleX &&
-      mouseX <= bubbleX + bubbleW &&
-      mouseY >= bubbleY &&
-      mouseY <= bubbleY + bubbleH;
+    let inspectedSlotX = 0;
+    let inspectedSlotY = 0;
+    let inspectedSlotW = slotSize;
+    let inspectedSlotH = slotSize;
+    if (inspectedSource === "equipment" && inspectedEquipmentSlot && equipmentLayout.slots[inspectedEquipmentSlot]) {
+      const rect = equipmentLayout.slots[inspectedEquipmentSlot];
+      inspectedSlotX = rect.x;
+      inspectedSlotY = rect.y;
+      inspectedSlotW = rect.w;
+      inspectedSlotH = rect.h;
+    } else {
+      const inspectedCol = inspectedIndex % cols;
+      const inspectedRow = Math.floor(inspectedIndex / cols);
+      inspectedSlotX = gridX + inspectedCol * (slotSize + margin);
+      inspectedSlotY = gridY + inspectedRow * (slotSize + margin);
+    }
+    const hoveringSlot = isPointInsideExpandedRect(
+      mouseX,
+      mouseY,
+      inspectedSlotX,
+      inspectedSlotY,
+      inspectedSlotW,
+      inspectedSlotH,
+      INVENTORY_DETAILS_HOVER_PADDING
+    );
+    const hoveringBubble = isPointInsideExpandedRect(
+      mouseX,
+      mouseY,
+      bubbleX,
+      bubbleY,
+      bubbleW,
+      bubbleH,
+      INVENTORY_DETAILS_HOVER_PADDING
+    );
     if (!hoveringSlot && !hoveringBubble) {
-      clearItemInspection(mouseUiState);
-      return;
+      const nowMs = performance.now();
+      const graceUntil = Number.isFinite(mouseUiState.inventoryDetailsCloseGraceUntil)
+        ? mouseUiState.inventoryDetailsCloseGraceUntil
+        : 0;
+      if (graceUntil <= 0) {
+        mouseUiState.inventoryDetailsCloseGraceUntil = nowMs + INVENTORY_DETAILS_CLOSE_GRACE_MS;
+      } else if (nowMs >= graceUntil) {
+        clearItemInspection(mouseUiState);
+        return;
+      }
+    } else {
+      mouseUiState.inventoryDetailsCloseGraceUntil = 0;
     }
 
     ctx.fillStyle = "rgba(18, 14, 10, 0.9)";
@@ -592,11 +803,13 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
       drawUiText(ctx, lines[i], bubbleX + paddingX, bubbleY + 16 + i * lineH, colors);
     }
 
-    if (showEquipAction) {
-      const slotLabel = getEquipmentSlotLabel(inspectedItem.equipSlot);
-      const equipText = "Equip";
-      const equipTextW = Math.ceil(ctx.measureText(equipText).width);
-      const buttonW = Math.max(66, equipTextW + 18);
+    if (showActionRow) {
+      const slotLabel = showUnequipAction
+        ? getEquipmentSlotLabel(inspectedEquipmentSlot)
+        : getEquipmentSlotLabel(inspectedItem.equipSlot);
+      const actionText = showUnequipAction ? "Unequip" : "Equip";
+      const actionTextW = Math.ceil(ctx.measureText(actionText).width);
+      const buttonW = Math.max(66, actionTextW + 18);
       const buttonX = bubbleX + Math.round((bubbleW - buttonW) / 2);
       const buttonY = bubbleY + textSectionH + actionGapY;
       const hoveringEquipButton =
@@ -606,22 +819,37 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
         mouseY <= buttonY + actionHeight;
 
       if (mouseUiState.inventoryClickRequest && hoveringEquipButton) {
-        const slotId = inspectedItem.equipSlot;
-        const existingItem = playerEquipment[slotId];
-        const blockedByHeadbandLock = (
-          isDojoUpstairsHeadbandLock(state, slotId, existingItem) &&
-          inspectedItem.name !== "Training Headband"
-        );
-        if (!blockedByHeadbandLock && removeItemFromInventory(playerInventory, inspectedItem.name, 1)) {
-          playerEquipment[slotId] = inspectedItem.name;
-          if (existingItem) {
-            addItemToInventory(playerInventory, existingItem, 1);
+        if (showUnequipAction) {
+          const slotId = inspectedEquipmentSlot;
+          const equippedName = playerEquipment?.[slotId] || null;
+          const blockedByHeadbandLock = isDojoUpstairsHeadbandLock(state, slotId, equippedName);
+          if (!blockedByHeadbandLock && equippedName) {
+            playerEquipment[slotId] = null;
+            addItemToInventory(playerInventory, equippedName, 1);
+            clearItemInspection(mouseUiState);
+            mouseUiState.inventoryClickRequest = false;
+            sortedItems = sortInventoryItems(playerInventory);
+            hover = computeHoverState(sortedItems);
+            return;
           }
-          clearItemInspection(mouseUiState);
-          mouseUiState.inventoryClickRequest = false;
-          sortedItems = sortInventoryItems(playerInventory);
-          hover = computeHoverState(sortedItems);
-          return;
+        } else {
+          const slotId = inspectedItem.equipSlot;
+          const existingItem = playerEquipment[slotId];
+          const blockedByHeadbandLock = (
+            isDojoUpstairsHeadbandLock(state, slotId, existingItem) &&
+            inspectedItem.name !== "Training Headband"
+          );
+          if (!blockedByHeadbandLock && removeItemFromInventory(playerInventory, inspectedItem.name, 1)) {
+            playerEquipment[slotId] = inspectedItem.name;
+            if (existingItem) {
+              addItemToInventory(playerInventory, existingItem, 1);
+            }
+            clearItemInspection(mouseUiState);
+            mouseUiState.inventoryClickRequest = false;
+            sortedItems = sortInventoryItems(playerInventory);
+            hover = computeHoverState(sortedItems);
+            return;
+          }
         }
       }
 
@@ -630,10 +858,10 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
       ctx.strokeStyle = hoveringEquipButton ? "rgba(255, 236, 194, 0.95)" : "rgba(255, 231, 167, 0.72)";
       ctx.lineWidth = 1;
       ctx.strokeRect(buttonX + 0.5, buttonY + 0.5, buttonW - 1, actionHeight - 1);
-      drawUiText(ctx, equipText, buttonX + Math.round((buttonW - equipTextW) / 2), buttonY + 14, colors);
+      drawUiText(ctx, actionText, buttonX + Math.round((buttonW - actionTextW) / 2), buttonY + 14, colors);
 
       if (hoveringEquipButton) {
-        const hintText = `Equip to ${slotLabel}`;
+        const hintText = showUnequipAction ? `Unequip from ${slotLabel}` : `Equip to ${slotLabel}`;
         const hintW = Math.ceil(ctx.measureText(hintText).width);
         drawUiText(
           ctx,
@@ -652,8 +880,8 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
 
   if (draggingItemName && mouseUiState?.insideCanvas) {
     const dragSize = 34;
-    const drawX = mouseX + 10;
-    const drawY = mouseY + 10;
+    const drawX = Math.round(mouseX - dragSize * 0.5);
+    const drawY = Math.round(mouseY - dragSize * 0.5);
     ctx.save();
     ctx.globalAlpha = 0.92;
     ctx.fillStyle = "rgba(18, 14, 10, 0.7)";

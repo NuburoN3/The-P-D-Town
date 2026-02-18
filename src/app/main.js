@@ -97,8 +97,12 @@ const mouseUiState = {
   inventoryClickRequest: false,
   inventoryDetailsRequest: false,
   inventoryDetailsIndex: -1,
+  inventoryDetailsSource: "",
+  inventoryDetailsEquipmentSlot: "",
   inventoryDetailsAnchorX: -1,
-  inventoryDetailsAnchorY: -1
+  inventoryDetailsAnchorY: -1,
+  inventoryDetailsCloseGraceUntil: 0,
+  inventorySlotOrder: []
 };
 let menuStateController = null;
 const openPauseMenu = () => {
@@ -218,6 +222,8 @@ const combatRewardPanel = {
   durationMs: 2200,
   queue: []
 };
+const SKILL_SLOT_COUNT = 9;
+const HUD_FEEDBACK_DURATION_MS = 420;
 
 const PAT_INN_TOWN_ID = "hanamiTown";
 const PAT_INN_AREA_ID = "patBnBDownstairs";
@@ -237,6 +243,7 @@ const patInnIntroState = {
   targetY: 0,
   homeX: 0,
   homeY: 0,
+  dialogueAutoCloseAt: 0,
   lastUpdateAt: 0,
   previousCanRoam: false
 };
@@ -252,6 +259,94 @@ const doorAccessNoticeState = {
   until: 0
 };
 
+function ensurePlayerSkillState(targetPlayer) {
+  if (!targetPlayer || typeof targetPlayer !== "object") return;
+
+  targetPlayer.maxMana = Number.isFinite(targetPlayer.maxMana) ? Math.max(1, targetPlayer.maxMana) : 10;
+  targetPlayer.mana = Number.isFinite(targetPlayer.mana)
+    ? Math.max(0, Math.min(targetPlayer.maxMana, targetPlayer.mana))
+    : targetPlayer.maxMana;
+  targetPlayer.manaRegenPerSecond = Number.isFinite(targetPlayer.manaRegenPerSecond)
+    ? Math.max(0, targetPlayer.manaRegenPerSecond)
+    : 0.65;
+
+  const currentSlots = Array.isArray(targetPlayer.skillSlots) ? targetPlayer.skillSlots : [];
+  const normalizedSlots = [];
+  for (let i = 0; i < SKILL_SLOT_COUNT; i++) {
+    const source = currentSlots[i] && typeof currentSlots[i] === "object" ? currentSlots[i] : {};
+    normalizedSlots.push({
+      slot: i + 1,
+      id: source.id || null,
+      name: String(source.name || ""),
+      manaCost: Number.isFinite(source.manaCost) ? Math.max(0, source.manaCost) : 0,
+      cooldownMs: Number.isFinite(source.cooldownMs) ? Math.max(0, source.cooldownMs) : 0,
+      lastUsedAt: Number.isFinite(source.lastUsedAt) ? source.lastUsedAt : -Infinity
+    });
+  }
+  targetPlayer.skillSlots = normalizedSlots;
+  targetPlayer.lastSkillUsedAt = Number.isFinite(targetPlayer.lastSkillUsedAt) ? targetPlayer.lastSkillUsedAt : -Infinity;
+  targetPlayer.skillHudFeedback = targetPlayer.skillHudFeedback && typeof targetPlayer.skillHudFeedback === "object"
+    ? targetPlayer.skillHudFeedback
+    : { slotIndex: -1, status: "", until: 0 };
+}
+
+function setSkillHudFeedback(slotIndex, status, durationMs = HUD_FEEDBACK_DURATION_MS) {
+  player.skillHudFeedback = {
+    slotIndex,
+    status,
+    until: performance.now() + Math.max(120, durationMs)
+  };
+}
+
+function tryActivateSkillSlot(slotIndex) {
+  ensurePlayerSkillState(player);
+  if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= SKILL_SLOT_COUNT) return false;
+  if (!isFreeExploreState(gameState)) return false;
+  if (isDialogueActive() || choiceState.active) return false;
+  if (player.attackState && player.attackState !== "idle") return false;
+
+  const slot = player.skillSlots[slotIndex];
+  const now = performance.now();
+  if (!slot || !slot.id) {
+    setSkillHudFeedback(slotIndex, "empty");
+    return false;
+  }
+
+  const manaCost = Number.isFinite(slot.manaCost) ? Math.max(0, slot.manaCost) : 0;
+  if (player.mana < manaCost) {
+    setSkillHudFeedback(slotIndex, "noMana");
+    return false;
+  }
+
+  player.mana = Math.max(0, player.mana - manaCost);
+  slot.lastUsedAt = now;
+  player.lastSkillUsedAt = now;
+  setSkillHudFeedback(slotIndex, "used");
+  return true;
+}
+
+function regenerateMana(now) {
+  ensurePlayerSkillState(player);
+  if (!isFreeExploreState(gameState)) {
+    player.lastManaRegenTickAt = now;
+    return;
+  }
+  if (!Number.isFinite(player.maxMana) || player.maxMana <= 0) return;
+  if (player.mana >= player.maxMana) return;
+
+  const previousTick = Number.isFinite(player.lastManaRegenTickAt) ? player.lastManaRegenTickAt : now;
+  const dtMs = Math.max(0, now - previousTick);
+  player.lastManaRegenTickAt = now;
+  if (dtMs <= 0) return;
+
+  const regenPerSecond = Number.isFinite(player.manaRegenPerSecond) ? player.manaRegenPerSecond : 0;
+  if (regenPerSecond <= 0) return;
+  player.mana = Math.min(player.maxMana, player.mana + (regenPerSecond * dtMs) / 1000);
+}
+
+ensurePlayerSkillState(player);
+player.lastManaRegenTickAt = performance.now();
+
 if (!Number.isFinite(playerStats.combatLevel) || playerStats.combatLevel < 1) {
   playerStats.combatLevel = 1;
 }
@@ -260,6 +355,12 @@ if (!Number.isFinite(playerStats.combatXP) || playerStats.combatXP < 0) {
 }
 if (!Number.isFinite(playerStats.combatXPNeeded) || playerStats.combatXPNeeded < 1) {
   playerStats.combatXPNeeded = 6;
+}
+if (!Number.isFinite(playerStats.combatLevelFxStartedAt) || playerStats.combatLevelFxStartedAt < 0) {
+  playerStats.combatLevelFxStartedAt = 0;
+}
+if (!Number.isFinite(playerStats.combatLevelFxLevelsGained) || playerStats.combatLevelFxLevelsGained < 0) {
+  playerStats.combatLevelFxLevelsGained = 0;
 }
 
 function persistUserSettings() {
@@ -605,6 +706,7 @@ function queueCombatReward(reward) {
 function grantCombatXpAndCollectSummary(enemy, now) {
   const xpGained = enemy?.countsForChallenge ? 3 : 2;
   let levelsGained = 0;
+  let hpGainedFromLevels = 0;
 
   playerStats.combatXP += xpGained;
   while (playerStats.combatXP >= playerStats.combatXPNeeded) {
@@ -612,7 +714,14 @@ function grantCombatXpAndCollectSummary(enemy, now) {
     playerStats.combatLevel += 1;
     playerStats.combatXPNeeded = Math.min(60, playerStats.combatXPNeeded + 4);
     levelsGained += 1;
+    player.maxHp += 5;
+    player.hp = Math.min(player.maxHp, player.hp + 5);
+    hpGainedFromLevels += 5;
     musicManager.playSfx("levelUp");
+  }
+  if (levelsGained > 0) {
+    playerStats.combatLevelFxStartedAt = now;
+    playerStats.combatLevelFxLevelsGained = levelsGained;
   }
 
   const lines = [
@@ -621,6 +730,7 @@ function grantCombatXpAndCollectSummary(enemy, now) {
   ];
   if (levelsGained > 0) {
     lines.push(`Level up! +${levelsGained} combat level`);
+    lines.push(`Vitality up! +${hpGainedFromLevels} Max HP`);
   }
   lines.push("Items: none");
 
@@ -754,6 +864,7 @@ function updatePatInnIntroSequence(now) {
     patInnIntroState.pendingStart = false;
     patInnIntroState.active = false;
     patInnIntroState.phase = "idle";
+    patInnIntroState.dialogueAutoCloseAt = 0;
     return;
   }
 
@@ -795,6 +906,7 @@ function updatePatInnIntroSequence(now) {
     patInnIntroState.targetY = approachTarget.y;
     patInnIntroState.homeX = patNpc.x;
     patInnIntroState.homeY = patNpc.y;
+    patInnIntroState.dialogueAutoCloseAt = 0;
     patInnIntroState.lastUpdateAt = now;
     patInnIntroState.previousCanRoam = Boolean(patNpc.canRoam);
     patNpc.canRoam = false;
@@ -806,6 +918,7 @@ function updatePatInnIntroSequence(now) {
   if (!patNpc) {
     patInnIntroState.active = false;
     patInnIntroState.phase = "idle";
+    patInnIntroState.dialogueAutoCloseAt = 0;
     gameFlags.patInnIntroSeen = true;
     return;
   }
@@ -824,12 +937,24 @@ function updatePatInnIntroSequence(now) {
       orientEntityTowardTarget(patNpc, player.x, player.y);
       orientEntityTowardTarget(player, patNpc.x, patNpc.y);
       patInnIntroState.phase = "dialogue";
-      showDialogue(patNpc.name, patNpc.dialogue, () => {
-        patInnIntroState.phase = "walkHome";
-        patInnIntroState.targetX = patInnIntroState.homeX;
-        patInnIntroState.targetY = patInnIntroState.homeY;
-        patInnIntroState.lastUpdateAt = performance.now();
-      });
+      patInnIntroState.dialogueAutoCloseAt = 0;
+      showDialogue(patNpc.name, patNpc.dialogue);
+    }
+    return;
+  }
+
+  if (patInnIntroState.phase === "dialogue") {
+    clearPlayerActionInputs();
+    input.clearInteractPressed();
+    input.clearAttackPressed();
+
+    if (!dialogue.isActive()) {
+      dialogue.close();
+      patInnIntroState.dialogueAutoCloseAt = 0;
+      patInnIntroState.phase = "walkHome";
+      patInnIntroState.targetX = patInnIntroState.homeX;
+      patInnIntroState.targetY = patInnIntroState.homeY;
+      patInnIntroState.lastUpdateAt = performance.now();
     }
     return;
   }
@@ -844,6 +969,7 @@ function updatePatInnIntroSequence(now) {
       patNpc.canRoam = patInnIntroState.previousCanRoam;
       patInnIntroState.active = false;
       patInnIntroState.phase = "idle";
+      patInnIntroState.dialogueAutoCloseAt = 0;
       gameFlags.patInnIntroSeen = true;
     }
   }
@@ -888,6 +1014,7 @@ function updateRuntimeUi(now) {
   updatePatInnIntroSequence(now);
   syncObjectiveState(now);
   markNearbyDoorsDiscovered();
+  regenerateMana(now);
   if (doorAccessNoticeState.active && now >= doorAccessNoticeState.until) {
     doorAccessNoticeState.active = false;
     doorAccessNoticeState.text = "";
@@ -950,6 +1077,8 @@ const {
   musicManager,
   onSaveNotice: pushSaveNotice,
   onAfterRestore: () => {
+    ensurePlayerSkillState(player);
+    player.lastManaRegenTickAt = performance.now();
     applyStoryNpcVisibility();
     uiMotionState.minimapRevealAt = performance.now();
     syncObjectiveState(performance.now());
@@ -1447,6 +1576,7 @@ const { syncPointerLockWithState, register: registerInputBindings } = createInpu
   returnToPauseMenu,
   openPauseMenu,
   isFreeExploreState,
+  handleSkillSlotPressed: tryActivateSkillSlot,
   updateMenuHoverStateFromMouse,
   clearMenuHoverState,
   handleTitleLeftClick,

@@ -27,7 +27,8 @@ export function createInputBindings({
   updateMenuHoverStateFromMouse,
   clearMenuHoverState,
   handleTitleLeftClick,
-  handlePauseMenuLeftClick
+  handlePauseMenuLeftClick,
+  handleSkillSlotPressed
 }) {
   const POINTER_LOCK_ENABLED = true;
   let pointerLockPrimed = false;
@@ -42,6 +43,16 @@ export function createInputBindings({
 
   function isPauseKey(key) {
     return input.matchesActionKey("pause", key) && !input.matchesActionKey("inventory", key);
+  }
+
+  function getSkillSlotIndexFromKeyboardEvent(e, key) {
+    if (/^[1-9]$/.test(key)) return Number.parseInt(key, 10) - 1;
+    const code = String(e.code || "");
+    if (code.startsWith("Numpad")) {
+      const digit = code.slice(6);
+      if (/^[1-9]$/.test(digit)) return Number.parseInt(digit, 10) - 1;
+    }
+    return -1;
   }
 
   function updateMouseUiPosition(e) {
@@ -303,6 +314,15 @@ export function createInputBindings({
           e.preventDefault();
         }
         return;
+      }
+
+      if (isFreeExploreState(gameState) && !e.repeat) {
+        const skillSlotIndex = getSkillSlotIndexFromKeyboardEvent(e, key);
+        if (skillSlotIndex >= 0 && typeof handleSkillSlotPressed === "function") {
+          handleSkillSlotPressed(skillSlotIndex);
+          e.preventDefault();
+          return;
+        }
       }
 
       if ((key === "enter" || key === "escape" || isPauseKey(key)) && !e.repeat && isFreeExploreState(gameState)) {

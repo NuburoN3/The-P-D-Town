@@ -102,7 +102,9 @@ export function createCombatSystem({
   function reactNpcToAttack(npc, now) {
     npc.hitShakeUntil = now + 220;
     npc.hitBubbleUntil = now + 760;
-    npc.hitBubbleText = "Ow!";
+    npc.hitBubbleText = typeof npc.hitReactionText === "string" && npc.hitReactionText.length > 0
+      ? npc.hitReactionText
+      : "Ow!";
   }
 
   function hitEnemy(player, enemy, profile, now) {
@@ -196,6 +198,12 @@ export function createCombatSystem({
 
       npcHitIdsInCurrentSwing.add(npc.id);
       reactNpcToAttack(npc, now);
+      handlers.onHitConfirmed({
+        type: "npcHit",
+        source: player,
+        target: npc,
+        now
+      });
     }
   }
 

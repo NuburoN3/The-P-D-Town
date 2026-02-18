@@ -42,6 +42,19 @@ export function buildGameSnapshot({
             dir: player.dir,
             hp: player.hp,
             maxHp: player.maxHp,
+            mana: Number.isFinite(player.mana) ? player.mana : 10,
+            maxMana: Number.isFinite(player.maxMana) ? player.maxMana : 10,
+            manaRegenPerSecond: Number.isFinite(player.manaRegenPerSecond) ? player.manaRegenPerSecond : 0.65,
+            skillSlots: Array.isArray(player.skillSlots)
+                ? player.skillSlots.map((slot, index) => ({
+                    slot: index + 1,
+                    id: slot?.id || null,
+                    name: String(slot?.name || ""),
+                    manaCost: Number.isFinite(slot?.manaCost) ? Math.max(0, slot.manaCost) : 0,
+                    cooldownMs: Number.isFinite(slot?.cooldownMs) ? Math.max(0, slot.cooldownMs) : 0,
+                    lastUsedAt: Number.isFinite(slot?.lastUsedAt) ? slot.lastUsedAt : -Infinity
+                }))
+                : [],
             equippedAttackId: player.equippedAttackId || "lightSlash"
         },
         gameFlags: {
@@ -121,6 +134,23 @@ export function applyGameSnapshot(snapshot, context) {
     player.hp = Number.isFinite(snapshot.player?.hp)
         ? Math.max(0, Math.min(player.maxHp, snapshot.player.hp))
         : player.hp;
+    player.maxMana = Number.isFinite(snapshot.player?.maxMana) ? Math.max(1, snapshot.player.maxMana) : (Number.isFinite(player.maxMana) ? player.maxMana : 10);
+    player.mana = Number.isFinite(snapshot.player?.mana)
+        ? Math.max(0, Math.min(player.maxMana, snapshot.player.mana))
+        : (Number.isFinite(player.mana) ? player.mana : player.maxMana);
+    player.manaRegenPerSecond = Number.isFinite(snapshot.player?.manaRegenPerSecond)
+        ? Math.max(0, snapshot.player.manaRegenPerSecond)
+        : (Number.isFinite(player.manaRegenPerSecond) ? player.manaRegenPerSecond : 0.65);
+    if (Array.isArray(snapshot.player?.skillSlots)) {
+        player.skillSlots = snapshot.player.skillSlots.map((slot, index) => ({
+            slot: index + 1,
+            id: slot?.id || null,
+            name: String(slot?.name || ""),
+            manaCost: Number.isFinite(slot?.manaCost) ? Math.max(0, slot.manaCost) : 0,
+            cooldownMs: Number.isFinite(slot?.cooldownMs) ? Math.max(0, slot.cooldownMs) : 0,
+            lastUsedAt: Number.isFinite(slot?.lastUsedAt) ? slot.lastUsedAt : -Infinity
+        }));
+    }
     player.equippedAttackId = snapshot.player?.equippedAttackId || player.equippedAttackId || "lightSlash";
 
     // Restore Game Flags

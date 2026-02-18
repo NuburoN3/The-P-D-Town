@@ -7,6 +7,8 @@ import {
   FONT_22,
   FONT_28,
   getPrimaryBindingLabel,
+  getItemSpriteName,
+  getItemSpriteScale,
   drawSkinnedPanel,
   drawUiText,
   drawControlChip,
@@ -511,44 +513,243 @@ function drawBarMinigameOverlay(ctx, state, canvas, colors) {
   ctx.restore();
 }
 
-function drawCombatHud(ctx, state, colors) {
+function drawCombatHud(ctx, state, colors, tileSize, cameraZoom) {
   if (!isFreeExploreState(state.gameState)) return;
   if (!state.player || !Number.isFinite(state.player.maxHp)) return;
 
-  const showChallenge = Boolean(state.gameFlags?.acceptedTraining);
-  const panelX = 14;
-  const panelW = 224;
-  const panelH = showChallenge ? 62 : 46;
-  const panelY = 14;
-  drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors);
+  const slotCount = 9;
+  const slotSize = 36;
+  const slotGap = 4;
+  const slotsW = slotCount * slotSize + (slotCount - 1) * slotGap;
+  const slotsX = Math.round((ctx.canvas.width - slotsW) / 2);
+  const slotsY = ctx.canvas.height - slotSize - 12;
+
+  const barW = Math.min(Math.max(250, slotsW), ctx.canvas.width - 34);
+  const barH = 12;
+  const barX = Math.round((ctx.canvas.width - barW) / 2);
+  const hpBarY = slotsY - 64;
+  const manaBarY = slotsY - 38;
+  const barsPanelY = hpBarY - 24;
+  const barsPanelH = (manaBarY + barH) - barsPanelY + 12;
+  const barsPanelX = barX - 12;
+  const barsPanelW = barW + 24;
 
   const hpRatio = Math.max(0, Math.min(1, state.player.hp / Math.max(1, state.player.maxHp)));
-  const hpBarX = panelX + 12;
-  const hpBarY = panelY + 28;
-  const hpBarW = panelW - 24;
-  const hpBarH = 12;
+  const maxMana = Number.isFinite(state.player.maxMana) ? Math.max(1, state.player.maxMana) : 10;
+  const mana = Number.isFinite(state.player.mana) ? state.player.mana : maxMana;
+  const manaRatio = Math.max(0, Math.min(1, mana / maxMana));
+  const skillSlots = Array.isArray(state.player.skillSlots) ? state.player.skillSlots : [];
+  const feedback = state.player.skillHudFeedback && typeof state.player.skillHudFeedback === "object"
+    ? state.player.skillHudFeedback
+    : null;
+  const now = performance.now();
+  const resolvedZoom = Number.isFinite(cameraZoom) && cameraZoom > 0 ? cameraZoom : 1;
+  const resolvedTileSize = Number.isFinite(tileSize) && tileSize > 0 ? tileSize : 32;
+  const desiredHeightTiles = Number.isFinite(state.player.desiredHeightTiles) ? Math.max(1, state.player.desiredHeightTiles) : 1;
+  const playerScreenX = (state.player.x - state.cam.x) * resolvedZoom;
+  const playerScreenY = (state.player.y - state.cam.y) * resolvedZoom;
+  const playerScreenW = resolvedTileSize * resolvedZoom;
+  const playerScreenH = resolvedTileSize * desiredHeightTiles * resolvedZoom;
+  const playerTop = playerScreenY - Math.max(0, playerScreenH - playerScreenW);
+  const playerLeft = playerScreenX;
+  const playerRight = playerScreenX + playerScreenW;
+  const playerBottom = playerTop + playerScreenH;
+  const panelRight = barsPanelX + barsPanelW;
+  const panelBottom = barsPanelY + barsPanelH;
+  const playerBehindBarsPanel = !(
+    playerRight < barsPanelX ||
+    playerLeft > panelRight ||
+    playerBottom < barsPanelY ||
+    playerTop > panelBottom
+  );
+  const targetBarsAlpha = playerBehindBarsPanel ? 0.35 : 1;
+  const uiMotionState = state.uiMotionState && typeof state.uiMotionState === "object"
+    ? state.uiMotionState
+    : null;
+  let barsAlpha = targetBarsAlpha;
+  if (uiMotionState) {
+    const nowMs = now;
+    const previousAlpha = Number.isFinite(uiMotionState.hudBarsAlpha) ? uiMotionState.hudBarsAlpha : targetBarsAlpha;
+    const previousTick = Number.isFinite(uiMotionState.hudBarsAlphaUpdatedAt) ? uiMotionState.hudBarsAlphaUpdatedAt : nowMs;
+    const dtScale = Math.max(0, Math.min(5, (nowMs - previousTick) / 16.667));
+    const blend = 1 - Math.pow(0.78, dtScale);
+    barsAlpha = previousAlpha + (targetBarsAlpha - previousAlpha) * blend;
+    uiMotionState.hudBarsAlpha = barsAlpha;
+    uiMotionState.hudBarsAlphaUpdatedAt = nowMs;
+  }
+
+  ctx.save();
+  ctx.globalAlpha = barsAlpha;
+  drawSkinnedPanel(ctx, barsPanelX, barsPanelY, barsPanelW, barsPanelH, colors);
 
   ctx.font = FONT_12;
-  drawUiText(ctx, `HP ${Math.round(state.player.hp)} / ${Math.round(state.player.maxHp)}`, panelX + 12, panelY + 19, colors);
+  drawUiText(ctx, `Health ${Math.round(state.player.hp)} / ${Math.round(state.player.maxHp)}`, barX + 2, hpBarY - 3, colors);
+  drawUiText(ctx, `Mana ${Math.floor(mana * 10) / 10} / ${Math.round(maxMana)}`, barX + 2, manaBarY - 3, colors);
 
-  ctx.fillStyle = "rgba(11, 12, 16, 0.85)";
-  ctx.fillRect(hpBarX, hpBarY, hpBarW, hpBarH);
-  ctx.fillStyle = hpRatio > 0.5 ? "#7ad080" : hpRatio > 0.25 ? "#ddb95f" : "#d36a6a";
-  ctx.fillRect(hpBarX, hpBarY, hpBarW * hpRatio, hpBarH);
-  ctx.strokeStyle = "rgba(255,255,255,0.4)";
+  ctx.fillStyle = "rgba(10, 12, 18, 0.88)";
+  ctx.fillRect(barX, hpBarY, barW, barH);
+  ctx.fillRect(barX, manaBarY, barW, barH);
+  ctx.fillStyle = hpRatio > 0.5 ? "#df4949" : hpRatio > 0.25 ? "#cf3434" : "#b91f1f";
+  ctx.fillRect(barX, hpBarY, Math.round(barW * hpRatio), barH);
+  ctx.fillStyle = "#4da3ff";
+  ctx.fillRect(barX, manaBarY, Math.round(barW * manaRatio), barH);
+  ctx.strokeStyle = "rgba(255,255,255,0.45)";
   ctx.lineWidth = 1;
-  ctx.strokeRect(hpBarX + 0.5, hpBarY + 0.5, hpBarW - 1, hpBarH - 1);
+  ctx.strokeRect(barX + 0.5, hpBarY + 0.5, barW - 1, barH - 1);
+  ctx.strokeRect(barX + 0.5, manaBarY + 0.5, barW - 1, barH - 1);
+  ctx.restore();
 
+  for (let i = 0; i < slotCount; i++) {
+    const slotX = slotsX + i * (slotSize + slotGap);
+    const slot = skillSlots[i];
+    const isAssigned = Boolean(slot?.id);
+    const manaCost = Number.isFinite(slot?.manaCost) ? Math.max(0, slot.manaCost) : 0;
+    const hasMana = mana >= manaCost;
+    const isFeedbackSlot = feedback && feedback.slotIndex === i && feedback.until > now;
+
+    drawSkinnedPanel(ctx, slotX, slotsY, slotSize, slotSize, colors);
+
+    ctx.fillStyle = isAssigned ? "rgba(230, 210, 178, 0.2)" : "rgba(8, 10, 14, 0.55)";
+    ctx.fillRect(slotX + 6, slotsY + 6, slotSize - 12, slotSize - 12);
+
+    if (!isAssigned) {
+      ctx.strokeStyle = "rgba(255,255,255,0.2)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(slotX + 6.5, slotsY + 6.5, slotSize - 13, slotSize - 13);
+    } else if (!hasMana) {
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.fillRect(slotX + 6, slotsY + 6, slotSize - 12, slotSize - 12);
+    }
+
+    if (isFeedbackSlot) {
+      const status = feedback.status || "";
+      ctx.strokeStyle = status === "used"
+        ? "rgba(138, 224, 152, 0.95)"
+        : status === "noMana"
+          ? "rgba(116, 176, 255, 0.95)"
+          : "rgba(255, 220, 128, 0.95)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(slotX + 2, slotsY + 2, slotSize - 4, slotSize - 4);
+    }
+
+    ctx.font = FONT_12;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(238, 238, 238, 0.95)";
+    ctx.fillText(String(i + 1), slotX + slotSize / 2, slotsY + slotSize - 4);
+    ctx.textAlign = "start";
+
+    if (isAssigned && manaCost > 0) {
+      ctx.font = FONT_12;
+      ctx.fillStyle = "rgba(142, 198, 255, 0.95)";
+      ctx.fillText(String(manaCost), slotX + slotSize - 12, slotsY + 12);
+    }
+  }
+
+  const showChallenge = state.objectiveState?.id === "dojo-upstairs-challenge";
   if (showChallenge) {
     const tp = state.gameFlags.townProgress?.[state.currentTownId];
     const kills = Number.isFinite(tp?.challengeKills) ? tp.challengeKills : 0;
     const target = Number.isFinite(tp?.challengeTarget) ? tp.challengeTarget : 3;
     ctx.font = FONT_12;
-    const challengeText = state.gameFlags.completedTraining
-      ? "Challenge complete"
-      : `Challenge: ${kills}/${target}`;
-    drawUiText(ctx, challengeText, panelX + 12, panelY + 48, colors);
+    const challengeText = `Challenge: ${kills}/${target}`;
+    drawUiText(ctx, challengeText, barX + 2, barsPanelY - 5, colors);
   }
+}
+
+function drawCombatLevelHud(ctx, state, colors) {
+  if (!isFreeExploreState(state.gameState)) return;
+  const now = performance.now();
+  const combatLevel = Number.isFinite(state.playerStats?.combatLevel) ? Math.max(1, state.playerStats.combatLevel) : 1;
+  const combatXp = Number.isFinite(state.playerStats?.combatXP) ? Math.max(0, state.playerStats.combatXP) : 0;
+  const combatXpNeeded = Number.isFinite(state.playerStats?.combatXPNeeded) ? Math.max(1, state.playerStats.combatXPNeeded) : 1;
+  const progress = Math.max(0, Math.min(1, combatXp / combatXpNeeded));
+  const levelFxStartedAt = Number.isFinite(state.playerStats?.combatLevelFxStartedAt)
+    ? state.playerStats.combatLevelFxStartedAt
+    : 0;
+  const levelFxLevelsGained = Number.isFinite(state.playerStats?.combatLevelFxLevelsGained)
+    ? Math.max(1, state.playerStats.combatLevelFxLevelsGained)
+    : 1;
+  const levelFxDurationMs = 1100;
+  const levelFxElapsed = now - levelFxStartedAt;
+  const levelFxActive = levelFxStartedAt > 0 && levelFxElapsed >= 0 && levelFxElapsed <= levelFxDurationMs;
+  const levelFxIntensity = levelFxActive
+    ? Math.min(1.35, 1 + (Math.max(0, levelFxLevelsGained - 1) * 0.12))
+    : 1;
+
+  const panelX = 14;
+  const panelY = 14;
+  const panelW = 210;
+  const panelH = 44;
+  drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors);
+
+  ctx.font = FONT_12;
+  const levelText = `Combat Lv. ${combatLevel}`;
+  if (levelFxActive) {
+    const textFlashT = clamp01(levelFxElapsed / 420);
+    const textScale = 1 + (0.24 * (1 - easeOutCubic(textFlashT)) * levelFxIntensity);
+    const textX = panelX + 10;
+    const textY = panelY + 17;
+    const textWidth = ctx.measureText(levelText).width;
+    const anchorX = textX + textWidth / 2;
+    ctx.save();
+    ctx.translate(anchorX, textY);
+    ctx.scale(textScale, textScale);
+    drawUiText(ctx, levelText, -textWidth / 2, 0, colors);
+    ctx.restore();
+  } else {
+    drawUiText(ctx, levelText, panelX + 10, panelY + 17, colors);
+  }
+
+  const barX = panelX + 10;
+  const barY = panelY + 24;
+  const barW = panelW - 20;
+  const barH = 12;
+  ctx.fillStyle = "rgba(10, 12, 18, 0.9)";
+  ctx.fillRect(barX, barY, barW, barH);
+  ctx.fillStyle = "rgba(234, 187, 92, 0.95)";
+  ctx.fillRect(barX, barY, Math.round(barW * progress), barH);
+
+  if (levelFxActive) {
+    const burstT = clamp01(levelFxElapsed / 540);
+    const burstFill = Math.min(1, burstT * 1.25);
+    const burstAlpha = (0.1 + (1 - easeOutCubic(burstT)) * 0.68) * Math.min(1, levelFxIntensity);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(barX, barY, barW, barH);
+    ctx.clip();
+    ctx.fillStyle = `rgba(255, 220, 132, ${burstAlpha.toFixed(3)})`;
+    ctx.fillRect(barX, barY, Math.round(barW * burstFill), barH);
+
+    const headX = barX + (barW * Math.min(1.18, burstT * 1.3));
+    const burstHead = ctx.createLinearGradient(headX - 52, barY, headX + 10, barY + barH);
+    burstHead.addColorStop(0, "rgba(255, 245, 210, 0)");
+    burstHead.addColorStop(0.55, `rgba(255, 245, 210, ${(0.6 * levelFxIntensity).toFixed(3)})`);
+    burstHead.addColorStop(1, "rgba(255, 245, 210, 0)");
+    ctx.fillStyle = burstHead;
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.restore();
+
+    const shineT = clamp01((levelFxElapsed - 110) / 700);
+    if (shineT > 0 && shineT < 1) {
+      const shineX = panelX - 48 + ((panelW + 96) * shineT);
+      const shine = ctx.createLinearGradient(shineX - 36, panelY, shineX + 18, panelY + panelH);
+      shine.addColorStop(0, "rgba(255,255,255,0)");
+      shine.addColorStop(0.45, "rgba(255,255,255,0.2)");
+      shine.addColorStop(0.65, "rgba(255,224,150,0.35)");
+      shine.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(panelX + 2, panelY + 2, panelW - 4, panelH - 4);
+      ctx.clip();
+      ctx.fillStyle = shine;
+      ctx.fillRect(panelX, panelY, panelW, panelH);
+      ctx.restore();
+    }
+  }
+
+  ctx.strokeStyle = "rgba(255,255,255,0.45)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
 }
 
 function drawObjectiveTracker(ctx, state, colors) {
@@ -564,7 +765,7 @@ function drawObjectiveTracker(ctx, state, colors) {
   const panelH = 80;
   const panelW = Math.min(420, ctx.canvas.width - 28);
   const panelX = 14;
-  const bottomReserve = state.doorHintText ? 54 : 14;
+  const bottomReserve = 14;
   const panelY = Math.max(14, ctx.canvas.height - panelH - bottomReserve) + revealOffsetY;
 
   ctx.save();
@@ -791,27 +992,16 @@ function drawDoorHint(ctx, state, colors, dialogue) {
   const text = state.doorHintText;
   if (!text) return;
 
-  const interactKey = state.inputPromptMode === "gamepad" ? "A" : getPrimaryBindingLabel(state, "interact");
   const destinationText = text.startsWith("Door:") ? text.slice(5).trim() : text;
 
   ctx.font = FONT_12;
   const textW = ctx.measureText(destinationText).width;
-  const chipW = Math.ceil(ctx.measureText(interactKey).width) + 12;
-  const instructionText = "Enter";
-  const instructionW = ctx.measureText(instructionText).width;
-  const boxW = Math.max(160, chipW + instructionW + textW + 36);
+  const boxW = Math.max(220, textW + 24);
   const boxH = 30;
   const boxX = Math.round((ctx.canvas.width - boxW) / 2);
-  const boxY = ctx.canvas.height - 58;
+  const boxY = Math.round((ctx.canvas.height - boxH) / 2);
   drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors);
-
-  const chipX = boxX + 10;
-  const chipY = boxY + 7;
-  const renderedChipW = drawControlChip(ctx, interactKey, chipX, chipY, colors, { highlighted: true });
-  let textX = chipX + renderedChipW + 8;
-  drawUiText(ctx, instructionText, textX, boxY + 19, colors);
-  textX += instructionW + 8;
-  drawUiText(ctx, destinationText, textX, boxY + 19, colors);
+  drawUiText(ctx, destinationText, boxX + 12, boxY + 19, colors);
 }
 
 function drawCombatDamageFlash(ctx, state) {
@@ -824,7 +1014,7 @@ function drawCombatDamageFlash(ctx, state) {
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 }
 
-function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
+function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors, getItemSprite) {
   const { itemAlert, inventoryHint, player, cam } = state;
 
   if (itemAlert.active) {
@@ -853,23 +1043,72 @@ function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors) {
 
   if (inventoryHint.active) {
     const elapsed = performance.now() - inventoryHint.startedAt;
-    const alpha = 1 - Math.max(0, (elapsed - (inventoryHint.durationMs - 600)) / 600);
+    const duration = Number.isFinite(inventoryHint.durationMs) ? Math.max(500, inventoryHint.durationMs) : 5000;
+    const fadeOut = 1 - Math.max(0, (elapsed - (duration - 700)) / 700);
+    const fadeIn = Math.max(0, Math.min(1, elapsed / 180));
+    const alpha = fadeOut * fadeIn;
+    const itemName = typeof inventoryHint.itemName === "string" ? inventoryHint.itemName.trim() : "";
+    const displayText = itemName ? `'${itemName}' acquired` : "Item acquired";
 
     ctx.save();
-    ctx.globalAlpha = alpha * 0.95;
+    ctx.globalAlpha = alpha * 0.98;
     ctx.font = FONT_16;
 
-    const inventoryKey = getPrimaryBindingLabel(state, "inventory");
-    const hintText = `New item received - press ${inventoryKey} to view your inventory`;
-    const padding = 8;
-    const textW = ctx.measureText(hintText).width;
-    const boxW = textW + padding * 2;
-    const boxH = 28;
-    const boxX = Math.round((ctx.canvas.width - boxW) / 2);
-    const boxY = 12;
+    const textW = Math.ceil(ctx.measureText(displayText).width);
+    const iconSize = 52;
+    const panelW = Math.max(176, Math.max(iconSize, textW) + 26);
+    const panelH = 126;
+    const groupW = panelW;
+    const basePanelX = 12;
+    const hiddenPanelX = -groupW - 18;
+    const introDurationMs = 220;
+    const outroDurationMs = 320;
+    const outroStartMs = Math.max(introDurationMs, duration - outroDurationMs);
+    let panelX = basePanelX;
+    if (elapsed < introDurationMs) {
+      const t = Math.max(0, Math.min(1, elapsed / introDurationMs));
+      panelX = hiddenPanelX + (basePanelX - hiddenPanelX) * t;
+    } else if (elapsed > outroStartMs) {
+      const t = Math.max(0, Math.min(1, (elapsed - outroStartMs) / outroDurationMs));
+      panelX = basePanelX + (hiddenPanelX - basePanelX) * t;
+    }
+    panelX = Math.round(panelX);
+    const panelY = Math.round((ctx.canvas.height - panelH) * 0.5);
 
-    drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors);
-    drawUiText(ctx, hintText, boxX + padding, boxY + 19, colors);
+    const glassGradient = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    glassGradient.addColorStop(0, "rgba(24, 40, 54, 0.34)");
+    glassGradient.addColorStop(1, "rgba(12, 22, 34, 0.24)");
+    ctx.fillStyle = glassGradient;
+    ctx.fillRect(panelX, panelY, panelW, panelH);
+
+    const topSheen = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH * 0.5);
+    topSheen.addColorStop(0, "rgba(180, 230, 255, 0.16)");
+    topSheen.addColorStop(1, "rgba(180, 230, 255, 0)");
+    ctx.fillStyle = topSheen;
+    ctx.fillRect(panelX + 1, panelY + 1, panelW - 2, Math.max(12, panelH * 0.45));
+
+    ctx.strokeStyle = "rgba(159, 222, 255, 0.55)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1);
+    ctx.strokeStyle = "rgba(220, 245, 255, 0.28)";
+    ctx.strokeRect(panelX + 3.5, panelY + 3.5, panelW - 7, panelH - 7);
+
+    const textX = panelX + Math.round((panelW - textW) / 2);
+    drawUiText(ctx, displayText, textX, panelY + 20, colors);
+
+    const spriteName = itemName ? getItemSpriteName(itemName) : null;
+    const sprite = spriteName ? getItemSprite(spriteName) : null;
+    const iconY = panelY + 42;
+    if (sprite && sprite.naturalWidth > 0 && sprite.naturalHeight > 0) {
+      const scale = getItemSpriteScale(spriteName);
+      const drawSize = iconSize * scale;
+      const drawX = Math.round(panelX + (groupW - drawSize) / 2);
+      const drawY = Math.round(iconY + (iconSize - drawSize) / 2);
+      ctx.drawImage(sprite, drawX, drawY, drawSize, drawSize);
+    } else if (itemName) {
+      ctx.font = FONT_12;
+      drawUiText(ctx, itemName, panelX, iconY + 28, colors);
+    }
     ctx.restore();
   }
 }
@@ -1263,7 +1502,7 @@ export function renderGameFrame({
   ctx.restore();
 
   const uiColors = deriveUiColors(colors, state.moodPreset);
-  drawItemNotifications(ctx, state, cameraZoom, tileSize, uiColors);
+  drawItemNotifications(ctx, state, cameraZoom, tileSize, uiColors, getItemSprite);
   drawSaveNotice(ctx, state, uiColors);
   drawAtmosphere(ctx, canvas, colors, state);
   drawMoodGrading(ctx, canvas, state);
@@ -1272,7 +1511,8 @@ export function renderGameFrame({
     drawTitleScreenOverlay(ctx, canvas, state, colors);
     return;
   }
-  drawCombatHud(ctx, state, uiColors);
+  drawCombatHud(ctx, state, uiColors, tileSize, cameraZoom);
+  drawCombatLevelHud(ctx, state, uiColors);
   drawObjectiveTracker(ctx, state, uiColors);
   drawMinimap(ctx, state, uiColors);
   drawDoorHint(ctx, state, uiColors, dialogue);

@@ -54,6 +54,7 @@ export function createGameRuntime() {
       attackSwing: "assets/audio/MenuSelect_Sound.wav",
       enemyTelegraph: "assets/audio/collision_sound.wav",
       hitImpact: "assets/audio/Item_Unlock.wav",
+      npcHit: "assets/audio/Oof_1.ogg",
       hurt: "assets/audio/collision_sound.wav",
       levelUp: "assets/audio/Level up_Sound.ogg",
       saveGame: "assets/audio/EnterDoor_Sound.wav",
@@ -90,7 +91,12 @@ export function createGameRuntime() {
   const playerStats = {
     disciplineLevel: 1,
     disciplineXP: 0,
-    disciplineXPNeeded: TRAINING.INITIAL_XP_NEEDED
+    disciplineXPNeeded: TRAINING.INITIAL_XP_NEEDED,
+    combatLevel: 1,
+    combatXP: 0,
+    combatXPNeeded: 6,
+    combatLevelFxStartedAt: 0,
+    combatLevelFxLevelsGained: 0
   };
 
   const trainingPopup = {
@@ -117,7 +123,8 @@ export function createGameRuntime() {
   const inventoryHint = {
     active: false,
     startedAt: 0,
-    durationMs: 4500
+    durationMs: 5000,
+    itemName: ""
   };
 
   const currentTownId = initialTownId;
@@ -150,8 +157,8 @@ export function createGameRuntime() {
     isTraining: false,
     handstandAnimTimer: 0,
     handstandFrame: 0,
-    maxHp: 100,
-    hp: 100,
+    maxHp: 20,
+    hp: 20,
     invulnerableUntil: 0,
     invulnerableMs: 620,
     attackState: "idle",
@@ -168,7 +175,24 @@ export function createGameRuntime() {
     attackHitRadius: TILE * 0.7,
     attackDamage: 20,
     equippedAttackId: "lightSlash",
-    requestedAttackId: null
+    requestedAttackId: null,
+    maxMana: 10,
+    mana: 10,
+    manaRegenPerSecond: 0.65,
+    skillSlots: Array.from({ length: 9 }, (_, index) => ({
+      slot: index + 1,
+      id: null,
+      name: "",
+      manaCost: 0,
+      cooldownMs: 0,
+      lastUsedAt: -Infinity
+    })),
+    lastSkillUsedAt: -Infinity,
+    skillHudFeedback: {
+      slotIndex: -1,
+      status: "",
+      until: 0
+    }
   };
 
   const cam = { x: 0, y: 0 };

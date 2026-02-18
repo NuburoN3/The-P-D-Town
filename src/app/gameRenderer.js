@@ -300,6 +300,7 @@ export function createGameRenderer({
         playerInventory,
         playerEquipment,
         objectiveState,
+        uiMotionState,
         itemAlert,
         inventoryHint,
         saveNoticeState,

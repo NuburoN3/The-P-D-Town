@@ -159,11 +159,13 @@ function drawNpcOwBubble(ctx, npc, drawX, drawY, drawWidth) {
     : "Ow!";
   ctx.save();
   ctx.font = "bold 12px Georgia";
+  const previousAlign = ctx.textAlign;
+  const previousBaseline = ctx.textBaseline;
   const paddingX = 7;
   const bubbleW = Math.ceil(ctx.measureText(text).width) + paddingX * 2;
-  const bubbleH = 18;
+  const bubbleH = 20;
   const bubbleX = Math.round(drawX + drawWidth / 2 - bubbleW / 2);
-  const bubbleY = Math.round(drawY - 18);
+  const bubbleY = Math.round(drawY - 30);
   ctx.fillStyle = "rgba(255, 252, 241, 0.95)";
   ctx.fillRect(bubbleX, bubbleY, bubbleW, bubbleH);
   ctx.strokeStyle = "rgba(73, 51, 30, 0.85)";
@@ -178,11 +180,15 @@ function drawNpcOwBubble(ctx, npc, drawX, drawY, drawWidth) {
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = "#3a2919";
-  ctx.fillText(text, bubbleX + paddingX, bubbleY + 13);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, Math.round(bubbleX + bubbleW / 2), Math.round(bubbleY + bubbleH / 2));
+  ctx.textAlign = previousAlign;
+  ctx.textBaseline = previousBaseline;
   ctx.restore();
 }
 
-function drawNPCs(ctx, state, canvas, tileSize, colors) {
+function drawNPCs(ctx, state, canvas, tileSize, colors, owBubbleQueue = null) {
   const { currentAreaId, npcs, cam } = state;
   const now = performance.now();
 
@@ -233,12 +239,20 @@ function drawNPCs(ctx, state, canvas, tileSize, colors) {
         drawEntityShadow(ctx, drawX, drawY, drawWidth, drawHeight, colors.GROUND_SHADOW);
         drawNPCSprite(ctx, npc, drawX, drawY, drawWidth, drawHeight);
         if (now < (Number.isFinite(npc.hitBubbleUntil) ? npc.hitBubbleUntil : 0)) {
-          drawNpcOwBubble(ctx, npc, drawX, drawY, drawWidth);
+          if (Array.isArray(owBubbleQueue)) {
+            owBubbleQueue.push({ npc, drawX, drawY, drawWidth });
+          } else {
+            drawNpcOwBubble(ctx, npc, drawX, drawY, drawWidth);
+          }
         }
       } else {
         drawNPCPlaceholder(ctx, nx, ny, colors);
         if (now < (Number.isFinite(npc.hitBubbleUntil) ? npc.hitBubbleUntil : 0)) {
-          drawNpcOwBubble(ctx, npc, nx, ny, npc.width || tileSize);
+          if (Array.isArray(owBubbleQueue)) {
+            owBubbleQueue.push({ npc, drawX: nx, drawY: ny, drawWidth: npc.width || tileSize });
+          } else {
+            drawNpcOwBubble(ctx, npc, nx, ny, npc.width || tileSize);
+          }
         }
       }
     }
@@ -419,7 +433,8 @@ export function drawEntitiesLayer({
   spriteFrameHeight,
   spriteFramesPerRow
 }) {
-  drawNPCs(ctx, state, canvas, tileSize, colors);
+  const owBubbleQueue = [];
+  drawNPCs(ctx, state, canvas, tileSize, colors, owBubbleQueue);
   drawEnemies(ctx, state, canvas, tileSize);
   drawPlayerAttackReadability(ctx, state, tileSize);
   drawPlayer(
@@ -431,4 +446,7 @@ export function drawEntitiesLayer({
     spriteFrameHeight,
     spriteFramesPerRow
   );
+  for (const bubble of owBubbleQueue) {
+    drawNpcOwBubble(ctx, bubble.npc, bubble.drawX, bubble.drawY, bubble.drawWidth);
+  }
 }

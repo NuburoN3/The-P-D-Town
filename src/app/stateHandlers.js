@@ -176,6 +176,11 @@ export function createRuntimeStateHandlers({
   function handleCombatHitConfirmed(event) {
     if (!event) return;
 
+    if (event.type === "npcHit") {
+      musicManager.playSfx("npcHit");
+      return;
+    }
+
     if (event.type === "entityDamaged") {
       triggerHitstop(52);
       triggerCameraShake(2.8, 120);
