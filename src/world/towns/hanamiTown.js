@@ -226,6 +226,7 @@ function generateBnBUpstairsBase(width, height) {
     map[2][3] = TILE_TYPES.BED;
     map[3][8] = TILE_TYPES.TV;
     map[5][8] = TILE_TYPES.HIFI;
+    map[1][6] = TILE_TYPES.OVAL_MIRROR;
 
     return map;
 }
@@ -435,7 +436,7 @@ export const hanamiTown = {
         }
     },
     spawns: {
-        bnbBedroomSpawn: { areaId: "patBnBUpstairs", x: 6, y: 6, dir: "down" },
+        bnbBedroomSpawn: { areaId: "patBnBUpstairs", x: 6, y: 2, dir: "up" },
         townGate: { areaId: "overworld", x: 28, y: 40, dir: "up" },
         dojoExteriorDoor: { areaId: "overworld", x: 41, y: 10, dir: "down" },
         dojoInteriorDoor: { areaId: "hanamiDojo", x: 6, y: 8, dir: "up" },

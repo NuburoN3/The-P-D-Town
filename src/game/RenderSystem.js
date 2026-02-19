@@ -1547,37 +1547,194 @@ function drawIntroCutsceneOverlay(ctx, canvas, state) {
 
   const now = performance.now();
   const elapsed = Math.max(0, now - (Number.isFinite(intro.startedAt) ? intro.startedAt : now));
+  const fadeToBlackMs = Math.max(1, intro.fadeToBlackMs || 1);
   const blackHoldMs = Math.max(0, intro.blackHoldMs || 0);
-  const fadeInMs = Math.max(1, intro.fadeInMs || 1);
-  const holdMs = Math.max(0, intro.holdMs || 0);
-  const fadeOutMs = Math.max(1, intro.fadeOutMs || 1);
+  const shineDurationMs = Math.max(1, intro.shineDurationMs || 1);
+  const shineFadeOutMs = Math.max(1, intro.shineFadeOutMs || 1);
+  const postShineBlackHoldMs = Math.max(0, intro.postShineBlackHoldMs || 0);
+  const sceneFadeInMs = Math.max(1, intro.sceneFadeInMs || 1);
+  const sceneHoldMs = Math.max(0, intro.sceneHoldMs || 0);
 
-  let textAlpha = 0;
-  if (elapsed < blackHoldMs) {
-    textAlpha = 0;
-  } else if (elapsed < blackHoldMs + fadeInMs) {
-    const t = (elapsed - blackHoldMs) / fadeInMs;
-    textAlpha = easeOutCubic(t);
-  } else if (elapsed < blackHoldMs + fadeInMs + holdMs) {
-    textAlpha = 1;
-  } else {
-    const t = (elapsed - blackHoldMs - fadeInMs - holdMs) / fadeOutMs;
-    textAlpha = 1 - easeInCubic(t);
-  }
+  const t0 = fadeToBlackMs;
+  const t1 = t0 + blackHoldMs;
+  const t2 = t1 + shineDurationMs;
+  const t3 = t2 + shineFadeOutMs;
+  const t4 = t3 + postShineBlackHoldMs;
+  const t5 = t4 + sceneFadeInMs;
+  const t6 = t5 + sceneHoldMs;
 
+  // Base black screen throughout timeline.
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const label = "ZETA LOTUS STUDIOS";
+  // Phase 1: quick fade to black (from previous frame).
+  if (elapsed < t0) {
+    const alpha = easeOutCubic(elapsed / fadeToBlackMs);
+    ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+
+  // Phase 2: black hold.
+  if (elapsed < t1) {
+    return;
+  }
+
+  // Phase 3: blurry top shine, slowly flashing green<->white.
+  if (elapsed < t2) {
+    const phaseElapsed = elapsed - t1;
+    const phaseT = clamp01(phaseElapsed / shineDurationMs);
+    const pulse = 0.5 + Math.sin(phaseT * Math.PI * 2) * 0.5;
+    const tintMix = pulse;
+    const r = Math.round(210 + (255 - 210) * tintMix);
+    const g = Math.round(255);
+    const b = Math.round(215 + (255 - 215) * tintMix);
+    const shineAlpha = 0.5 + (1 - Math.abs(phaseT - 0.5) * 2) * 0.26;
+
+    ctx.save();
+    ctx.filter = "blur(56px)";
+    const topShine = ctx.createRadialGradient(
+      canvas.width * 0.5,
+      canvas.height * 0.04,
+      12,
+      canvas.width * 0.5,
+      canvas.height * 0.1,
+      canvas.height * 0.72
+    );
+    topShine.addColorStop(0, `rgba(${r},${g},${b},${shineAlpha})`);
+    topShine.addColorStop(0.4, `rgba(${r},${g},${b},${shineAlpha * 0.42})`);
+    topShine.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = topShine;
+    ctx.fillRect(-canvas.width * 0.2, -canvas.height * 0.2, canvas.width * 1.4, canvas.height * 1.5);
+    ctx.restore();
+    return;
+  }
+
+  // Phase 4: fade shine to complete black.
+  if (elapsed < t3) {
+    const phaseElapsed = elapsed - t2;
+    const fadeT = clamp01(phaseElapsed / shineFadeOutMs);
+    const alpha = 1 - easeInCubic(fadeT);
+    ctx.save();
+    ctx.filter = "blur(56px)";
+    const topShine = ctx.createRadialGradient(
+      canvas.width * 0.5,
+      canvas.height * 0.04,
+      12,
+      canvas.width * 0.5,
+      canvas.height * 0.1,
+      canvas.height * 0.72
+    );
+    topShine.addColorStop(0, `rgba(255,255,255,${0.58 * alpha})`);
+    topShine.addColorStop(0.45, `rgba(214,255,220,${0.24 * alpha})`);
+    topShine.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = topShine;
+    ctx.fillRect(-canvas.width * 0.2, -canvas.height * 0.2, canvas.width * 1.4, canvas.height * 1.5);
+    ctx.restore();
+    return;
+  }
+
+  // Phase 5: brief black hold.
+  if (elapsed < t4) {
+    return;
+  }
+
+  // Phase 6/7: fade into ProtagonistStartScene, then hold 8s with a blink every 3s.
+  const sceneImage = state.protagonistStartSceneImage || null;
+  if (!sceneImage || !(sceneImage.width > 0 || sceneImage.naturalWidth > 0)) {
+    return;
+  }
+
+  const imageW = Number(sceneImage.naturalWidth || sceneImage.width || 1);
+  const imageH = Number(sceneImage.naturalHeight || sceneImage.height || 1);
+  const scale = Math.min(canvas.width / imageW, canvas.height / imageH);
+  const drawW = imageW * scale;
+  const drawH = imageH * scale;
+  const baseDrawX = (canvas.width - drawW) * 0.5;
+  const baseDrawY = (canvas.height - drawH) * 0.5;
+
+  let imageAlpha = 1;
+  if (elapsed < t5) {
+    const fadeInT = clamp01((elapsed - t4) / sceneFadeInMs);
+    imageAlpha = easeOutCubic(fadeInT);
+  } else if (elapsed < t6) {
+    const holdElapsed = elapsed - t5;
+    const cycleMs = 3000;
+    const blinkPhase = holdElapsed % cycleMs;
+    const blinkFadeMs = 110;
+    const blinkClosedMs = 120;
+
+    // Blink shape: visible -> quick close -> closed -> quick open -> visible.
+    if (blinkPhase < blinkFadeMs) {
+      imageAlpha = 1 - easeInCubic(blinkPhase / blinkFadeMs);
+    } else if (blinkPhase < blinkFadeMs + blinkClosedMs) {
+      imageAlpha = 0;
+    } else if (blinkPhase < (blinkFadeMs * 2) + blinkClosedMs) {
+      imageAlpha = easeOutCubic((blinkPhase - blinkFadeMs - blinkClosedMs) / blinkFadeMs);
+    } else {
+      imageAlpha = 1;
+    }
+  }
+
+  const wakeElapsed = Math.max(0, elapsed - t4);
+  const wakeProgress = clamp01(wakeElapsed / 1400);
+  const swayAmp = (1 - wakeProgress) * 2.4 + 0.45;
+  const swayX = Math.sin(now * 0.0019) * swayAmp;
+  const swayY = Math.cos(now * 0.0014) * swayAmp * 0.6;
+  const drawX = Math.round(baseDrawX + swayX);
+  const drawY = Math.round(baseDrawY + swayY);
+  const blurPx = (1 - wakeProgress) * 3.2;
+
+  const clampedAlpha = clamp01(imageAlpha);
+
   ctx.save();
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  const fontSize = Math.max(28, Math.min(62, Math.floor(canvas.width * 0.08)));
-  ctx.font = `700 ${fontSize}px 'Cinzel', 'Palatino Linotype', 'Book Antiqua', serif`;
-  ctx.fillStyle = `rgba(255,255,255,${Math.max(0, Math.min(1, textAlpha * 0.35))})`;
-  ctx.fillText(label, canvas.width * 0.5 + 1, canvas.height * 0.5 + 1);
-  ctx.fillStyle = `rgba(255,255,255,${Math.max(0, Math.min(1, textAlpha))})`;
-  ctx.fillText(label, canvas.width * 0.5, canvas.height * 0.5);
+  // Cream backdrop that blends with the image's transparent/soft background.
+  ctx.globalAlpha = clampedAlpha;
+  ctx.fillStyle = "#efe3d2";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Just-woke-up look: start slightly out of focus, then sharpen quickly.
+  ctx.filter = blurPx > 0.05 ? `blur(${blurPx.toFixed(2)}px)` : "none";
+  ctx.globalAlpha = clampedAlpha;
+  ctx.drawImage(sceneImage, drawX, drawY, drawW, drawH);
+  ctx.filter = "none";
+
+  // Fading morning haze over the mirror image.
+  if (wakeProgress < 1) {
+    const hazeAlpha = (1 - wakeProgress) * 0.34 * clampedAlpha;
+    const haze = ctx.createRadialGradient(
+      canvas.width * 0.5,
+      canvas.height * 0.44,
+      canvas.width * 0.08,
+      canvas.width * 0.5,
+      canvas.height * 0.52,
+      canvas.width * 0.78
+    );
+    haze.addColorStop(0, `rgba(255,248,234,${hazeAlpha})`);
+    haze.addColorStop(0.55, `rgba(244,231,210,${hazeAlpha * 0.55})`);
+    haze.addColorStop(1, "rgba(244,231,210,0)");
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // Eyelid-like darkening that opens away quickly.
+  if (wakeProgress < 1) {
+    const lidAlpha = (1 - wakeProgress) * 0.52 * clampedAlpha;
+    const lidH = canvas.height * (0.24 - wakeProgress * 0.2);
+    if (lidH > 0) {
+      const topLid = ctx.createLinearGradient(0, 0, 0, lidH);
+      topLid.addColorStop(0, `rgba(0,0,0,${lidAlpha})`);
+      topLid.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = topLid;
+      ctx.fillRect(0, 0, canvas.width, lidH);
+
+      const bottomLid = ctx.createLinearGradient(0, canvas.height - lidH, 0, canvas.height);
+      bottomLid.addColorStop(0, "rgba(0,0,0,0)");
+      bottomLid.addColorStop(1, `rgba(0,0,0,${lidAlpha})`);
+      ctx.fillStyle = bottomLid;
+      ctx.fillRect(0, canvas.height - lidH, canvas.width, lidH);
+    }
+  }
   ctx.restore();
 }
 

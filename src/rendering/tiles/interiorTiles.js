@@ -93,3 +93,36 @@ export function drawHifiTile(ctx, deps) {
   ctx.fillRect(deps.x + 14, deps.y + 17, 4, 1);
   ctx.fillRect(deps.x + 14, deps.y + 20, 4, 1);
 }
+
+export function drawOvalMirrorTile(ctx, deps) {
+  drawInteriorFloorTile(ctx, deps);
+
+  // Stand/base
+  ctx.fillStyle = COLORS.MIRROR_FRAME_DARK || "#5f4a34";
+  ctx.fillRect(deps.x + 12, deps.y + 26, 8, 4);
+  ctx.fillRect(deps.x + 14, deps.y + 8, 4, 18);
+
+  // Mirror frame
+  ctx.fillStyle = COLORS.MIRROR_FRAME || "#7f6548";
+  ctx.beginPath();
+  ctx.ellipse(deps.x + 16, deps.y + 13, 8, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Mirror glass
+  ctx.fillStyle = COLORS.MIRROR_GLASS_DARK || "#7fa2b4";
+  ctx.beginPath();
+  ctx.ellipse(deps.x + 16, deps.y + 13, 6, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const glassGrad = ctx.createLinearGradient(deps.x + 10, deps.y + 5, deps.x + 22, deps.y + 21);
+  glassGrad.addColorStop(0, COLORS.MIRROR_GLASS || "#a8c7d6");
+  glassGrad.addColorStop(1, COLORS.MIRROR_GLASS_DARK || "#7fa2b4");
+  ctx.fillStyle = glassGrad;
+  ctx.beginPath();
+  ctx.ellipse(deps.x + 16, deps.y + 13, 5, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = COLORS.MIRROR_GLOW || "rgba(241, 252, 255, 0.36)";
+  ctx.fillRect(deps.x + 13, deps.y + 7, 1, 9);
+  ctx.fillRect(deps.x + 15, deps.y + 9, 1, 5);
+}

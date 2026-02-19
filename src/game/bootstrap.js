@@ -57,6 +57,7 @@ export function createGameRuntime() {
       npcHit: "assets/audio/Oof_1.ogg",
       hurt: "assets/audio/collision_sound.wav",
       levelUp: "assets/audio/Level up_Sound.ogg",
+      firstCutscene: "assets/audio/First Cutscene Sound.ogg",
       saveGame: "assets/audio/EnterDoor_Sound.wav",
       loadGame: "assets/audio/PauseMenu_Sound.wav",
       uiError: "assets/audio/collision_sound.wav"

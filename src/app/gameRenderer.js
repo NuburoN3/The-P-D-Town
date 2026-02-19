@@ -315,6 +315,7 @@ export function createGameRenderer({
         titleState,
         introState: studioIntroState,
         titleHeroImage: assets.getSprite(ASSET_KEYS.TITLE_HERO_IMAGE),
+        protagonistStartSceneImage: assets.getSprite("protagonistStartScene"),
         doorSequence,
         playerDefeatSequence,
         player,

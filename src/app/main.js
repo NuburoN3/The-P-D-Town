@@ -1369,13 +1369,18 @@ titleScreenSystem.syncContinueAvailability(hasTitlePreviewSave);
 // Use system state for rendering access
 const titleState = titleScreenSystem.state;
 const studioIntroState = {
-  startedAt: performance.now(),
-  blackHoldMs: 700,
-  fadeInMs: 2200,
-  holdMs: 900,
-  fadeOutMs: 900
+  startedAt: 0,
+  fadeToBlackMs: 700,
+  blackHoldMs: 2000,
+  shineDurationMs: 3000,
+  shineFadeOutMs: 1100,
+  postShineBlackHoldMs: 500,
+  sceneFadeInMs: 1800,
+  sceneHoldMs: 4000,
+  firstCutsceneSfxPlayed: false
 };
-gameState = GAME_STATES.INTRO_CUTSCENE;
+gameState = GAME_STATES.TITLE_SCREEN;
+titleState.startedAt = performance.now();
 let titlePreviewMode = hasTitlePreviewSave ? "continue" : "start";
 
 // Fountain healing / challenge / defeat systems (created after vfxSystem above)
@@ -1536,12 +1541,26 @@ function syncTitlePreviewBackground() {
 function updateTitleScreenWithPreview(now) {
   if (gameState === GAME_STATES.INTRO_CUTSCENE) {
     const intro = studioIntroState;
-    const totalDurationMs = intro.blackHoldMs + intro.fadeInMs + intro.holdMs + intro.fadeOutMs;
+    const totalDurationMs = intro.fadeToBlackMs
+      + intro.blackHoldMs
+      + intro.shineDurationMs
+      + intro.shineFadeOutMs
+      + intro.postShineBlackHoldMs
+      + intro.sceneFadeInMs
+      + intro.sceneHoldMs;
     const elapsed = now - intro.startedAt;
+    const shineStartAt = intro.fadeToBlackMs + intro.blackHoldMs;
+    if (!intro.firstCutsceneSfxPlayed && elapsed >= shineStartAt) {
+      musicManager.playSfx("firstCutscene");
+      intro.firstCutsceneSfxPlayed = true;
+    }
     if (elapsed >= totalDurationMs) {
-      gameState = GAME_STATES.TITLE_SCREEN;
-      titleState.startedAt = now;
-      musicManager.playMusicForArea(TITLE_SCREEN_MUSIC_KEY);
+      gameState = gameplayStartState;
+      previousWorldState = gameplayStartState;
+      previousGameState = gameplayStartState;
+      if (gameController && typeof gameController.syncMusicForCurrentArea === "function") {
+        gameController.syncMusicForCurrentArea();
+      }
     }
     return;
   }
@@ -1581,12 +1600,20 @@ function handleTitleLeftClick(mouseX, mouseY) {
 
   return titleScreenSystem.handleClick(mouseX, mouseY, {
     onStartGame: () => {
-      performStartNewGame();
+      startNewGameWithIntro();
     },
     onContinueGame: () => {
       performLoadGame();
     }
   });
+}
+
+function startNewGameWithIntro() {
+  performStartNewGame();
+  studioIntroState.startedAt = performance.now();
+  studioIntroState.firstCutsceneSfxPlayed = false;
+  gameState = GAME_STATES.INTRO_CUTSCENE;
+  titleState.fadeOutActive = false;
 }
 
 const gameFeatures = createGameFeatures({
@@ -1811,7 +1838,7 @@ const inputController = createInputController({
   getGameState: () => gameState,
   actions: {
     titleCallbacks: {
-      onStartGame: performStartNewGame,
+      onStartGame: startNewGameWithIntro,
       onContinueGame: performLoadGame
     },
     onResume: resumeFromPauseMenu,
@@ -1852,7 +1879,7 @@ const { syncPointerLockWithState, register: registerInputBindings } = createInpu
   titleScreenSystem,
   pauseMenuSystem,
   performSaveGame,
-  performStartNewGame,
+  performStartNewGame: startNewGameWithIntro,
   performLoadGame,
   resumeFromPauseMenu,
   openInventoryFromPauseMenu,

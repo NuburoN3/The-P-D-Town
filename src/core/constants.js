@@ -75,7 +75,8 @@ export const TILE_TYPES = Object.freeze({
   HILL: 18,
   BED: 19,
   TV: 20,
-  HIFI: 21
+  HIFI: 21,
+  OVAL_MIRROR: 22
 });
 
 // Colors for rendering
@@ -141,6 +142,11 @@ export const COLORS = {
   HIFI_BODY: "#3d3b46",
   HIFI_SPEAKER: "#222127",
   HIFI_ACCENT: "#93b7d8",
+  MIRROR_FRAME: "#7f6548",
+  MIRROR_FRAME_DARK: "#5f4a34",
+  MIRROR_GLASS: "#a8c7d6",
+  MIRROR_GLASS_DARK: "#7fa2b4",
+  MIRROR_GLOW: "rgba(241, 252, 255, 0.36)",
   TRAINING_FLOOR_LIGHT: "#8d7964",
   TRAINING_FLOOR_DARK: "#6d5b4c",
   CHERRY_LIGHT: "#f4bfd5",

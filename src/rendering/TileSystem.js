@@ -17,6 +17,7 @@ import {
   drawChurchStainedGlassTile,
   drawHifiTile,
   drawInteriorFloorTile,
+  drawOvalMirrorTile,
   drawTrainingFloorTile,
   drawTvTile
 } from "./tiles/interiorTiles.js";
@@ -499,7 +500,8 @@ const tileRenderers = {
   [TILE_TYPES.CHURCH_STAINED_GLASS]: (ctx, deps) => drawChurchStainedGlassTile(ctx, deps),
   [TILE_TYPES.BED]: (ctx, deps) => drawBedTile(ctx, deps),
   [TILE_TYPES.TV]: (ctx, deps) => drawTvTile(ctx, deps),
-  [TILE_TYPES.HIFI]: (ctx, deps) => drawHifiTile(ctx, deps)
+  [TILE_TYPES.HIFI]: (ctx, deps) => drawHifiTile(ctx, deps),
+  [TILE_TYPES.OVAL_MIRROR]: (ctx, deps) => drawOvalMirrorTile(ctx, deps)
 };
 
 export function drawTile(

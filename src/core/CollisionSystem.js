@@ -63,7 +63,8 @@ export class CollisionService {
       tile === TILE_TYPES.CHURCH_STAINED_GLASS ||
       tile === TILE_TYPES.BED ||
       tile === TILE_TYPES.TV ||
-      tile === TILE_TYPES.HIFI
+      tile === TILE_TYPES.HIFI ||
+      tile === TILE_TYPES.OVAL_MIRROR
     );
   }
 
