@@ -66,6 +66,37 @@ export function drawTextbox(ctx, state, canvas, ui, colors, dialogue) {
 
   const boxX = 20;
   const boxW = canvas.width - 40;
+
+  const speakingName = String(dialogue.name || "").toLowerCase().replace(/[^a-z]/g, "");
+  const isMrHanamiSpeaking = speakingName === "mrhanami";
+  if (isMrHanamiSpeaking) {
+    const openSprite = state?.mrHanamiDialogueOpenSprite || null;
+    const closedSprite = state?.mrHanamiDialogueClosedSprite || null;
+    const talkFrameOpen = Math.floor(performance.now() / 400) % 2 === 0;
+    const portrait = talkFrameOpen ? (openSprite || closedSprite) : (closedSprite || openSprite);
+    if (portrait && (portrait.width > 0 || portrait.naturalWidth > 0)) {
+      const sourceW = Number.isFinite(portrait.naturalWidth) && portrait.naturalWidth > 0
+        ? portrait.naturalWidth
+        : portrait.width;
+      const sourceH = Number.isFinite(portrait.naturalHeight) && portrait.naturalHeight > 0
+        ? portrait.naturalHeight
+        : portrait.height;
+      if (sourceW > 0 && sourceH > 0) {
+        const maxPortraitW = Math.max(120, Math.min(230, Math.round(canvas.width * 0.2)));
+        const maxPortraitH = Math.max(180, Math.min(320, Math.round(canvas.height * 0.44)));
+        const scale = Math.min(maxPortraitW / sourceW, maxPortraitH / sourceH);
+        const drawW = Math.round(sourceW * scale);
+        const drawH = Math.round(sourceH * scale);
+        const drawX = boxX + boxW - drawW - 14;
+        const drawY = boxY - drawH + Math.round(boxHeight * 0.84);
+        ctx.save();
+        ctx.globalAlpha = 0.95;
+        ctx.drawImage(portrait, drawX, drawY, drawW, drawH);
+        ctx.restore();
+      }
+    }
+  }
+
   drawSkinnedPanel(ctx, boxX, boxY, boxW, boxHeight, colors, { titleBand: true });
 
   ctx.font = FONT_20;

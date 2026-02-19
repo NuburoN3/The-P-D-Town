@@ -322,6 +322,8 @@ export function createGameRenderer({
         enemies,
         leftovers: leftoversState?.entries || [],
         leftoversSprite: assets.getSprite("leftovers"),
+        mrHanamiDialogueOpenSprite: assets.getSprite("mrHanamiDialogueOpen"),
+        mrHanamiDialogueClosedSprite: assets.getSprite("mrHanamiDialogueClosed"),
         gameFlags,
         cam: renderCam,
         inputPromptMode: input.getInputMethod(),
