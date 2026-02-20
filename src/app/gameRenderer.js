@@ -163,6 +163,17 @@ export function createGameRenderer({
         label: objectiveState.marker.label || "Objective"
       }
       : null;
+    const objectiveArea = objectiveState?.markerArea &&
+      objectiveState.markerArea.townId === currentTownId &&
+      objectiveState.markerArea.areaId === currentAreaId
+      ? {
+        x: objectiveState.markerArea.tileX,
+        y: objectiveState.markerArea.tileY,
+        w: objectiveState.markerArea.tileW,
+        h: objectiveState.markerArea.tileH,
+        label: objectiveState.markerArea.label || "Search zone"
+      }
+      : null;
 
     return {
       map: currentMap,
@@ -173,6 +184,7 @@ export function createGameRenderer({
       doorTiles,
       discoveredDoorTiles,
       objectiveMarker,
+      objectiveArea,
       revealStartedAt: Number.isFinite(uiMotionState?.minimapRevealAt) ? uiMotionState.minimapRevealAt : performance.now()
     };
   }
@@ -208,7 +220,8 @@ export function createGameRenderer({
       tileX,
       tileY,
       (townId, areaId, tx, ty) => worldService.getBuilding(townId, areaId, tx, ty),
-      getTileAt
+      getTileAt,
+      (name) => assets.getSprite(name)
     );
   }
 

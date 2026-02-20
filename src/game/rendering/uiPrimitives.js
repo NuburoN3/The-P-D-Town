@@ -25,7 +25,8 @@ export function getPrimaryBindingLabel(state, action) {
 export function getItemSpriteName(itemName) {
   const spriteMap = {
     "Training Headband": "trainingHeadband",
-    "Dojo Membership Card": "dojoMembership"
+    "Dojo Membership Card": "dojoMembership",
+    "Kendo Stick": "kendoStick"
   };
   return spriteMap[itemName] || null;
 }

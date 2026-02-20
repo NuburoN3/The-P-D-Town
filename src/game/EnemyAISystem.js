@@ -361,6 +361,9 @@ export function createEnemyAISystem({
 
   function updateEnemyLifecycle(enemy, now) {
     if (enemy.dead) {
+      if (enemy.respawnMode === "townReentry") {
+        return false;
+      }
       if (enemy.respawnEnabled === false) {
         return false;
       }

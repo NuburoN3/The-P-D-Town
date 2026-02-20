@@ -98,7 +98,14 @@ function generateOverworldBase(width, height) {
 }
 
 function generateDojoInteriorBase(width, height) {
-    return createWalledInterior(width, height);
+    const map = createWalledInterior(width, height);
+
+    // Extend dojo floor one tile lower so the exit threshold is part of the floor plane.
+    for (let x = 1; x <= width - 2; x++) {
+        map[height - 1][x] = TILE_TYPES.INTERIOR_FLOOR;
+    }
+
+    return map;
 }
 
 function generateChurchInteriorBase(width, height) {
@@ -299,9 +306,9 @@ export const hanamiTown = {
                     id: "hanamiDojoFront",
                     type: BUILDING_TYPES.DOJO,
                     x: 39,
-                    y: 7,
+                    y: 8,
                     width: 5,
-                    height: 3
+                    height: 2
                 },
                 {
                     id: "hanamiTownFountain",
@@ -465,7 +472,31 @@ export const hanamiTown = {
             to: { townId: "hanamiTown", spawnId: "dojoInteriorDoor" }
         },
         {
+            from: { areaId: "overworld", x: 42, y: 9 },
+            to: { townId: "hanamiTown", spawnId: "dojoInteriorDoor" }
+        },
+        {
+            from: { areaId: "hanamiDojo", x: 3, y: 9 },
+            to: { townId: "hanamiTown", spawnId: "dojoExteriorDoor" }
+        },
+        {
+            from: { areaId: "hanamiDojo", x: 4, y: 9 },
+            to: { townId: "hanamiTown", spawnId: "dojoExteriorDoor" }
+        },
+        {
+            from: { areaId: "hanamiDojo", x: 5, y: 9 },
+            to: { townId: "hanamiTown", spawnId: "dojoExteriorDoor" }
+        },
+        {
             from: { areaId: "hanamiDojo", x: 6, y: 9 },
+            to: { townId: "hanamiTown", spawnId: "dojoExteriorDoor" }
+        },
+        {
+            from: { areaId: "hanamiDojo", x: 7, y: 9 },
+            to: { townId: "hanamiTown", spawnId: "dojoExteriorDoor" }
+        },
+        {
+            from: { areaId: "hanamiDojo", x: 8, y: 9 },
             to: { townId: "hanamiTown", spawnId: "dojoExteriorDoor" }
         },
         {
@@ -1009,7 +1040,8 @@ export const hanamiTown = {
             y: 2,
             dir: "right",
             maxHp: 42,
-            damage: 8,
+            damage: 1,
+            damageRollTable: [{ value: 1, weight: 70 }, { value: 2, weight: 25 }, { value: 3, weight: 5 }],
             speed: 1.02,
             aggroRangeTiles: 6,
             attackRangeTiles: 1.1,
@@ -1021,7 +1053,7 @@ export const hanamiTown = {
             attackType: "lightSlash",
             respawnEnabled: false,
             countsForChallenge: true,
-            lootDropChancePercent: 100,
+            lootDropChancePercent: 40,
             lootSilverRange: [3, 5]
         },
         {
@@ -1033,7 +1065,8 @@ export const hanamiTown = {
             y: 2,
             dir: "left",
             maxHp: 36,
-            damage: 10,
+            damage: 1,
+            damageRollTable: [{ value: 1, weight: 70 }, { value: 2, weight: 25 }, { value: 3, weight: 5 }],
             speed: 1.18,
             aggroRangeTiles: 6,
             attackRangeTiles: 1.05,
@@ -1045,7 +1078,7 @@ export const hanamiTown = {
             attackType: "heavySlash",
             respawnEnabled: false,
             countsForChallenge: true,
-            lootDropChancePercent: 100,
+            lootDropChancePercent: 40,
             lootSilverRange: [3, 5]
         },
         {
@@ -1057,7 +1090,8 @@ export const hanamiTown = {
             y: 5,
             dir: "down",
             maxHp: 34,
-            damage: 7,
+            damage: 1,
+            damageRollTable: [{ value: 1, weight: 70 }, { value: 2, weight: 25 }, { value: 3, weight: 5 }],
             speed: 0.92,
             aggroRangeTiles: 7.4,
             attackRangeTiles: 2.6,
@@ -1069,43 +1103,50 @@ export const hanamiTown = {
             attackType: "chiBolt",
             respawnEnabled: false,
             countsForChallenge: true,
-            lootDropChancePercent: 100,
+            lootDropChancePercent: 40,
             lootSilverRange: [3, 5]
         },
         {
-            id: "bogStalkerA",
-            name: "Bog Stalker A",
-            archetypeId: "rusher",
+            id: "bogOgreA",
+            name: "Bog Ogre A",
+            archetypeId: "tank",
             areaId: "bogland",
             x: 22,
             y: 21,
             dir: "right",
-            maxHp: 38,
-            damage: 10,
-            speed: 1.12,
-            aggroRangeTiles: 7.3,
-            attackRangeTiles: 1.05,
-            attackCooldownMs: 900,
-            attackWindupMs: 210,
-            attackRecoveryMs: 290,
+            spriteName: "ogre64",
+            desiredHeightTiles: 2,
+            maxHp: 58,
+            damage: 4,
+            damageRollTable: [{ value: 4, weight: 70 }, { value: 5, weight: 25 }, { value: 6, weight: 5 }],
+            speed: 0.86,
+            aggroRangeTiles: 6.7,
+            attackRangeTiles: 1.2,
+            attackCooldownMs: 980,
+            attackWindupMs: 250,
+            attackRecoveryMs: 360,
             respawnDelayMs: 6000,
-            behaviorType: "orbitStriker",
+            behaviorType: "meleeChaser",
             attackType: "heavySlash",
-            respawnEnabled: false,
+            respawnEnabled: true,
+            respawnMode: "townReentry",
             countsForBogTrial: true,
-            lootDropChancePercent: 100,
-            lootSilverRange: [3, 5]
+            lootDropChancePercent: 40,
+            lootSilverRange: [5, 10]
         },
         {
-            id: "bogStalkerB",
-            name: "Bog Stalker B",
+            id: "bogOgreB",
+            name: "Bog Ogre B",
             archetypeId: "tank",
             areaId: "bogland",
             x: 29,
             y: 26,
             dir: "left",
-            maxHp: 52,
-            damage: 11,
+            spriteName: "ogre64",
+            desiredHeightTiles: 2,
+            maxHp: 62,
+            damage: 4,
+            damageRollTable: [{ value: 4, weight: 70 }, { value: 5, weight: 25 }, { value: 6, weight: 5 }],
             speed: 0.84,
             aggroRangeTiles: 6.8,
             attackRangeTiles: 1.25,
@@ -1115,34 +1156,39 @@ export const hanamiTown = {
             respawnDelayMs: 6200,
             behaviorType: "meleeChaser",
             attackType: "heavySlash",
-            respawnEnabled: false,
+            respawnEnabled: true,
+            respawnMode: "townReentry",
             countsForBogTrial: true,
-            lootDropChancePercent: 100,
-            lootSilverRange: [3, 5]
+            lootDropChancePercent: 40,
+            lootSilverRange: [5, 10]
         },
         {
-            id: "bogStalkerC",
-            name: "Bog Stalker C",
-            archetypeId: "rangedAcolyte",
+            id: "bogOgreC",
+            name: "Bog Ogre C",
+            archetypeId: "tank",
             areaId: "bogland",
             x: 35,
             y: 20,
             dir: "down",
-            maxHp: 30,
-            damage: 8,
-            speed: 0.96,
-            aggroRangeTiles: 8.2,
-            attackRangeTiles: 2.9,
-            attackCooldownMs: 1160,
-            attackWindupMs: 300,
+            spriteName: "ogre64",
+            desiredHeightTiles: 2,
+            maxHp: 56,
+            damage: 4,
+            damageRollTable: [{ value: 4, weight: 70 }, { value: 5, weight: 25 }, { value: 6, weight: 5 }],
+            speed: 0.88,
+            aggroRangeTiles: 6.5,
+            attackRangeTiles: 1.2,
+            attackCooldownMs: 1000,
+            attackWindupMs: 260,
             attackRecoveryMs: 360,
             respawnDelayMs: 6200,
-            behaviorType: "zoneKeeper",
-            attackType: "chiBolt",
-            respawnEnabled: false,
+            behaviorType: "meleeChaser",
+            attackType: "heavySlash",
+            respawnEnabled: true,
+            respawnMode: "townReentry",
             countsForBogTrial: true,
-            lootDropChancePercent: 100,
-            lootSilverRange: [3, 5]
+            lootDropChancePercent: 40,
+            lootSilverRange: [5, 10]
         }
     ]
 };

@@ -11,6 +11,8 @@ export class DialogueSystem {
     this.visibleCharacters = 0;
     this.textStartTime = 0;
     this.textSpeedMultiplier = 1;
+    this.advanceLockedUntil = 0;
+    this.autoAdvanceAt = 0;
 
     this.choiceState = {
       active: false,
@@ -51,7 +53,8 @@ export class DialogueSystem {
     this.textSpeedMultiplier = Math.max(0.5, Math.min(2, multiplier));
   }
 
-  revealCurrentPage() {
+  revealCurrentPage(force = false) {
+    if (!force && this.isAdvanceLocked()) return;
     this.visibleCharacters = this.currentVisibleLength();
   }
 
@@ -104,13 +107,36 @@ export class DialogueSystem {
     if (onConfirm) onConfirm(selectedOption);
   }
 
-  advance() {
+  lockAdvanceFor(durationMs, { autoAdvance = false } = {}) {
+    const now = performance.now();
+    const duration = Math.max(0, Number.isFinite(durationMs) ? durationMs : 0);
+    this.advanceLockedUntil = Math.max(this.advanceLockedUntil, now + duration);
+    if (autoAdvance && this.isActive()) {
+      this.autoAdvanceAt = this.advanceLockedUntil;
+    }
+  }
+
+  isAdvanceLocked(now = performance.now()) {
+    return now < this.advanceLockedUntil;
+  }
+
+  update(now = performance.now()) {
     if (!this.isActive() || this.choiceState.active) return;
+    if (!(this.autoAdvanceAt > 0) || now < this.autoAdvanceAt) return;
+    this.autoAdvanceAt = 0;
+    this._advanceInternal(true);
+  }
+
+  _advanceInternal(ignoreLock = false) {
+    if (!this.isActive() || this.choiceState.active) return;
+    if (!ignoreLock && this.isAdvanceLocked()) return;
     this.updateVisibleCharacters();
 
     if (this.visibleCharacters < this.currentVisibleLength()) {
-      this.revealCurrentPage();
-      return;
+      this.revealCurrentPage(ignoreLock);
+      if (!ignoreLock || this.visibleCharacters < this.currentVisibleLength()) {
+        return;
+      }
     }
 
     if (this.index < this.lines.length - 1) {
@@ -125,6 +151,10 @@ export class DialogueSystem {
     }
   }
 
+  advance() {
+    this._advanceInternal(false);
+  }
+
   close() {
     this.name = "";
     this.lines = [];
@@ -132,6 +162,8 @@ export class DialogueSystem {
     this.endAction = null;
     this.visibleCharacters = 0;
     this.textStartTime = 0;
+    this.advanceLockedUntil = 0;
+    this.autoAdvanceAt = 0;
     this.closeChoice();
   }
 

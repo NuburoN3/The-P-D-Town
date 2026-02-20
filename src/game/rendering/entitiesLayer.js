@@ -26,6 +26,23 @@ function drawPlayer(
   const drawX = Math.round(player.x - cam.x - (drawWidth - tileSize) / 2);
   const drawY = Math.round(player.y - cam.y - (drawHeight - tileSize));
 
+  let hasDojoCurtainClip = false;
+  if (state.currentAreaId === "hanamiDojo") {
+    // Clip player below the dojo curtain, but keep the 6-tile exit opening
+    // visible so the player can be seen while moving through the aura/doors.
+    const curtainTopY = (tileSize * 9) - cam.y;
+    const exitOpeningX = (tileSize * 3) - cam.x;
+    const exitOpeningW = tileSize * 6;
+    ctx.save();
+    ctx.beginPath();
+    // Main visible area above curtain.
+    ctx.rect(-4096, -4096, 8192, curtainTopY + 4096);
+    // Opening through curtain at dojo exits (x=3..8 on bottom row).
+    ctx.rect(exitOpeningX, curtainTopY, exitOpeningW, 4096);
+    ctx.clip();
+    hasDojoCurtainClip = true;
+  }
+
   drawEntityShadow(ctx, drawX, drawY, drawWidth, drawHeight, "rgba(0,0,0,0.22)");
   ctx.save();
   if (player.invulnerableUntil > now && Math.floor(now / 90) % 2 === 0) {
@@ -49,6 +66,7 @@ function drawPlayer(
       drawHeight
     );
     ctx.restore();
+    if (hasDojoCurtainClip) ctx.restore();
     return;
   }
 
@@ -111,6 +129,7 @@ function drawPlayer(
     }
     ctx.restore();
     ctx.restore();
+    if (hasDojoCurtainClip) ctx.restore();
     return;
   }
 
@@ -139,6 +158,7 @@ function drawPlayer(
     );
   }
   ctx.restore();
+  if (hasDojoCurtainClip) ctx.restore();
 }
 
 function drawNPCSprite(ctx, npc, drawX, drawY, drawWidth, drawHeight) {
@@ -344,10 +364,10 @@ function drawEnemyPlaceholder(ctx, enemy, ex, ey, tileSize) {
   ctx.fill();
 }
 
-function drawEnemyHealthBar(ctx, enemy, ex, ey, tileSize) {
+function drawEnemyHealthBar(ctx, enemy, ex, ey, drawWidth) {
   if (enemy.hp >= enemy.maxHp) return;
   const ratio = Math.max(0, Math.min(1, enemy.hp / Math.max(1, enemy.maxHp)));
-  const barW = tileSize - 4;
+  const barW = Math.max(12, Math.round(drawWidth) - 4);
   const barH = 4;
   const barX = ex + 2;
   const barY = ey - 8;
@@ -367,12 +387,38 @@ function drawEnemies(ctx, state, canvas, tileSize) {
   for (const enemy of enemies) {
     if (!enemy || enemy.dead || enemy.world !== currentAreaId) continue;
 
-    const ex = Math.round(enemy.x - cam.x);
-    const ey = Math.round(enemy.y - cam.y);
-    if (ex > canvas.width || ey > canvas.height || ex < -tileSize || ey < -tileSize) continue;
+    let drawWidth = tileSize;
+    let drawHeight = tileSize;
+    let ex = Math.round(enemy.x - cam.x);
+    let ey = Math.round(enemy.y - cam.y);
 
     if (enemy.sprite && enemy.sprite.width && enemy.sprite.height) {
-      ctx.drawImage(enemy.sprite, ex, ey, tileSize, tileSize);
+      const sourceHeight = Number.isFinite(enemy.spriteHeight) && enemy.spriteHeight > 0
+        ? enemy.spriteHeight
+        : enemy.sprite.height;
+      const sourceWidth = Number.isFinite(enemy.spriteWidth) && enemy.spriteWidth > 0
+        ? enemy.spriteWidth
+        : enemy.sprite.width;
+      if (Number.isFinite(enemy.desiredHeightTiles) && enemy.desiredHeightTiles > 0) {
+        drawHeight = tileSize * enemy.desiredHeightTiles;
+        const scale = drawHeight / sourceHeight;
+        drawWidth = sourceWidth * scale;
+      } else {
+        drawWidth = Number.isFinite(enemy.spriteWidth) && enemy.spriteWidth > 0
+          ? enemy.spriteWidth
+          : tileSize;
+        drawHeight = Number.isFinite(enemy.spriteHeight) && enemy.spriteHeight > 0
+          ? enemy.spriteHeight
+          : tileSize;
+      }
+      ex = Math.round(enemy.x - cam.x - (drawWidth - tileSize) / 2);
+      ey = Math.round(enemy.y - cam.y - (drawHeight - tileSize));
+    }
+
+    if (ex > canvas.width || ey > canvas.height || ex < -drawWidth || ey < -drawHeight) continue;
+
+    if (enemy.sprite && enemy.sprite.width && enemy.sprite.height) {
+      ctx.drawImage(enemy.sprite, ex, ey, drawWidth, drawHeight);
     } else {
       drawEnemyPlaceholder(ctx, enemy, ex, ey, tileSize);
     }
@@ -382,8 +428,8 @@ function drawEnemies(ctx, state, canvas, tileSize) {
       const totalWindup = Math.max(1, enemy.attackWindupMs || 1);
       const remaining = Math.max(0, (enemy.attackStrikeAt || now) - now);
       const windupProgress = Math.max(0, Math.min(1, 1 - remaining / totalWindup));
-      const centerX = ex + tileSize / 2;
-      const centerY = ey + tileSize / 2;
+      const centerX = ex + drawWidth / 2;
+      const centerY = ey + drawHeight / 2;
 
       let facingAngle = Math.PI * 0.5;
       if (enemy.dir === "up") facingAngle = -Math.PI * 0.5;
@@ -426,7 +472,7 @@ function drawEnemies(ctx, state, canvas, tileSize) {
       ctx.textBaseline = "alphabetic";
     }
 
-    drawEnemyHealthBar(ctx, enemy, ex, ey, tileSize);
+    drawEnemyHealthBar(ctx, enemy, ex, ey, drawWidth);
   }
 }
 

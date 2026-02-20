@@ -1,6 +1,22 @@
 import { COLORS, TILE } from "../../core/constants.js";
 
 export function drawInteriorFloorTile(ctx, deps) {
+  if (deps.currentAreaId === "hanamiDojo") {
+    // Dojo floor should read as a continuous interior surface, not tiled squares.
+    const px = Math.floor(deps.x);
+    const py = Math.floor(deps.y);
+    ctx.fillStyle = "#6f5a4c";
+    // Slight overlap prevents anti-aliased seam lines between neighboring tiles.
+    ctx.fillRect(px, py, TILE + 1, TILE + 1);
+
+    const seed = ((deps.tileX * 73856093) ^ (deps.tileY * 19349663)) >>> 0;
+    ctx.fillStyle = "rgba(245, 225, 199, 0.06)";
+    ctx.fillRect(px + 3 + (seed % 22), py + 6 + ((seed >>> 5) % 18), 2, 1);
+    ctx.fillStyle = "rgba(45, 30, 24, 0.07)";
+    ctx.fillRect(px + 4 + ((seed >>> 9) % 20), py + 8 + ((seed >>> 14) % 16), 2, 1);
+    return;
+  }
+
   const alt = (deps.tileX + deps.tileY) % 2 === 0;
   ctx.fillStyle = alt ? COLORS.INTERIOR_FLOOR_LIGHT : COLORS.INTERIOR_FLOOR_DARK;
   ctx.fillRect(deps.x, deps.y, TILE, TILE);

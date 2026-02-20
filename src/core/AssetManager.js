@@ -40,6 +40,10 @@ export const DEFAULT_SPRITE_MANIFEST = {
   leftovers: "assets/sprites/Leftovers.png",
   silverCoins: "assets/sprites/SilverCoins.png",
   dojoMembership: "assets/sprites/DojoMembership.png",
+  insideDojoBackWall: "assets/sprites/Inside_Dojo_Back_wall.png",
+  insideDojoSideWall: "assets/sprites/Inside_Dojo_Side_Wall.png",
+  insideDojoExitWall: "assets/sprites/Dojo Exit wall.png",
+  ogre64: "assets/sprites/Ogre-64x64.png",
   [ASSET_KEYS.TITLE_HERO_IMAGE]: ASSET_PATHS.TITLE_HERO_IMAGE
 };
 

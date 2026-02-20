@@ -53,6 +53,8 @@ export function createGameRuntime() {
       menuSelect: "assets/audio/MenuSelect_Sound.wav",
       attackSwing: "assets/audio/MenuSelect_Sound.wav",
       enemyTelegraph: "assets/audio/collision_sound.wav",
+      ogreAttack: "assets/audio/Ogre_Attack_1.ogg",
+      ogreHurt: "assets/audio/Ogre_Hurt_1.ogg",
       hitImpact: "assets/audio/Item_Unlock.wav",
       npcHit: "assets/audio/Oof_1.ogg",
       hurt: "assets/audio/collision_sound.wav",

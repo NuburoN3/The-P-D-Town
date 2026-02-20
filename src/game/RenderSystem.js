@@ -80,6 +80,12 @@ const MOOD_UI_PRESETS = Object.freeze({
   }
 });
 
+const DIALOGUE_UI_TRANSITION_STATE = {
+  wasDialogueActive: false,
+  revealStartedAt: 0,
+  revealDurationMs: 900
+};
+
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
 }
@@ -115,6 +121,31 @@ function deriveUiColors(colors, moodPreset) {
     ...colors,
     ...moodOverrides
   };
+}
+
+function getDialogueUiAlpha(dialogueActive) {
+  const now = performance.now();
+  if (dialogueActive) {
+    DIALOGUE_UI_TRANSITION_STATE.wasDialogueActive = true;
+    return 0;
+  }
+
+  if (DIALOGUE_UI_TRANSITION_STATE.wasDialogueActive) {
+    DIALOGUE_UI_TRANSITION_STATE.wasDialogueActive = false;
+    DIALOGUE_UI_TRANSITION_STATE.revealStartedAt = now;
+  }
+
+  if (!DIALOGUE_UI_TRANSITION_STATE.revealStartedAt) {
+    return 1;
+  }
+
+  const raw = clamp01((now - DIALOGUE_UI_TRANSITION_STATE.revealStartedAt) / DIALOGUE_UI_TRANSITION_STATE.revealDurationMs);
+  if (raw >= 1) {
+    DIALOGUE_UI_TRANSITION_STATE.revealStartedAt = 0;
+    return 1;
+  }
+
+  return easeOutCubic(raw);
 }
 
 function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
@@ -659,6 +690,7 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom) {
 function drawCombatLevelHud(ctx, state, colors) {
   if (!isFreeExploreState(state.gameState)) return;
   const now = performance.now();
+  const highContrast = Boolean(state.pauseMenuState?.highContrast);
   const combatLevel = Number.isFinite(state.playerStats?.combatLevel) ? Math.max(1, state.playerStats.combatLevel) : 1;
   const combatXp = Number.isFinite(state.playerStats?.combatXP) ? Math.max(0, state.playerStats.combatXP) : 0;
   const combatXpNeeded = Number.isFinite(state.playerStats?.combatXPNeeded) ? Math.max(1, state.playerStats.combatXPNeeded) : 1;
@@ -678,31 +710,51 @@ function drawCombatLevelHud(ctx, state, colors) {
 
   const panelX = 14;
   const panelY = 14;
-  const panelW = 238;
-  const panelH = 58;
+  const panelW = 252;
+  const panelH = 62;
 
-  const frameGlow = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
-  frameGlow.addColorStop(0, "rgba(255, 223, 150, 0.18)");
-  frameGlow.addColorStop(1, "rgba(148, 98, 44, 0.1)");
+  const frameGlow = ctx.createRadialGradient(
+    panelX + panelW * 0.55,
+    panelY + 8,
+    8,
+    panelX + panelW * 0.55,
+    panelY + panelH * 0.5,
+    panelW
+  );
+  frameGlow.addColorStop(0, highContrast ? "rgba(96, 182, 234, 0.2)" : "rgba(247, 214, 145, 0.2)");
+  frameGlow.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = frameGlow;
   ctx.fillRect(panelX - 2, panelY - 2, panelW + 4, panelH + 4);
 
-  const outerFrame = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
-  outerFrame.addColorStop(0, "rgba(59, 75, 93, 0.95)");
-  outerFrame.addColorStop(1, "rgba(18, 27, 39, 0.96)");
-  ctx.fillStyle = outerFrame;
+  const parchment = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+  parchment.addColorStop(0, highContrast ? "#212833" : "#f2e1b4");
+  parchment.addColorStop(1, highContrast ? "#101722" : "#d7bb7d");
+  ctx.fillStyle = parchment;
   ctx.fillRect(panelX, panelY, panelW, panelH);
 
-  const innerFrame = ctx.createLinearGradient(panelX + 2, panelY + 2, panelX + 2, panelY + panelH - 2);
-  innerFrame.addColorStop(0, "rgba(30, 45, 60, 0.95)");
-  innerFrame.addColorStop(1, "rgba(10, 18, 28, 0.96)");
+  const innerFrame = ctx.createLinearGradient(panelX + 4, panelY + 4, panelX + 4, panelY + panelH - 4);
+  innerFrame.addColorStop(0, highContrast ? "rgba(48,58,74,0.86)" : "rgba(255,248,222,0.75)");
+  innerFrame.addColorStop(1, highContrast ? "rgba(26,35,49,0.82)" : "rgba(230,205,146,0.62)");
   ctx.fillStyle = innerFrame;
   ctx.fillRect(panelX + 2, panelY + 2, panelW - 4, panelH - 4);
 
-  ctx.strokeStyle = "rgba(246, 220, 159, 0.86)";
-  ctx.lineWidth = 1.5;
+  const titleBand = ctx.createLinearGradient(panelX + 6, panelY + 7, panelX + panelW - 6, panelY + 28);
+  if (highContrast) {
+    titleBand.addColorStop(0, "rgba(41, 86, 118, 0.82)");
+    titleBand.addColorStop(0.5, "rgba(67, 132, 179, 0.74)");
+    titleBand.addColorStop(1, "rgba(41, 86, 118, 0.82)");
+  } else {
+    titleBand.addColorStop(0, "rgba(116, 74, 32, 0.75)");
+    titleBand.addColorStop(0.5, "rgba(151, 105, 49, 0.65)");
+    titleBand.addColorStop(1, "rgba(116, 74, 32, 0.75)");
+  }
+  ctx.fillStyle = titleBand;
+  ctx.fillRect(panelX + 6, panelY + 7, panelW - 12, 18);
+
+  ctx.strokeStyle = highContrast ? "#a6dfff" : "#6c4b1d";
+  ctx.lineWidth = 1.25;
   ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1);
-  ctx.strokeStyle = "rgba(76, 98, 124, 0.85)";
+  ctx.strokeStyle = highContrast ? "#eef8ff" : "#f7e1ab";
   ctx.lineWidth = 1;
   ctx.strokeRect(panelX + 3.5, panelY + 3.5, panelW - 7, panelH - 7);
 
@@ -712,7 +764,7 @@ function drawCombatLevelHud(ctx, state, colors) {
     const textFlashT = clamp01(levelFxElapsed / 420);
     const textScale = 1 + (0.24 * (1 - easeOutCubic(textFlashT)) * levelFxIntensity);
     const textX = panelX + 14;
-    const textY = panelY + 22;
+    const textY = panelY + 21;
     const textWidth = ctx.measureText(levelText).width;
     const anchorX = textX + textWidth / 2;
     ctx.save();
@@ -721,28 +773,34 @@ function drawCombatLevelHud(ctx, state, colors) {
     drawUiText(ctx, levelText, -textWidth / 2, 0, colors);
     ctx.restore();
   } else {
-    drawUiText(ctx, levelText, panelX + 14, panelY + 22, {
+    drawUiText(ctx, levelText, panelX + 14, panelY + 21, {
       ...colors,
-      TEXT: "#eaf6ff",
-      TEXT_SHADOW: "rgba(6, 11, 18, 0.82)"
+      TEXT: highContrast ? "#f7fdff" : "#fff2ca",
+      TEXT_SHADOW: highContrast ? "rgba(14, 28, 42, 0.5)" : "rgba(45, 24, 7, 0.45)"
     });
   }
 
   const barX = panelX + 12;
-  const barY = panelY + 35;
+  const barY = panelY + 36;
   const barW = panelW - 24;
   const barH = 14;
   const barBack = ctx.createLinearGradient(barX, barY, barX, barY + barH);
-  barBack.addColorStop(0, "rgba(7, 12, 18, 0.96)");
-  barBack.addColorStop(1, "rgba(20, 31, 44, 0.94)");
+  barBack.addColorStop(0, highContrast ? "rgba(12,18,28,0.96)" : "rgba(71, 47, 24, 0.72)");
+  barBack.addColorStop(1, highContrast ? "rgba(25,36,50,0.94)" : "rgba(124, 86, 43, 0.65)");
   ctx.fillStyle = barBack;
   ctx.fillRect(barX, barY, barW, barH);
 
   const fillW = Math.max(0, Math.round(barW * progress));
   const fillGradient = ctx.createLinearGradient(barX, barY, barX, barY + barH);
-  fillGradient.addColorStop(0, "rgba(112, 204, 150, 0.97)");
-  fillGradient.addColorStop(0.55, "rgba(36, 140, 84, 0.96)");
-  fillGradient.addColorStop(1, "rgba(14, 82, 51, 0.95)");
+  if (highContrast) {
+    fillGradient.addColorStop(0, "rgba(140, 214, 255, 0.95)");
+    fillGradient.addColorStop(0.55, "rgba(82, 150, 196, 0.96)");
+    fillGradient.addColorStop(1, "rgba(45, 95, 132, 0.95)");
+  } else {
+    fillGradient.addColorStop(0, "rgba(244, 209, 135, 0.97)");
+    fillGradient.addColorStop(0.55, "rgba(176, 124, 62, 0.96)");
+    fillGradient.addColorStop(1, "rgba(116, 74, 32, 0.95)");
+  }
   ctx.fillStyle = fillGradient;
   ctx.fillRect(barX, barY, fillW, barH);
 
@@ -792,7 +850,7 @@ function drawCombatLevelHud(ctx, state, colors) {
     }
   }
 
-  ctx.strokeStyle = "rgba(255, 240, 209, 0.74)";
+  ctx.strokeStyle = highContrast ? "rgba(166, 222, 255, 0.78)" : "rgba(118, 76, 30, 0.7)";
   ctx.lineWidth = 1;
   ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
 
@@ -802,7 +860,7 @@ function drawCombatLevelHud(ctx, state, colors) {
   const xpTextW = Math.ceil(ctx.measureText(xpText).width);
   const xpTextX = Math.round(barX + (barW - xpTextW) * 0.5);
   const xpTextY = barY + 10;
-  ctx.fillStyle = "rgba(0, 0, 0, 0.98)";
+  ctx.fillStyle = highContrast ? "rgba(226, 239, 249, 0.98)" : "rgba(63, 37, 14, 0.98)";
   ctx.fillText(xpText, xpTextX, xpTextY);
 }
 
@@ -1005,6 +1063,19 @@ function drawMinimap(ctx, state, colors) {
   const playerCenterY = offsetY + minimap.playerTileY * cell + cell * 0.5;
   const facingAngle = getFacingAngle(state.player?.dir);
   const coneRadius = Math.max(4, cell * 3.2);
+
+  if (minimap.objectiveArea) {
+    const areaX = offsetX + minimap.objectiveArea.x * cell;
+    const areaY = offsetY + minimap.objectiveArea.y * cell;
+    const areaW = Math.max(cell, minimap.objectiveArea.w * cell);
+    const areaH = Math.max(cell, minimap.objectiveArea.h * cell);
+    const pulse = 0.5 + Math.sin(now * 0.0045) * 0.5;
+    ctx.fillStyle = `rgba(220, 44, 44, ${0.16 + pulse * 0.07})`;
+    ctx.fillRect(areaX, areaY, areaW, areaH);
+    ctx.strokeStyle = `rgba(255, 122, 122, ${0.42 + pulse * 0.22})`;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(areaX + 0.5, areaY + 0.5, Math.max(1, areaW - 1), Math.max(1, areaH - 1));
+  }
 
   ctx.fillStyle = "rgba(255, 146, 118, 0.24)";
   ctx.beginPath();
@@ -1376,13 +1447,14 @@ function drawWorldVfx(ctx, state) {
       ctx.arc(x, y, baseSize * (0.7 + t * 0.45), 0, Math.PI * 2);
       ctx.stroke();
     } else if (effect.type === "damageText") {
-      ctx.font = FONT_16;
+      const fontPx = Math.max(16, Math.round(baseSize));
+      ctx.font = `bold ${fontPx}px Georgia`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      const floatY = y - t * 22;
+      const floatY = y - t * Math.max(20, fontPx * 0.9);
       ctx.fillStyle = effect.color || "rgba(255, 233, 190, 0.98)";
       ctx.strokeStyle = "rgba(0,0,0,0.55)";
-      ctx.lineWidth = 2;
+      ctx.lineWidth = Math.max(2, Math.round(fontPx * 0.12));
       const text = String(effect.text || "");
       ctx.strokeText(text, x, floatY);
       ctx.fillText(text, x, floatY);
@@ -1757,6 +1829,15 @@ function drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoo
       const tileType = row[x];
       if (typeof tileType !== "number") continue;
 
+      // Hanami dojo interior: redraw the exit curtain wall after entities so
+      // the player appears behind it.
+      if (state.currentAreaId === "hanamiDojo" && y === 9 && x === 11) {
+        const drawX = x * tileSize - state.cam.x;
+        const drawY = y * tileSize - state.cam.y;
+        drawTile(tileType, drawX, drawY, x, y);
+        continue;
+      }
+
       const building = state.getBuildingAtWorldTile(x, y);
       // Redraw dojo top row after entities so roof/eaves occlude player behind it.
       if (!building || building.type !== "DOJO" || y !== building.y) continue;
@@ -1829,8 +1910,17 @@ export function renderGameFrame({
   ctx.restore();
 
   const uiColors = deriveUiColors(colors, state.moodPreset);
+  const dialogueActive = Boolean(dialogue && typeof dialogue.isActive === "function" && dialogue.isActive());
+  const nonDialogueUiAlpha = getDialogueUiAlpha(dialogueActive);
+
   drawItemNotifications(ctx, state, cameraZoom, tileSize, uiColors, getItemSprite);
-  drawSaveNotice(ctx, state, uiColors);
+
+  if (nonDialogueUiAlpha > 0.01) {
+    ctx.save();
+    ctx.globalAlpha *= nonDialogueUiAlpha;
+    drawSaveNotice(ctx, state, uiColors);
+    ctx.restore();
+  }
   drawAtmosphere(ctx, canvas, colors, state);
   drawMoodGrading(ctx, canvas, state);
   drawCombatDamageFlash(ctx, state);
@@ -1842,19 +1932,24 @@ export function renderGameFrame({
     drawTitleScreenOverlay(ctx, canvas, state, colors);
     return;
   }
-  drawCombatHud(ctx, state, uiColors, tileSize, cameraZoom);
-  drawCombatLevelHud(ctx, state, uiColors);
-  drawObjectiveTracker(ctx, state, uiColors);
-  drawMinimap(ctx, state, uiColors);
-  drawDoorHint(ctx, state, uiColors, dialogue, cameraZoom);
-  // Enemy XP feedback now uses world-space floating VFX instead of panel notifications.
-  if (typeof drawCustomOverlays === "function") {
-    drawCustomOverlays({ ctx, canvas, colors: uiColors, ui, state });
+  if (nonDialogueUiAlpha > 0.01) {
+    ctx.save();
+    ctx.globalAlpha *= nonDialogueUiAlpha;
+    drawCombatHud(ctx, state, uiColors, tileSize, cameraZoom);
+    drawCombatLevelHud(ctx, state, uiColors);
+    drawObjectiveTracker(ctx, state, uiColors);
+    drawMinimap(ctx, state, uiColors);
+    drawDoorHint(ctx, state, uiColors, dialogue, cameraZoom);
+    // Enemy XP feedback now uses world-space floating VFX instead of panel notifications.
+    if (typeof drawCustomOverlays === "function") {
+      drawCustomOverlays({ ctx, canvas, colors: uiColors, ui, state });
+    }
+    drawInventoryOverlay(ctx, state, canvas, ui, uiColors, getItemSprite);
+    drawPauseMenuOverlay(ctx, state, canvas, ui, uiColors);
+    drawAttributesOverlay(ctx, state, canvas, ui, uiColors);
+    drawSettingsOverlay(ctx, state, canvas, ui, uiColors);
+    ctx.restore();
   }
-  drawInventoryOverlay(ctx, state, canvas, ui, uiColors, getItemSprite);
-  drawPauseMenuOverlay(ctx, state, canvas, ui, uiColors);
-  drawAttributesOverlay(ctx, state, canvas, ui, uiColors);
-  drawSettingsOverlay(ctx, state, canvas, ui, uiColors);
   drawTextbox(ctx, state, canvas, ui, uiColors, dialogue);
   drawPlayerDefeatOverlay(ctx, state, canvas);
 }

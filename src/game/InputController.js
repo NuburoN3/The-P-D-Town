@@ -172,10 +172,12 @@ export function createInputController({
                 actions.closePauseMenu(); // returnToPauseMenu
             }
         } else if (isFreeExploreState(gameState)) {
-            if (startPressed && !gamepadMenuState.startHeld) {
+            const inputLocked = Boolean(actions.isInputLocked && actions.isInputLocked());
+            const dialogueActive = Boolean(actions.isDialogueActive && actions.isDialogueActive());
+            if (startPressed && !gamepadMenuState.startHeld && !dialogueActive && !inputLocked) {
                 actions.openPauseMenu();
             }
-            if (attackPressed && !gamepadMenuState.attackHeld) { // Removed canRunCombatSystems check because main.js handles it? 
+            if (attackPressed && !gamepadMenuState.attackHeld && !dialogueActive && !inputLocked) { // Removed canRunCombatSystems check because main.js handles it? 
                 // Previous code checked canRunCombatSystems(). I should pass that as a callback or getter?
                 // actions.canRunCombatSystems()
                 if (actions.canRunCombatSystems && actions.canRunCombatSystems()) {

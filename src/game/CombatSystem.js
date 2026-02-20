@@ -117,13 +117,24 @@ export function createCombatSystem({
 
     const ex = enemy.x + enemy.width / 2;
     const ey = enemy.y + enemy.height / 2;
+    const playerCenterX = player.x + tileSize / 2;
+    const playerCenterY = player.y + tileSize / 2;
+    const toPlayerX = playerCenterX - ex;
+    const toPlayerY = playerCenterY - ey;
+    const toPlayerLength = Math.max(0.001, Math.hypot(toPlayerX, toPlayerY));
+    const fromPlayerDirX = toPlayerX / toPlayerLength;
+    const fromPlayerDirY = toPlayerY / toPlayerLength;
+    const damageTextOffset = tileSize * 0.62;
+    const damageTextX = ex + fromPlayerDirX * damageTextOffset;
+    const damageTextY = ey + fromPlayerDirY * (damageTextOffset * 0.45) - tileSize * 0.22;
     handlers.onRequestVfx("hitSpark", { x: ex, y: ey, size: 18, durationMs: 240 });
     handlers.onRequestVfx("damageText", {
-      x: ex,
-      y: ey - 14,
-      text: `-${damage}`,
-      color: "#ffd47a",
-      durationMs: 560
+      x: damageTextX,
+      y: damageTextY,
+      text: `${damage}`,
+      color: "#ffffff",
+      size: 32,
+      durationMs: 620
     });
     handlers.onEntityDamaged({
       source: player,
@@ -208,6 +219,32 @@ export function createCombatSystem({
   }
 
   function processEnemyStrikes({ now, player, enemies, currentAreaId }) {
+    const resolveEnemyDamage = (enemy, enemyProfile) => {
+      const table = Array.isArray(enemy?.damageRollTable) ? enemy.damageRollTable : null;
+      if (table && table.length > 0) {
+        let totalWeight = 0;
+        const normalized = [];
+        for (const entry of table) {
+          const value = Number.isFinite(entry?.value) ? Math.max(0, Math.floor(entry.value)) : NaN;
+          const weight = Number.isFinite(entry?.weight) ? Math.max(0, entry.weight) : 0;
+          if (!Number.isFinite(value) || weight <= 0) continue;
+          totalWeight += weight;
+          normalized.push({ value, weight });
+        }
+        if (normalized.length > 0 && totalWeight > 0) {
+          let roll = Math.random() * totalWeight;
+          for (const entry of normalized) {
+            roll -= entry.weight;
+            if (roll <= 0) return entry.value;
+          }
+          return normalized[normalized.length - 1].value;
+        }
+      }
+      return Number.isFinite(enemyProfile?.damage)
+        ? enemyProfile.damage
+        : (Number.isFinite(enemy?.damage) ? enemy.damage : 0);
+    };
+
     for (const enemy of enemies) {
       if (!enemy || enemy.dead || enemy.world !== currentAreaId) continue;
       if (!enemy.pendingStrike) continue;
@@ -229,11 +266,18 @@ export function createCombatSystem({
       if (d > strikeRadius + tileSize * 0.25) continue;
       if (player.invulnerableUntil > now) continue;
 
-      const enemyDamage = Number.isFinite(enemyProfile?.damage)
-        ? enemyProfile.damage
-        : (Number.isFinite(enemy.damage) ? enemy.damage : 0);
+      const enemyDamage = resolveEnemyDamage(enemy, enemyProfile);
       player.hp = Math.max(0, player.hp - enemyDamage);
       player.invulnerableUntil = now + player.invulnerableMs;
+
+      const toEnemyX = enemyCenterX - playerCenterX;
+      const toEnemyY = enemyCenterY - playerCenterY;
+      const toEnemyLength = Math.max(0.001, Math.hypot(toEnemyX, toEnemyY));
+      const fromEnemyDirX = toEnemyX / toEnemyLength;
+      const fromEnemyDirY = toEnemyY / toEnemyLength;
+      const damageTextOffset = tileSize * 0.62;
+      const damageTextX = playerCenterX + fromEnemyDirX * damageTextOffset;
+      const damageTextY = playerCenterY + fromEnemyDirY * (damageTextOffset * 0.45) - tileSize * 0.22;
 
       handlers.onRequestVfx("hitSpark", {
         x: playerCenterX,
@@ -242,11 +286,12 @@ export function createCombatSystem({
         durationMs: 260
       });
       handlers.onRequestVfx("damageText", {
-        x: playerCenterX,
-        y: playerCenterY - 20,
+        x: damageTextX,
+        y: damageTextY,
         text: `-${enemyDamage}`,
-        color: "#ff8b8b",
-        durationMs: 560
+        color: "#ff3b3b",
+        size: 32,
+        durationMs: 620
       });
       handlers.onPlayerDamaged({
         source: enemy,

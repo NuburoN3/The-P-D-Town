@@ -276,6 +276,74 @@ function drawDoorTile(ctx, deps) {
     : null;
   const isDojoDoor = building && building.type === "DOJO";
 
+  // Overworld dojo entrance: 3 center tiles should read as aura entry points, not doors.
+  if (
+    deps.currentAreaId === "overworld" &&
+    isDojoDoor &&
+    deps.tileY === (building.y + building.height - 1)
+  ) {
+    const localX = deps.tileX - building.x;
+    const middleStart = Math.floor((building.width - 3) / 2);
+    const isAuraEntryTile = localX >= middleStart && localX < middleStart + 3;
+    if (isAuraEntryTile) {
+      const seed = ((deps.tileX * 73856093) ^ (deps.tileY * 19349663)) >>> 0;
+      ctx.fillStyle = "#6f5a4c";
+      ctx.fillRect(deps.x, deps.y, TILE + 1, TILE + 1);
+      ctx.fillStyle = "rgba(245, 225, 199, 0.06)";
+      ctx.fillRect(deps.x + 3 + (seed % 22), deps.y + 6 + ((seed >>> 5) % 18), 2, 1);
+      ctx.fillStyle = "rgba(45, 30, 24, 0.07)";
+      ctx.fillRect(deps.x + 4 + ((seed >>> 9) % 20), deps.y + 8 + ((seed >>> 14) % 16), 2, 1);
+
+      const t = performance.now() * 0.002;
+      const phase = (localX - middleStart) * 0.55;
+      const pulse = 0.16 + ((Math.sin(t + phase) + 1) * 0.5) * 0.16;
+      const auraGrad = ctx.createLinearGradient(deps.x, deps.y + 8, deps.x, deps.y + TILE);
+      auraGrad.addColorStop(0, `rgba(255, 199, 142, ${pulse})`);
+      auraGrad.addColorStop(0.65, `rgba(255, 150, 112, ${pulse * 0.75})`);
+      auraGrad.addColorStop(1, "rgba(255, 126, 98, 0)");
+      ctx.fillStyle = auraGrad;
+      ctx.fillRect(deps.x, deps.y + 4, TILE, TILE - 4);
+
+      const glowX = deps.x + TILE * 0.5 + Math.sin(t * 1.35 + phase) * 3;
+      const glow = ctx.createRadialGradient(glowX, deps.y + 16, 2, glowX, deps.y + 16, 15);
+      glow.addColorStop(0, `rgba(255, 233, 188, ${pulse * 1.15})`);
+      glow.addColorStop(1, "rgba(255, 233, 188, 0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(deps.x, deps.y, TILE, TILE);
+      return;
+    }
+  }
+
+  // Hanami dojo exit strip: 6 middle bottom tiles with subtle animated aura.
+  if (
+    deps.currentAreaId === "hanamiDojo" &&
+    deps.tileY === 9 &&
+    deps.tileX >= 3 &&
+    deps.tileX <= 8
+  ) {
+    drawInteriorFloorTile(ctx, deps);
+
+    // Per-tile aura so all 6 tiles render their own subtle glow.
+    const t = performance.now() * 0.002;
+    const phase = (deps.tileX - 3) * 0.55;
+    const pulse = 0.16 + ((Math.sin(t + phase) + 1) * 0.5) * 0.16;
+
+    const auraGrad = ctx.createLinearGradient(deps.x, deps.y + 8, deps.x, deps.y + TILE);
+    auraGrad.addColorStop(0, `rgba(255, 199, 142, ${pulse})`);
+    auraGrad.addColorStop(0.65, `rgba(255, 150, 112, ${pulse * 0.75})`);
+    auraGrad.addColorStop(1, "rgba(255, 126, 98, 0)");
+    ctx.fillStyle = auraGrad;
+    ctx.fillRect(deps.x, deps.y + 4, TILE, TILE - 4);
+
+    const glowX = deps.x + TILE * 0.5 + Math.sin(t * 1.35 + phase) * 3;
+    const glow = ctx.createRadialGradient(glowX, deps.y + 16, 2, glowX, deps.y + 16, 15);
+    glow.addColorStop(0, `rgba(255, 233, 188, ${pulse * 1.15})`);
+    glow.addColorStop(1, "rgba(255, 233, 188, 0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(deps.x, deps.y, TILE, TILE);
+    return;
+  }
+
   // Special case: dojo upstairs trapdoor
   if (deps.currentAreaId === "hanamiDojo" && deps.tileX === 9 && deps.tileY === 3) {
     // Trapdoor style dungeon door
@@ -471,6 +539,39 @@ const tileRenderers = {
   [TILE_TYPES.PATH]: (ctx, deps) => drawPathTile(ctx, deps),
   [TILE_TYPES.TREE]: (ctx, deps) => drawTreeTile(ctx, deps),
   [TILE_TYPES.WALL]: (ctx, deps) => {
+    if (deps.currentAreaId === "hanamiDojo") {
+      const dojoBackWallSprite = deps.getSprite ? deps.getSprite("insideDojoBackWall") : null;
+      if (dojoBackWallSprite && deps.tileY === 0) {
+        // Draw once across the full dojo interior top wall (12 tiles x 2 tiles = 384x64),
+        // shifted up by one tile to better align with the dojo scene.
+        if (deps.tileX === 0 && deps.tileY === 0) {
+          ctx.drawImage(dojoBackWallSprite, deps.x, deps.y - TILE, TILE * 12, TILE * 2);
+        }
+        return;
+      }
+
+      const dojoSideWallSprite = deps.getSprite ? deps.getSprite("insideDojoSideWall") : null;
+      const isDojoSideColumn = deps.tileX === 0 || deps.tileX === 11;
+      const isDojoSideWallSpan = deps.tileY >= 1 && deps.tileY <= 8;
+      if (dojoSideWallSprite && isDojoSideColumn && isDojoSideWallSpan) {
+        // Side-wall art is 32x256, so each side is 1 tile wide x 8 tiles high.
+        if (deps.tileY === 1) {
+          ctx.drawImage(dojoSideWallSprite, deps.x, deps.y - TILE, TILE, TILE * 8);
+        }
+        return;
+      }
+
+      const dojoExitWallSprite = deps.getSprite ? deps.getSprite("insideDojoExitWall") : null;
+      if (dojoExitWallSprite && deps.tileY === 9) {
+        // Draw from the last tile in the row so it layers above floor/aura like a curtain.
+        if (deps.tileX === 11) {
+          ctx.drawImage(dojoExitWallSprite, deps.x - (TILE * 11), deps.y - TILE, TILE * 12, TILE * 2);
+        }
+        return;
+      }
+
+    }
+
     const building = deps.getBuilding
       ? deps.getBuilding(deps.currentTownId, deps.currentAreaId, deps.tileX, deps.tileY)
       : null;
@@ -516,7 +617,8 @@ export function drawTile(
   tileX,
   tileY,
   getBuilding,
-  getTileAt
+  getTileAt,
+  getSprite
 ) {
   if (getBuilding) {
     const building = getBuilding(currentTownId, currentAreaId, tileX, tileY);
@@ -543,6 +645,7 @@ export function drawTile(
     tileX,
     tileY,
     getBuilding,
-    getTileAt
+    getTileAt,
+    getSprite
   });
 }

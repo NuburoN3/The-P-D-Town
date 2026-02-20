@@ -26,6 +26,7 @@ export function createInputBindings({
   openSettingsFromPauseMenu,
   returnToPauseMenu,
   openPauseMenu,
+  isInputLocked = () => false,
   isFreeExploreState,
   updateMenuHoverStateFromMouse,
   clearMenuHoverState,
@@ -184,7 +185,20 @@ export function createInputBindings({
     canvas.addEventListener("click", (e) => {
       if (e.button !== 0) return;
       updateMouseUiPosition(e);
+      if (isInputLocked()) {
+        e.preventDefault();
+        return;
+      }
       const gameState = getGameState();
+      const dialogueActive = Boolean(
+        dialogue &&
+        typeof dialogue.isActive === "function" &&
+        dialogue.isActive()
+      );
+      if (dialogueActive || choiceState.active) {
+        e.preventDefault();
+        return;
+      }
       if (gameState === gameStates.INVENTORY) {
         mouseUiState.inventoryClickRequest = true;
         e.preventDefault();
@@ -249,21 +263,27 @@ export function createInputBindings({
       if (choiceState.active) return;
       const key = normalizeInputKey(e.key);
       const gameState = getGameState();
-
-      if (
+      const dialogueActive = Boolean(
         dialogue &&
         typeof dialogue.isActive === "function" &&
-        dialogue.isActive() &&
-        !choiceState.active &&
-        input.matchesActionKey("attack", key) &&
-        !e.repeat
-      ) {
-        if (typeof dialogue.isCurrentPageFullyVisible === "function" && !dialogue.isCurrentPageFullyVisible()) {
-          dialogue.revealCurrentPage();
-        } else if (typeof dialogue.advance === "function") {
-          dialogue.advance();
-        }
+        dialogue.isActive()
+      );
+      if (isInputLocked()) {
         input.clearAttackPressed();
+        input.clearInteractPressed();
+        input.clearPausePressed();
+        e.preventDefault();
+        return;
+      }
+
+      if (dialogueActive && !e.repeat && input.matchesActionKey("attack", key)) {
+        input.clearAttackPressed();
+        e.preventDefault();
+        return;
+      }
+
+      if (dialogueActive && !e.repeat && isPauseKey(key)) {
+        input.clearPausePressed();
         e.preventDefault();
         return;
       }
@@ -382,7 +402,12 @@ export function createInputBindings({
         }
       }
 
-      if ((key === "enter" || key === "escape" || isPauseKey(key)) && !e.repeat && isFreeExploreState(gameState)) {
+      if (
+        (key === "enter" || key === "escape" || isPauseKey(key)) &&
+        !e.repeat &&
+        isFreeExploreState(gameState) &&
+        !dialogueActive
+      ) {
         openPauseMenu();
       }
     });

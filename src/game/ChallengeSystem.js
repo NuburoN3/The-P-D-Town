@@ -61,8 +61,14 @@ export function createChallengeSystem({ tileSize, vfxSystem }) {
   }
 
   function handleBogTrialDefeat({ player, itemAlert }, tp, enemy, now, outcome) {
-    if (!enemy?.countsForBogTrial) return;
+    const enemyId = typeof enemy?.id === "string" ? enemy.id.toLowerCase() : "";
+    const enemyName = typeof enemy?.name === "string" ? enemy.name.toLowerCase() : "";
+    const enemyWorld = typeof enemy?.world === "string" ? enemy.world : "";
+    const isBogOgre = enemyWorld === "bogland" && (enemyId.includes("ogre") || enemyName.includes("ogre"));
+    const countsForBogQuest = Boolean(enemy?.countsForBogTrial) || isBogOgre;
+    if (!countsForBogQuest) return;
     if (!tp.membershipAwarded || !tp.bogQuestActive || tp.bogQuestCompleted) {
+      if (enemy.respawnMode === "townReentry") return;
       resetEnemyToSpawn(enemy, now);
       return;
     }

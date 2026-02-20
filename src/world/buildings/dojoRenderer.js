@@ -1,3 +1,40 @@
+let dojoEntryWallSprite = null;
+let dojoEntryWallSpriteLoaded = false;
+let dojoBackWallSprite = null;
+let dojoBackWallSpriteLoaded = false;
+let dojoRoofSprite = null;
+let dojoRoofSpriteLoaded = false;
+
+function getDojoEntryWallSprite() {
+  if (dojoEntryWallSpriteLoaded) return dojoEntryWallSprite;
+  dojoEntryWallSpriteLoaded = true;
+  if (typeof Image === "undefined") return null;
+  const img = new Image();
+  img.src = "assets/sprites/Dojo Entry_Wall.png";
+  dojoEntryWallSprite = img;
+  return dojoEntryWallSprite;
+}
+
+function getDojoBackWallSprite() {
+  if (dojoBackWallSpriteLoaded) return dojoBackWallSprite;
+  dojoBackWallSpriteLoaded = true;
+  if (typeof Image === "undefined") return null;
+  const img = new Image();
+  img.src = "assets/sprites/outside_Dojo_Back_wall.png";
+  dojoBackWallSprite = img;
+  return dojoBackWallSprite;
+}
+
+function getDojoRoofSprite() {
+  if (dojoRoofSpriteLoaded) return dojoRoofSprite;
+  dojoRoofSpriteLoaded = true;
+  if (typeof Image === "undefined") return null;
+  const img = new Image();
+  img.src = "assets/sprites/Outside Dojo Roof.png";
+  dojoRoofSprite = img;
+  return dojoRoofSprite;
+}
+
 export function createDojoRenderer(ctx, tileSize) {
   return {
     renderTile(x, y, tileX, tileY, isTopRow, isBottomRow, isLeftCol, isRightCol, building) {
@@ -7,9 +44,6 @@ export function createDojoRenderer(ctx, tileSize) {
       const rightEntranceCol = center;
       const isEntranceColumn = localX === leftEntranceCol || localX === rightEntranceCol;
 
-      const roofEdge = "#521814";
-      const roofMid = "#7e2922";
-      const roofLight = "#b74a3a";
       const roofShadow = "rgba(16,10,8,0.5)";
       const wallWoodDark = "#4b311f";
       const wallWoodMid = "#69452d";
@@ -30,41 +64,15 @@ export function createDojoRenderer(ctx, tileSize) {
         ctx.fillRect(x + 1, y + py, tileSize - 2, 1);
       }
 
-      // Temple roof drawn once: 2 tiles tall, 1 tile overhang on each side.
-      // Keep silhouette flatter so the dojo reads grounded and wide.
+      // Temple roof drawn once with 1 tile overhang on each side.
       if (isTopRow && isLeftCol) {
         const roofX = x - tileSize;
-        const roofTop = y - tileSize * 2;
+        const roofTop = y - tileSize;
         const roofW = (building.width + 2) * tileSize;
-
-        // Lower roof mass reaches wall top so it doesn't float.
-        ctx.fillStyle = roofMid;
-        ctx.fillRect(roofX + 8, roofTop + 38, roofW - 16, 20);
-        ctx.fillStyle = roofEdge;
-        ctx.fillRect(roofX, roofTop + 48, roofW, 16);
-
-        // Upper slope and ridge highlight.
-        ctx.fillStyle = roofEdge;
-        ctx.fillRect(roofX + 14, roofTop + 28, roofW - 28, 10);
-        ctx.fillStyle = roofMid;
-        ctx.fillRect(roofX + 20, roofTop + 22, roofW - 40, 8);
-        ctx.fillStyle = roofLight;
-        ctx.fillRect(roofX + 26, roofTop + 24, roofW - 52, 3);
-
-        // Slight curved slope hint using side wedges.
-        ctx.fillStyle = roofEdge;
-        ctx.beginPath();
-        ctx.moveTo(roofX, roofTop + 48);
-        ctx.lineTo(roofX + 14, roofTop + 36);
-        ctx.lineTo(roofX + 14, roofTop + 62);
-        ctx.closePath();
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(roofX + roofW, roofTop + 48);
-        ctx.lineTo(roofX + roofW - 14, roofTop + 36);
-        ctx.lineTo(roofX + roofW - 14, roofTop + 62);
-        ctx.closePath();
-        ctx.fill();
+        const roofSprite = getDojoRoofSprite();
+        if (roofSprite && (roofSprite.width > 0 || roofSprite.complete)) {
+          ctx.drawImage(roofSprite, roofX, roofTop, roofW, tileSize);
+        }
       }
 
       // Dark shadow line under roof eaves.
@@ -108,29 +116,40 @@ export function createDojoRenderer(ctx, tileSize) {
         ctx.strokeRect(x + 11.5, y + 21.5, 9, 5);
       }
 
-      if (isBottomRow) {
-        // Wall base above front engawa.
-        ctx.fillStyle = wallWoodDark;
-        ctx.fillRect(x, y + 24, tileSize, 2);
-
-        if (isEntranceColumn) {
-          // Wide sliding entrance framing (actual DOOR tile visuals are handled in TileSystem).
-          ctx.fillStyle = "#4f3424";
-          ctx.fillRect(x + 4, y + 10, 24, 14);
-          ctx.fillStyle = "#6f4a34";
-          ctx.fillRect(x + 6, y + 12, 20, 10);
-        } else {
-          ctx.fillStyle = wallWoodDark;
-          ctx.fillRect(x + 8, y + 12, 16, 12);
+      // Replace the row directly above aura entry tiles with sprite art.
+      if (isTopRow && isRightCol) {
+        const backWallSprite = getDojoBackWallSprite();
+        if (backWallSprite && (backWallSprite.width > 0 || backWallSprite.complete)) {
+          const drawX = x - (building.width - 1) * tileSize;
+          ctx.drawImage(backWallSprite, drawX, y, building.width * tileSize, tileSize);
         }
       }
 
-      ctx.strokeStyle = "rgba(43, 25, 16, 0.95)";
-      ctx.lineWidth = 1.25;
-      ctx.strokeRect(x, y, tileSize, tileSize);
-      ctx.strokeStyle = "rgba(255,255,255,0.2)";
-      ctx.lineWidth = 0.5;
-      ctx.strokeRect(x + 1, y + 1, tileSize - 2, tileSize - 2);
+      if (isBottomRow) {
+        // Replace the full dojo front bottom row (walls + entry span) with sprite art.
+        if (isRightCol) {
+          const entryWallSprite = getDojoEntryWallSprite();
+          if (entryWallSprite && (entryWallSprite.width > 0 || entryWallSprite.complete)) {
+            const drawX = x - (building.width - 1) * tileSize;
+            ctx.drawImage(entryWallSprite, drawX, y, building.width * tileSize, tileSize);
+          }
+        }
+
+        // Make the 3 center front tiles match the dojo interior floor when entering/leaving.
+        const middleStart = Math.floor((building.width - 3) / 2);
+        const isMiddleFrontFloorTile = localX >= middleStart && localX < middleStart + 3;
+        if (isMiddleFrontFloorTile) {
+          const seed = ((tileX * 73856093) ^ (tileY * 19349663)) >>> 0;
+          ctx.fillStyle = "#6f5a4c";
+          ctx.fillRect(x, y, tileSize + 1, tileSize + 1);
+          ctx.fillStyle = "rgba(245, 225, 199, 0.06)";
+          ctx.fillRect(x + 3 + (seed % 22), y + 6 + ((seed >>> 5) % 18), 2, 1);
+          ctx.fillStyle = "rgba(45, 30, 24, 0.07)";
+          ctx.fillRect(x + 4 + ((seed >>> 9) % 20), y + 8 + ((seed >>> 14) % 16), 2, 1);
+        }
+      }
+
+      // Intentionally no per-tile stroke on dojo exterior: keeps facade seamless.
     }
   };
 }

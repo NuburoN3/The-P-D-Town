@@ -184,7 +184,10 @@ export function createRuntimeStateHandlers({
     if (event.type === "entityDamaged") {
       triggerHitstop(52);
       triggerCameraShake(2.8, 120);
-      musicManager.playSfx("hitImpact");
+      const targetId = typeof event?.target?.id === "string" ? event.target.id.toLowerCase() : "";
+      const targetName = typeof event?.target?.name === "string" ? event.target.name.toLowerCase() : "";
+      const isOgreTarget = targetId.includes("ogre") || targetName.includes("ogre");
+      musicManager.playSfx(isOgreTarget ? "ogreHurt" : "hitImpact");
       return;
     }
 

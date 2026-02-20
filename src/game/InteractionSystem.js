@@ -45,6 +45,9 @@ export function createInteractionSystem({
   showDialogue,
   openYesNoChoice,
   advanceDialogue,
+  pauseDialogueAdvance = () => { },
+  lockInteractionInput = () => { },
+  isInteractionLocked = () => false,
   getInteractPressed,
   clearInteractPressed,
   syncObjectiveState = () => { },
@@ -93,6 +96,8 @@ export function createInteractionSystem({
     musicManager,
     showDialogue,
     openYesNoChoice,
+    pauseDialogueAdvance,
+    lockInteractionInput,
     spawnVisualEffect,
     getTownProgress: getCurrentTownProgress,
     handleFeatureNPCInteraction,
@@ -157,6 +162,10 @@ export function createInteractionSystem({
     }
 
     if (!getInteractPressed()) return;
+    if (isInteractionLocked()) {
+      clearInteractPressed();
+      return;
+    }
 
     if (isDialogueActive()) {
       advanceDialogue();

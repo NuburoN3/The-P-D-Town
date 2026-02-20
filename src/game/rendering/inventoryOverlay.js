@@ -32,6 +32,12 @@ const ITEM_METADATA = Object.freeze({
     description: "Proof of acceptance in Hanami dojo ranks.",
     usage: "Unlocks later story progression",
     equipSlot: null
+  },
+  "Kendo Stick": {
+    category: "Gear",
+    description: "A sturdy practice weapon granted by Mr. Hanami.",
+    usage: "Equip in Weapon slot",
+    equipSlot: "weapon"
   }
 });
 
@@ -52,7 +58,7 @@ function inferEquipSlot(itemName) {
   if (/(headband|helm|helmet|hood|hat|crown|headgear)/.test(lower)) return "head";
   if (/(armor|armour|chest|robe|coat|vest|torso)/.test(lower)) return "torso";
   if (/(shield|buckler)/.test(lower)) return "shield";
-  if (/(sword|blade|staff|bow|dagger|spear|mace|weapon)/.test(lower)) return "weapon";
+  if (/(sword|blade|staff|bow|dagger|spear|mace|weapon|stick|kendo)/.test(lower)) return "weapon";
   if (/(pants|trousers|leggings|greaves|legs)/.test(lower)) return "legs";
   if (/(boots|shoes|sandals|feet)/.test(lower)) return "feet";
   return null;
@@ -826,6 +832,22 @@ function drawLeftoversLootOverlay(ctx, state, canvas, colors, getItemSprite) {
   const closeButtonHovered = mouseInsideCanvas && isPointInsideExpandedRect(
     mouseX, mouseY, closeButtonX, closeButtonY, closeButtonW, closeButtonH, 0
   );
+  const clickInsideInventoryPanel = mouseInsideCanvas && isPointInsideExpandedRect(
+    mouseX, mouseY, inventoryPanelX, inventoryPanelY - tabH, inventoryPanelW, inventoryPanelH + tabH, 0
+  );
+  const clickInsideLootPanel = mouseInsideCanvas && isPointInsideExpandedRect(
+    mouseX, mouseY, lootPanelX, lootPanelY - tabH, lootPanelW, lootPanelH + tabH, 0
+  );
+  if (
+    mouseUiState?.inventoryClickRequest &&
+    mouseInsideCanvas &&
+    !clickInsideInventoryPanel &&
+    !clickInsideLootPanel
+  ) {
+    leftoversUiState.requestCloseInventory = true;
+    mouseUiState.inventoryClickRequest = false;
+    mouseUiState.inventoryDoubleClickRequest = false;
+  }
   if (
     mouseUiState?.inventoryDragStartRequest &&
     !mouseUiState.inventoryDragItemName &&
@@ -1327,6 +1349,22 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     pagerRightRect.h,
     0
   );
+  const inventoryClickInsideInventoryPanel = mouseInsideCanvas && isPointInsideExpandedRect(
+    mouseX, mouseY, inventoryPanelX, inventoryPanelY - titlePlateH, inventoryPanelW, inventoryPanelH + titlePlateH, 0
+  );
+  const inventoryClickInsideEquipmentPanel = mouseInsideCanvas && isPointInsideExpandedRect(
+    mouseX, mouseY, equipmentPanelX, equipmentPanelY - equipmentTitleH, equipmentPanelW, equipmentPanelH + equipmentTitleH, 0
+  );
+  if (
+    mouseUiState?.inventoryClickRequest &&
+    mouseInsideCanvas &&
+    !inventoryClickInsideInventoryPanel &&
+    !inventoryClickInsideEquipmentPanel
+  ) {
+    state.leftoversUiState.requestCloseInventory = true;
+    mouseUiState.inventoryClickRequest = false;
+    mouseUiState.inventoryDoubleClickRequest = false;
+  }
   const inventoryTabHovered = mouseInsideCanvas && isPointInsideExpandedRect(
     mouseX,
     mouseY,

@@ -87,11 +87,18 @@ export function createNPCInteractionHandler({
   musicManager,
   showDialogue,
   openYesNoChoice,
+  pauseDialogueAdvance = () => { },
+  lockInteractionInput = () => { },
   spawnVisualEffect,
   getTownProgress,
   handleFeatureNPCInteraction,
   syncObjectiveState = () => { }
 }) {
+  const ITEM_DIALOGUE_PAUSE_MS = 2000;
+  const queueItemDialogueAutoContinue = () => {
+    pauseDialogueAdvance(ITEM_DIALOGUE_PAUSE_MS, { autoAdvance: true });
+  };
+
   function normalizeProgressState(tp) {
     normalizeGlobalStoryFlags(gameFlags);
     const normalized = normalizeTownProgress(tp);
@@ -253,10 +260,7 @@ export function createNPCInteractionHandler({
     nextTp.membershipAwarded = true;
     syncObjectiveState();
 
-    showDialogue(npcName, [
-      trainingContent.enduranceCompleteDialogue,
-      trainingContent.membershipCardGiveDialogue
-    ], () => {
+    const awardMembershipCard = () => {
       if (!playerInventory[trainingContent.membershipCardItemName]) {
         playerInventory[trainingContent.membershipCardItemName] = 1;
       }
@@ -276,11 +280,33 @@ export function createNPCInteractionHandler({
       try {
         musicManager.playSfx("itemUnlock");
       } catch (_) { }
+    };
 
-      // Story beat: after awarding the dojo card, Hanami departs the dojo.
-      gameFlags.hanamiDojoExitPending = true;
-      gameFlags.hanamiLeftDojo = false;
+    showDialogue(npcName, [
+      trainingContent.enduranceCompleteDialogue,
+      trainingContent.membershipCardGiveDialogue
+    ], () => {
+      awardMembershipCard();
+      lockInteractionInput(ITEM_DIALOGUE_PAUSE_MS);
+      setTimeout(() => {
+        showDialogue(npcName, [
+          "I award you your dojo membership badge!",
+          "Use this for access to various areas on your travels.",
+          "Now come, follow me."
+        ], () => {
+          // Story beat: after awarding the dojo card, Hanami departs the dojo.
+          gameFlags.hanamiDojoExitPending = true;
+          gameFlags.hanamiLeftDojo = false;
+        });
+        queueItemDialogueAutoContinue();
+      }, ITEM_DIALOGUE_PAUSE_MS);
     });
+  }
+
+  function applyBogQuestState(overrides = {}) {
+    const nextTp = normalizeProgressState(getTownProgress());
+    Object.assign(nextTp, overrides);
+    return nextTp;
   }
 
   function startInvestigationRoute(npcName) {
@@ -302,6 +328,32 @@ export function createNPCInteractionHandler({
     syncObjectiveState();
   }
 
+  function awardBogQuestReward(tp) {
+    if (tp.bogQuestRewardAwarded) return;
+    const rewardItemName = String(trainingContent?.bogQuest?.rewardItemName || "Kendo Stick");
+    if (!playerInventory[rewardItemName]) {
+      playerInventory[rewardItemName] = 1;
+    } else {
+      playerInventory[rewardItemName] += 1;
+    }
+    tp.bogQuestRewardAwarded = true;
+    itemAlert.active = true;
+    itemAlert.text = trainingContent?.bogQuest?.rewardUnlockMessage || `Received: ${rewardItemName}`;
+    itemAlert.startedAt = performance.now();
+    inventoryHint.active = true;
+    inventoryHint.startedAt = performance.now();
+    inventoryHint.durationMs = 5000;
+    inventoryHint.itemName = rewardItemName;
+    spawnVisualEffect("pickupGlow", {
+      x: player.x + tileSize / 2,
+      y: player.y + tileSize * 0.4,
+      size: 34
+    });
+    try {
+      musicManager.playSfx("itemUnlock");
+    } catch (_) { }
+  }
+
   function handleBoglandHanamiInteraction(npc, tp) {
     if (!tp.membershipAwarded) {
       showDialogue(npc.name, [
@@ -312,29 +364,42 @@ export function createNPCInteractionHandler({
     }
 
     if (!tp.bogQuestOffered) {
-      tp.bogQuestOffered = true;
-      tp.bogQuestActive = false;
-      tp.bogQuestCompleted = false;
-      tp.bogQuestReported = false;
-      tp.bogQuestTarget = getBogQuestTarget(tp, trainingContent);
-      tp.bogQuestKills = 0;
+      applyBogQuestState({
+        bogQuestOffered: true,
+        bogQuestActive: false,
+        bogQuestCompleted: false,
+        bogQuestReported: false,
+        bogQuestTarget: getBogQuestTarget(tp, trainingContent),
+        bogQuestKills: 0
+      });
+      syncObjectiveState();
 
       const promptLines = Array.isArray(trainingContent?.bogQuest?.startPromptLines)
         ? trainingContent.bogQuest.startPromptLines
         : [
           "Welcome to Bogland. Here, discipline rots unless you hold your center.",
-          "Will you clear three corrupted bog stalkers?"
+          "Your first task here is to defeat 3 ogres. It will be a little more of a fierce challenge.",
+          "Will you take it?"
         ];
 
       showDialogue(npc.name, promptLines, () => {
         openYesNoChoice((selectedOption) => {
           if (selectedOption === "Yes") {
-            tp.bogQuestActive = true;
+            applyBogQuestState({
+              bogQuestOffered: true,
+              bogQuestActive: true,
+              bogQuestCompleted: false,
+              bogQuestReported: false,
+              bogQuestTarget: getBogQuestTarget(tp, trainingContent),
+              bogQuestKills: 0
+            });
             const acceptedLines = Array.isArray(trainingContent?.bogQuest?.acceptedLines)
               ? trainingContent.bogQuest.acceptedLines
-              : ["Good. Clear the bog stalkers, then return to me."];
-            showDialogue(npc.name, acceptedLines);
+              : ["Good. Defeat 3 ogres, then return to me."];
             syncObjectiveState();
+            showDialogue(npc.name, acceptedLines, () => {
+              syncObjectiveState();
+            });
           } else {
             const declinedLines = Array.isArray(trainingContent?.bogQuest?.declinedLines)
               ? trainingContent.bogQuest.declinedLines
@@ -347,23 +412,57 @@ export function createNPCInteractionHandler({
     }
 
     if (tp.bogQuestCompleted && !tp.bogQuestReported) {
-      tp.bogQuestReported = true;
-      tp.bogQuestActive = false;
+      applyBogQuestState({
+        bogQuestReported: true,
+        bogQuestActive: false
+      });
       itemAlert.active = true;
       itemAlert.text = trainingContent?.bogQuest?.completeNotice || "Bog trial complete. Report accepted.";
       itemAlert.startedAt = performance.now();
-      const reportLines = Array.isArray(trainingContent?.bogQuest?.reportLines)
+      let reportLines = Array.isArray(trainingContent?.bogQuest?.reportLines)
         ? trainingContent.bogQuest.reportLines
         : [
           "Well done. You held your discipline in Bogland.",
           "Return to town and keep preparing."
         ];
-      showDialogue(npc.name, reportLines);
+      const explicitAwardPattern = /(award|take)\b.*\bkendo stick\b/i;
+      if (!reportLines.some((line) => explicitAwardPattern.test(String(line || "")))) {
+        reportLines = [
+          ...reportLines.slice(0, 1),
+          "You have earned it. I now award you this Kendo Stick.",
+          ...reportLines.slice(1)
+        ];
+      }
+      const awardLineIndex = reportLines.findIndex((line) => explicitAwardPattern.test(String(line || "")));
+      const introLines = awardLineIndex >= 0 ? reportLines.slice(0, awardLineIndex + 1) : reportLines;
+      const postAwardLines = awardLineIndex >= 0 ? reportLines.slice(awardLineIndex + 1) : [];
+      setTimeout(() => {
+        showDialogue(npc.name, introLines, () => {
+          awardBogQuestReward(tp);
+          if (postAwardLines.length > 0) {
+            setTimeout(() => {
+              showDialogue(npc.name, postAwardLines);
+              queueItemDialogueAutoContinue();
+            }, ITEM_DIALOGUE_PAUSE_MS);
+            lockInteractionInput(ITEM_DIALOGUE_PAUSE_MS);
+            return;
+          }
+          queueItemDialogueAutoContinue();
+        });
+      }, ITEM_DIALOGUE_PAUSE_MS);
+      lockInteractionInput(ITEM_DIALOGUE_PAUSE_MS);
+      syncObjectiveState();
       return;
     }
 
     if (tp.bogQuestActive && !tp.bogQuestCompleted) {
-      showDialogue(npc.name, [formatBogProgressText(tp, trainingContent)]);
+      const inProgressLines = Array.isArray(trainingContent?.bogQuest?.inProgressLines)
+        ? trainingContent.bogQuest.inProgressLines
+        : ["Finish your challenge first.", "Defeat 3 ogres, then return to me."];
+      showDialogue(npc.name, [
+        ...inProgressLines,
+        formatBogProgressText(tp, trainingContent)
+      ]);
       return;
     }
 
@@ -371,14 +470,24 @@ export function createNPCInteractionHandler({
       showDialogue(npc.name, ["Are you ready to begin the Bogland trial now?"], () => {
         openYesNoChoice((selectedOption) => {
           if (selectedOption === "Yes") {
-            tp.bogQuestActive = true;
+            applyBogQuestState({
+              bogQuestOffered: true,
+              bogQuestActive: true,
+              bogQuestCompleted: false,
+              bogQuestReported: false,
+              bogQuestTarget: getBogQuestTarget(tp, trainingContent),
+              bogQuestKills: 0
+            });
+            syncObjectiveState();
             showDialogue(
               npc.name,
               Array.isArray(trainingContent?.bogQuest?.acceptedLines)
                 ? trainingContent.bogQuest.acceptedLines
-                : ["Good. Clear the bog stalkers, then return to me."]
+                : ["Good. Defeat 3 ogres, then return to me."],
+              () => {
+                syncObjectiveState();
+              }
             );
-            syncObjectiveState();
           } else {
             showDialogue(
               npc.name,
@@ -536,9 +645,14 @@ export function createNPCInteractionHandler({
             try {
               musicManager.playSfx("itemUnlock");
             } catch (_) { }
+            setTimeout(() => {
+              showDialogue(npc.name, trainingContent.itemReceivedMessage);
+              queueItemDialogueAutoContinue();
+            }, ITEM_DIALOGUE_PAUSE_MS);
+            lockInteractionInput(ITEM_DIALOGUE_PAUSE_MS);
+          } else {
+            showDialogue(npc.name, trainingContent.itemReceivedMessage);
           }
-
-          showDialogue(npc.name, trainingContent.itemReceivedMessage);
           syncObjectiveState();
         } else {
           showDialogue(npc.name, trainingContent.declineDialogue);

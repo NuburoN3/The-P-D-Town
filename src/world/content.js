@@ -61,23 +61,31 @@ export const GAME_CONTENT = {
     },
     bogQuest: {
       targetKills: 3,
+      rewardItemName: "Kendo Stick",
+      rewardUnlockMessage: "Received: Kendo Stick",
       startPromptLines: [
         "You made it. This is Bogland, where old training grounds rot into mire.",
         "I need proof you can hold discipline in decay, not just in clean halls.",
-        "Will you clear three corrupted bog stalkers for me?"
+        "Your first task here is to defeat 3 ogres. It will be a little more of a fierce challenge.",
+        "Will you take it?"
       ],
       acceptedLines: [
         "Good. Keep your stance grounded and your breathing slow.",
-        "Defeat three bog stalkers, then report to me here."
+        "Defeat 3 ogres, then report to me here."
       ],
       declinedLines: [
         "Then observe the swamp first.",
         "When your resolve is steady, ask me again."
       ],
+      inProgressLines: [
+        "Finish your challenge first.",
+        "Defeat 3 ogres, then return to me."
+      ],
       progressTemplate: "Bog trial progress: {kills}/{target}.",
       completeNotice: "Bog trial complete. Report to Mr. Hanami.",
       reportLines: [
         "Well done. You kept your center in the foulest part of this region.",
+        "Take this Kendo Stick and continue your training.",
         "Taiko will test more than your strength when he returns.",
         "There is a truth about him I have withheld. You will hear it when the final trial begins."
       ],
