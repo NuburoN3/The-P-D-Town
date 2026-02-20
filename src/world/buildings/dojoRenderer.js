@@ -4,6 +4,8 @@ let dojoBackWallSprite = null;
 let dojoBackWallSpriteLoaded = false;
 let dojoRoofSprite = null;
 let dojoRoofSpriteLoaded = false;
+let dojoMiddleOverhangSprite = null;
+let dojoMiddleOverhangSpriteLoaded = false;
 
 function getDojoEntryWallSprite() {
   if (dojoEntryWallSpriteLoaded) return dojoEntryWallSprite;
@@ -33,6 +35,16 @@ function getDojoRoofSprite() {
   img.src = "assets/sprites/Outside Dojo Roof.png";
   dojoRoofSprite = img;
   return dojoRoofSprite;
+}
+
+function getDojoMiddleOverhangSprite() {
+  if (dojoMiddleOverhangSpriteLoaded) return dojoMiddleOverhangSprite;
+  dojoMiddleOverhangSpriteLoaded = true;
+  if (typeof Image === "undefined") return null;
+  const img = new Image();
+  img.src = "assets/sprites/Dojo Middle Overhang.png";
+  dojoMiddleOverhangSprite = img;
+  return dojoMiddleOverhangSprite;
 }
 
 export function createDojoRenderer(ctx, tileSize) {
@@ -72,6 +84,17 @@ export function createDojoRenderer(ctx, tileSize) {
         const roofSprite = getDojoRoofSprite();
         if (roofSprite && (roofSprite.width > 0 || roofSprite.complete)) {
           ctx.drawImage(roofSprite, roofX, roofTop, roofW, tileSize);
+        }
+
+        // Mid-façade overhang on the second floor.
+        // Drawn here so the existing foreground occluder redraw can place it in front of the player.
+        const middleOverhangSprite = getDojoMiddleOverhangSprite();
+        if (middleOverhangSprite && (middleOverhangSprite.width > 0 || middleOverhangSprite.complete)) {
+          const overhangW = (building.width + 3) * tileSize;
+          const overhangH = Math.max(1, Math.round(tileSize * 0.5));
+          const overhangX = x - tileSize - Math.floor(tileSize * 0.5);
+          const overhangY = y + tileSize - Math.floor(overhangH * 0.5);
+          ctx.drawImage(middleOverhangSprite, overhangX, overhangY, overhangW, overhangH);
         }
       }
 

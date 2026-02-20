@@ -864,6 +864,161 @@ function drawCombatLevelHud(ctx, state, colors) {
   ctx.fillText(xpText, xpTextX, xpTextY);
 }
 
+function drawCombatLevelCelebrationOverlay(ctx, state) {
+  if (!isFreeExploreState(state.gameState)) return;
+
+  const startedAt = Number.isFinite(state.playerStats?.combatLevelCelebrationStartedAt)
+    ? state.playerStats.combatLevelCelebrationStartedAt
+    : 0;
+  if (startedAt <= 0) return;
+
+  const reachedLevel = Number.isFinite(state.playerStats?.combatLevelCelebrationLevel)
+    ? Math.max(1, Math.floor(state.playerStats.combatLevelCelebrationLevel))
+    : 1;
+  const levelsGained = Number.isFinite(state.playerStats?.combatLevelCelebrationLevelsGained)
+    ? Math.max(1, Math.floor(state.playerStats.combatLevelCelebrationLevelsGained))
+    : 1;
+  const now = performance.now();
+  const elapsed = now - startedAt;
+  const newLevelDurationMs = 2000;
+  const levelCardDurationMs = 7000;
+  const totalDurationMs = newLevelDurationMs + levelCardDurationMs;
+  if (elapsed < 0 || elapsed > totalDurationMs) return;
+
+  const cx = ctx.canvas.width * 0.5;
+  const cy = ctx.canvas.height * 0.5;
+
+  const pyroFadeIn = clamp01(elapsed / 240);
+  const pyroFadeOut = 1 - clamp01((elapsed - (totalDurationMs - 760)) / 760);
+  const pyroAlpha = Math.max(0, Math.min(1, pyroFadeIn * pyroFadeOut));
+  if (pyroAlpha > 0.01) {
+    const burstCount = Math.min(34, 20 + levelsGained * 3);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    for (let i = 0; i < burstCount; i++) {
+      const cycleMs = 880 + (i % 5) * 140;
+      const cycleT = ((elapsed + i * 91) % cycleMs) / cycleMs;
+      const ringRadius = 56 + cycleT * 238;
+      const swirl = elapsed * (0.0011 + (i % 4) * 0.00017);
+      const angle = i * 0.51 + swirl;
+      const px = cx + Math.cos(angle) * ringRadius;
+      const py = cy + Math.sin(angle * 1.14) * (26 + cycleT * 132) - cycleT * 116;
+      const sparkSize = Math.max(1.2, 5.4 * (1 - cycleT));
+      const sparkAlpha = (1 - cycleT) * pyroAlpha * (0.42 + ((i % 4) * 0.14));
+      const sparkColor = i % 3 === 0
+        ? `rgba(255, 226, 142, ${sparkAlpha.toFixed(3)})`
+        : i % 3 === 1
+          ? `rgba(255, 162, 110, ${sparkAlpha.toFixed(3)})`
+          : `rgba(173, 221, 255, ${sparkAlpha.toFixed(3)})`;
+
+      ctx.fillStyle = sparkColor;
+      ctx.beginPath();
+      ctx.arc(px, py, sparkSize, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = sparkColor;
+      ctx.lineWidth = Math.max(1, sparkSize * 0.35);
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px - Math.cos(angle) * (8 + cycleT * 18), py + (6 + cycleT * 12));
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  const textSizeScale = 0.5;
+  const newLevelFontPx = Math.round(Math.max(68, Math.min(124, Math.round(ctx.canvas.width * 0.1))) * textSizeScale);
+  if (elapsed <= newLevelDurationMs) {
+    const inAlpha = clamp01(elapsed / 340);
+    const outAlpha = 1 - clamp01((elapsed - 1360) / 640);
+    const alpha = Math.max(0, Math.min(1, inAlpha * outAlpha));
+    if (alpha > 0.01) {
+      const text = "NEW LEVEL";
+      const popT = clamp01(elapsed / 560);
+      const textScale = 0.9 + easeOutBack(popT) * 0.2;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(cx, cy);
+      ctx.scale(textScale, textScale);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `900 ${newLevelFontPx}px 'Cinzel', 'Palatino Linotype', 'Book Antiqua', serif`;
+
+      const glow = ctx.createRadialGradient(0, 0, 12, 0, 0, newLevelFontPx * 1.7);
+      glow.addColorStop(0, "rgba(255, 233, 163, 0.4)");
+      glow.addColorStop(1, "rgba(255, 233, 163, 0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(-newLevelFontPx * 2.4, -newLevelFontPx * 1.25, newLevelFontPx * 4.8, newLevelFontPx * 2.5);
+
+      ctx.lineWidth = Math.max(3, Math.round(newLevelFontPx * 0.1));
+      ctx.strokeStyle = "rgba(31, 17, 7, 0.62)";
+      ctx.strokeText(text, 0, 0);
+      const fill = ctx.createLinearGradient(0, -newLevelFontPx, 0, newLevelFontPx * 0.4);
+      fill.addColorStop(0, "rgba(255, 255, 255, 0.98)");
+      fill.addColorStop(0.34, "rgba(255, 238, 176, 0.98)");
+      fill.addColorStop(0.72, "rgba(255, 194, 121, 0.96)");
+      fill.addColorStop(1, "rgba(179, 101, 48, 0.96)");
+      ctx.fillStyle = fill;
+      ctx.fillText(text, 0, 0);
+      ctx.restore();
+    }
+    return;
+  }
+
+  const levelElapsed = elapsed - newLevelDurationMs;
+  if (levelElapsed < 0 || levelElapsed > levelCardDurationMs) return;
+  const levelAlphaIn = clamp01(levelElapsed / 280);
+  const levelAlphaOut = 1 - clamp01((levelElapsed - 3000) / 4000);
+  const levelAlpha = Math.max(0, Math.min(1, levelAlphaIn * levelAlphaOut));
+  if (levelAlpha <= 0.01) return;
+
+  const titleText = `LEVEL ${reachedLevel}`;
+  const titleFontPx = Math.round(Math.max(62, Math.min(112, Math.round(ctx.canvas.width * 0.088))) * textSizeScale);
+  const shineProgress = ((levelElapsed % 1800) / 1800);
+  const shineX = cx - titleFontPx * 2.2 + titleFontPx * 4.4 * shineProgress;
+
+  ctx.save();
+  ctx.globalAlpha = levelAlpha;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `700 italic ${titleFontPx}px 'Cinzel', 'Palatino Linotype', 'Book Antiqua', serif`;
+
+  const backdrop = ctx.createRadialGradient(cx, cy, titleFontPx * 0.24, cx, cy, titleFontPx * 2.25);
+  backdrop.addColorStop(0, "rgba(14, 10, 7, 0.24)");
+  backdrop.addColorStop(1, "rgba(14, 10, 7, 0)");
+  ctx.fillStyle = backdrop;
+  ctx.fillRect(cx - titleFontPx * 2.8, cy - titleFontPx * 1.4, titleFontPx * 5.6, titleFontPx * 2.8);
+
+  ctx.lineWidth = Math.max(2, Math.round(titleFontPx * 0.065));
+  ctx.strokeStyle = "rgba(22, 14, 8, 0.6)";
+  ctx.strokeText(titleText, cx, cy);
+
+  const reflective = ctx.createLinearGradient(cx, cy - titleFontPx, cx, cy + titleFontPx * 0.45);
+  reflective.addColorStop(0, "rgba(255,255,255,0.99)");
+  reflective.addColorStop(0.3, "rgba(255,244,201,0.99)");
+  reflective.addColorStop(0.5, "rgba(255,218,143,0.99)");
+  reflective.addColorStop(0.74, "rgba(228,152,84,0.97)");
+  reflective.addColorStop(1, "rgba(139,83,46,0.96)");
+  ctx.fillStyle = reflective;
+  ctx.fillText(titleText, cx, cy);
+
+  const textWidth = ctx.measureText(titleText).width;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(cx - textWidth * 0.55, cy - titleFontPx * 0.9, textWidth * 1.1, titleFontPx * 1.3);
+  ctx.clip();
+  const shimmer = ctx.createLinearGradient(shineX - 90, cy - titleFontPx, shineX + 30, cy + titleFontPx);
+  shimmer.addColorStop(0, "rgba(255,255,255,0)");
+  shimmer.addColorStop(0.45, "rgba(255,255,255,0.3)");
+  shimmer.addColorStop(0.6, "rgba(255,243,191,0.7)");
+  shimmer.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = shimmer;
+  ctx.fillRect(cx - textWidth * 0.6, cy - titleFontPx, textWidth * 1.2, titleFontPx * 1.8);
+  ctx.restore();
+  ctx.restore();
+}
+
 function drawObjectiveTracker(ctx, state, colors) {
   if (!isFreeExploreState(state.gameState)) return;
   const objectiveText = state.objectiveState?.text;
@@ -1950,6 +2105,7 @@ export function renderGameFrame({
     drawSettingsOverlay(ctx, state, canvas, ui, uiColors);
     ctx.restore();
   }
+  drawCombatLevelCelebrationOverlay(ctx, state);
   drawTextbox(ctx, state, canvas, ui, uiColors, dialogue);
   drawPlayerDefeatOverlay(ctx, state, canvas);
 }

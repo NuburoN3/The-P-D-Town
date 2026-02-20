@@ -25,7 +25,10 @@ const ITEM_METADATA = Object.freeze({
     category: "Gear",
     description: "A dojo-issued headband tied to your training challenge.",
     usage: "Quest progression",
-    equipSlot: "head"
+    equipSlot: "head",
+    attributes: {
+      defense: 2
+    }
   },
   "Dojo Membership Card": {
     category: "Key Item",
@@ -37,7 +40,12 @@ const ITEM_METADATA = Object.freeze({
     category: "Gear",
     description: "A sturdy practice weapon granted by Mr. Hanami.",
     usage: "Equip in Weapon slot",
-    equipSlot: "weapon"
+    equipSlot: "weapon",
+    attributes: {
+      damageMin: 2,
+      damageMax: 5,
+      damageMostLikely: 3
+    }
   }
 });
 
@@ -66,14 +74,38 @@ function inferEquipSlot(itemName) {
 
 function getItemInfo(itemName, count) {
   const metadata = ITEM_METADATA[itemName] || {};
+  const attributes = metadata.attributes && typeof metadata.attributes === "object"
+    ? { ...metadata.attributes }
+    : {};
   return {
     name: itemName,
     count,
     category: metadata.category || inferCategory(itemName),
     description: metadata.description || "No additional details.",
     usage: metadata.usage || "Carry item",
-    equipSlot: metadata.equipSlot || inferEquipSlot(itemName)
+    equipSlot: metadata.equipSlot || inferEquipSlot(itemName),
+    attributes
   };
+}
+
+function getItemAttributeLine(itemInfo) {
+  if (!itemInfo || !itemInfo.equipSlot) return "";
+  const attributes = itemInfo.attributes && typeof itemInfo.attributes === "object"
+    ? itemInfo.attributes
+    : {};
+
+  if (itemInfo.equipSlot === "weapon") {
+    const damageMin = Number.isFinite(attributes.damageMin) ? Math.max(0, Math.floor(attributes.damageMin)) : 0;
+    const damageMax = Number.isFinite(attributes.damageMax) ? Math.max(damageMin, Math.floor(attributes.damageMax)) : damageMin;
+    return `Damage ${damageMin}-${damageMax}`;
+  }
+
+  if (["head", "torso", "legs", "feet"].includes(itemInfo.equipSlot)) {
+    const defense = Number.isFinite(attributes.defense) ? Math.max(0, Math.floor(attributes.defense)) : 0;
+    return `Defence ${defense}`;
+  }
+
+  return "";
 }
 
 function sortInventoryItems(playerInventory) {
@@ -1976,12 +2008,19 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     ? null
     : (hover.hoveredItem?.name || hover.hoveredEquipmentItem || "");
   if (hoveredTooltipItem && mouseUiState?.insideCanvas && !draggingItemName) {
-    const tooltipText = hoveredTooltipItem;
+    const hoveredInfo = hover.hoveredItem
+      ? hover.hoveredItem
+      : getItemInfo(hoveredTooltipItem, 1);
+    const attributeLine = getItemAttributeLine(hoveredInfo);
+    const tooltipLines = attributeLine
+      ? [hoveredTooltipItem, attributeLine]
+      : [hoveredTooltipItem];
     ctx.font = FONT_12;
     const paddingX = 8;
-    const textW = Math.ceil(ctx.measureText(tooltipText).width);
-    const bubbleW = textW + paddingX * 2;
-    const bubbleH = 20;
+    const lineH = 14;
+    const maxLineW = Math.max(...tooltipLines.map((line) => Math.ceil(ctx.measureText(line).width)));
+    const bubbleW = maxLineW + paddingX * 2;
+    const bubbleH = 8 + tooltipLines.length * lineH;
     const maxX = canvas.width - bubbleW - 8;
     const maxY = canvas.height - bubbleH - 8;
     const bubbleX = Math.max(8, Math.min(maxX, mouseX + 14));
@@ -1991,7 +2030,9 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     ctx.strokeStyle = "rgba(255, 231, 167, 0.7)";
     ctx.lineWidth = 1;
     ctx.strokeRect(bubbleX + 0.5, bubbleY + 0.5, bubbleW - 1, bubbleH - 1);
-    drawUiText(ctx, tooltipText, bubbleX + paddingX, bubbleY + 14, colors);
+    for (let i = 0; i < tooltipLines.length; i++) {
+      drawUiText(ctx, tooltipLines[i], bubbleX + paddingX, bubbleY + 14 + i * lineH, colors);
+    }
   }
 
   if (inspectedItem && mouseUiState?.insideCanvas) {
@@ -2011,6 +2052,8 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
       if (lines.length >= 7) break;
     }
     if (descLine && lines.length < 8) lines.push(descLine);
+    const inspectedAttributeLine = getItemAttributeLine(inspectedItem);
+    if (inspectedAttributeLine) lines.push(inspectedAttributeLine);
 
     const paddingX = 10;
     const lineH = 14;

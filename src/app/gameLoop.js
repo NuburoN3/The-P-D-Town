@@ -16,6 +16,7 @@ export function createGameLoop({
   enemies,
   npcs,
   player,
+  playerEquipment = null,
   getCurrentAreaId,
   getCurrentMap,
   getCurrentMapW,
@@ -79,6 +80,7 @@ export function createGameLoop({
           attackPressed: input.getAttackPressed(),
           requestedAttackId: player.requestedAttackId || player.equippedAttackId || null,
           player,
+          playerEquipment,
           enemies,
           npcs,
           currentAreaId: getCurrentAreaId()

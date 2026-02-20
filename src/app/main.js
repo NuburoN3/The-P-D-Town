@@ -288,6 +288,8 @@ const HANAMI_DOJO_UPSTAIRS_DOOR_X = 9;
 const HANAMI_DOJO_UPSTAIRS_DOOR_Y = 3;
 const HANAMI_DOJO_EXIT_X = 6 * TILE;
 const HANAMI_DOJO_EXIT_Y = 9 * TILE;
+const BASE_COMBAT_XP_NEEDED = 150;
+const COMBAT_XP_GROWTH_MULTIPLIER = 1.25;
 const patInnIntroState = {
   pendingStart: false,
   active: false,
@@ -319,6 +321,15 @@ const doorAccessNoticeState = {
   areaId: "",
   until: 0
 };
+
+function getCombatXpNeededForLevel(level) {
+  const safeLevel = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
+  let xpNeeded = BASE_COMBAT_XP_NEEDED;
+  for (let currentLevel = 1; currentLevel < safeLevel; currentLevel += 1) {
+    xpNeeded = Math.ceil(xpNeeded * COMBAT_XP_GROWTH_MULTIPLIER);
+  }
+  return xpNeeded;
+}
 
 function ensurePlayerSkillState(targetPlayer) {
   if (!targetPlayer || typeof targetPlayer !== "object") return;
@@ -415,13 +426,28 @@ if (!Number.isFinite(playerStats.combatXP) || playerStats.combatXP < 0) {
   playerStats.combatXP = 0;
 }
 if (!Number.isFinite(playerStats.combatXPNeeded) || playerStats.combatXPNeeded < 1) {
-  playerStats.combatXPNeeded = 6;
+  playerStats.combatXPNeeded = getCombatXpNeededForLevel(playerStats.combatLevel);
+} else if (playerStats.combatXPNeeded < BASE_COMBAT_XP_NEEDED) {
+  // Migrate older saves that used the previous low-XP combat curve.
+  playerStats.combatXPNeeded = getCombatXpNeededForLevel(playerStats.combatLevel);
 }
 if (!Number.isFinite(playerStats.combatLevelFxStartedAt) || playerStats.combatLevelFxStartedAt < 0) {
   playerStats.combatLevelFxStartedAt = 0;
 }
 if (!Number.isFinite(playerStats.combatLevelFxLevelsGained) || playerStats.combatLevelFxLevelsGained < 0) {
   playerStats.combatLevelFxLevelsGained = 0;
+}
+if (!Number.isFinite(playerStats.combatLevelCelebrationStartedAt) || playerStats.combatLevelCelebrationStartedAt < 0) {
+  playerStats.combatLevelCelebrationStartedAt = 0;
+}
+if (!Number.isFinite(playerStats.combatLevelCelebrationLevel) || playerStats.combatLevelCelebrationLevel < 0) {
+  playerStats.combatLevelCelebrationLevel = 0;
+}
+if (!Number.isFinite(playerStats.combatLevelCelebrationLevelsGained) || playerStats.combatLevelCelebrationLevelsGained < 0) {
+  playerStats.combatLevelCelebrationLevelsGained = 0;
+}
+if (!Number.isFinite(playerStats.combatLevelCelebrationLastFireworkAt) || playerStats.combatLevelCelebrationLastFireworkAt < 0) {
+  playerStats.combatLevelCelebrationLastFireworkAt = 0;
 }
 
 function persistUserSettings() {
@@ -989,7 +1015,7 @@ function grantCombatXpAndCollectSummary(enemy, now) {
   while (playerStats.combatXP >= playerStats.combatXPNeeded) {
     playerStats.combatXP -= playerStats.combatXPNeeded;
     playerStats.combatLevel += 1;
-    playerStats.combatXPNeeded = Math.min(60, playerStats.combatXPNeeded + 4);
+    playerStats.combatXPNeeded = Math.ceil(playerStats.combatXPNeeded * COMBAT_XP_GROWTH_MULTIPLIER);
     levelsGained += 1;
     player.maxHp += 1;
     player.hp = Math.min(player.maxHp, player.hp + 1);
@@ -998,6 +1024,12 @@ function grantCombatXpAndCollectSummary(enemy, now) {
   if (levelsGained > 0) {
     playerStats.combatLevelFxStartedAt = now;
     playerStats.combatLevelFxLevelsGained = levelsGained;
+    playerStats.combatLevelCelebrationStartedAt = now;
+    playerStats.combatLevelCelebrationLevel = playerStats.combatLevel;
+    playerStats.combatLevelCelebrationLevelsGained = levelsGained;
+    playerStats.combatLevelCelebrationLastFireworkAt = now;
+    musicManager.playSfx("celebrationChime");
+    musicManager.playSfx("fireworkBurst");
   }
 
   return {
@@ -1636,6 +1668,29 @@ function updateRuntimeUi(now) {
 
   if (saveNoticeState.active && now - saveNoticeState.startedAt >= saveNoticeState.durationMs) {
     saveNoticeState.active = false;
+  }
+
+  const celebrationStartedAt = Number.isFinite(playerStats.combatLevelCelebrationStartedAt)
+    ? playerStats.combatLevelCelebrationStartedAt
+    : 0;
+  const celebrationElapsed = now - celebrationStartedAt;
+  const celebrationDurationMs = 9000;
+  if (
+    celebrationStartedAt > 0 &&
+    celebrationElapsed >= 0 &&
+    celebrationElapsed <= celebrationDurationMs &&
+    isFreeExploreState(gameState)
+  ) {
+    const lastFireworkAt = Number.isFinite(playerStats.combatLevelCelebrationLastFireworkAt)
+      ? playerStats.combatLevelCelebrationLastFireworkAt
+      : celebrationStartedAt;
+    const fireworkIntervalMs = 1150;
+    if (now - lastFireworkAt >= fireworkIntervalMs) {
+      playerStats.combatLevelCelebrationLastFireworkAt = now;
+      musicManager.playSfx("fireworkBurst");
+    }
+  } else if (celebrationStartedAt > 0 && celebrationElapsed > celebrationDurationMs) {
+    playerStats.combatLevelCelebrationLastFireworkAt = 0;
   }
 
   if (combatRewardPanel.active && now - combatRewardPanel.startedAt >= combatRewardPanel.durationMs) {
@@ -2392,6 +2447,7 @@ const { startLoop } = createGameLoop({
   enemies,
   npcs,
   player,
+  playerEquipment,
   getCurrentAreaId,
   getCurrentMap,
   getCurrentMapW,

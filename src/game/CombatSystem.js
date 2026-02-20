@@ -25,6 +25,48 @@ export function createCombatSystem({
     onHitConfirmed: eventHandlers.onHitConfirmed || (() => { })
   };
 
+  function resolveWeightedDamage(table, fallbackDamage = 0) {
+    const safeFallback = Number.isFinite(fallbackDamage) ? Math.max(0, Math.floor(fallbackDamage)) : 0;
+    if (!Array.isArray(table) || table.length === 0) return safeFallback;
+
+    let totalWeight = 0;
+    const normalized = [];
+    for (const entry of table) {
+      const value = Number.isFinite(entry?.value) ? Math.max(0, Math.floor(entry.value)) : NaN;
+      const weight = Number.isFinite(entry?.weight) ? Math.max(0, entry.weight) : 0;
+      if (!Number.isFinite(value) || weight <= 0) continue;
+      totalWeight += weight;
+      normalized.push({ value, weight });
+    }
+
+    if (normalized.length === 0 || totalWeight <= 0) return safeFallback;
+    let roll = Math.random() * totalWeight;
+    for (const entry of normalized) {
+      roll -= entry.weight;
+      if (roll <= 0) return entry.value;
+    }
+    return normalized[normalized.length - 1].value;
+  }
+
+  function resolveEntityDamage(entity, fallbackDamage = 0, rollTableKey = "damageRollTable") {
+    return resolveWeightedDamage(entity?.[rollTableKey], fallbackDamage);
+  }
+
+  function resolveWeaponBonusDamage(playerEquipment) {
+    if (!playerEquipment || typeof playerEquipment !== "object") return 0;
+    const equippedWeapon = String(playerEquipment.weapon || "");
+    if (equippedWeapon !== "Kendo Stick") return 0;
+    return resolveWeightedDamage(
+      [
+        { value: 2, weight: 2 },
+        { value: 3, weight: 6 },
+        { value: 4, weight: 3 },
+        { value: 5, weight: 1 }
+      ],
+      0
+    );
+  }
+
   function registerAttackProfile(attackId, profile) {
     if (!attackId || !profile || typeof profile !== "object") return false;
     catalog[attackId] = {
@@ -107,8 +149,11 @@ export function createCombatSystem({
       : "Ow!";
   }
 
-  function hitEnemy(player, enemy, profile, now) {
-    const damage = Number.isFinite(profile.damage) ? profile.damage : 0;
+  function hitEnemy(player, enemy, profile, now, playerEquipment = null) {
+    const fallbackDamage = Number.isFinite(profile.damage) ? profile.damage : 0;
+    const baseDamage = resolveEntityDamage(player, fallbackDamage, "attackDamageRollTable");
+    const bonusDamage = resolveWeaponBonusDamage(playerEquipment);
+    const damage = baseDamage + bonusDamage;
     enemy.hp = Math.max(0, enemy.hp - damage);
     enemy.invulnerableUntil = now + 180;
     enemy.hitStunUntil = now + 230;
@@ -165,7 +210,7 @@ export function createCombatSystem({
     }
   }
 
-  function processPlayerHits({ now, player, enemies, currentAreaId, profile }) {
+  function processPlayerHits({ now, player, enemies, currentAreaId, profile, playerEquipment = null }) {
     if (player.attackState !== "active") return;
     if (!profile) return;
 
@@ -185,7 +230,7 @@ export function createCombatSystem({
       if (d > hitRadius + enemy.width * 0.42) continue;
 
       hitIdsInCurrentSwing.add(enemy.id);
-      hitEnemy(player, enemy, profile, now);
+      hitEnemy(player, enemy, profile, now, playerEquipment);
     }
   }
 
@@ -219,32 +264,6 @@ export function createCombatSystem({
   }
 
   function processEnemyStrikes({ now, player, enemies, currentAreaId }) {
-    const resolveEnemyDamage = (enemy, enemyProfile) => {
-      const table = Array.isArray(enemy?.damageRollTable) ? enemy.damageRollTable : null;
-      if (table && table.length > 0) {
-        let totalWeight = 0;
-        const normalized = [];
-        for (const entry of table) {
-          const value = Number.isFinite(entry?.value) ? Math.max(0, Math.floor(entry.value)) : NaN;
-          const weight = Number.isFinite(entry?.weight) ? Math.max(0, entry.weight) : 0;
-          if (!Number.isFinite(value) || weight <= 0) continue;
-          totalWeight += weight;
-          normalized.push({ value, weight });
-        }
-        if (normalized.length > 0 && totalWeight > 0) {
-          let roll = Math.random() * totalWeight;
-          for (const entry of normalized) {
-            roll -= entry.weight;
-            if (roll <= 0) return entry.value;
-          }
-          return normalized[normalized.length - 1].value;
-        }
-      }
-      return Number.isFinite(enemyProfile?.damage)
-        ? enemyProfile.damage
-        : (Number.isFinite(enemy?.damage) ? enemy.damage : 0);
-    };
-
     for (const enemy of enemies) {
       if (!enemy || enemy.dead || enemy.world !== currentAreaId) continue;
       if (!enemy.pendingStrike) continue;
@@ -266,7 +285,10 @@ export function createCombatSystem({
       if (d > strikeRadius + tileSize * 0.25) continue;
       if (player.invulnerableUntil > now) continue;
 
-      const enemyDamage = resolveEnemyDamage(enemy, enemyProfile);
+      const fallbackDamage = Number.isFinite(enemyProfile?.damage)
+        ? enemyProfile.damage
+        : (Number.isFinite(enemy?.damage) ? enemy.damage : 0);
+      const enemyDamage = resolveEntityDamage(enemy, fallbackDamage, "damageRollTable");
       player.hp = Math.max(0, player.hp - enemyDamage);
       player.invulnerableUntil = now + player.invulnerableMs;
 
@@ -335,7 +357,8 @@ export function createCombatSystem({
     player,
     enemies,
     npcs = null,
-    currentAreaId
+    currentAreaId,
+    playerEquipment = null
   }) {
     if (!player || !Array.isArray(enemies)) return;
 
@@ -369,7 +392,8 @@ export function createCombatSystem({
       player,
       enemies,
       currentAreaId,
-      profile: player.attackState === "active" ? activeProfile : null
+      profile: player.attackState === "active" ? activeProfile : null,
+      playerEquipment
     });
     processPlayerNpcHits({
       now,

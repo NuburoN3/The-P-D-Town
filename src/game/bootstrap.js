@@ -59,6 +59,8 @@ export function createGameRuntime() {
       npcHit: "assets/audio/Oof_1.ogg",
       hurt: "assets/audio/collision_sound.wav",
       levelUp: "assets/audio/Level up_Sound.ogg",
+      fireworkBurst: "assets/audio/Item_Unlock.wav",
+      celebrationChime: "assets/audio/MenuSelect_Sound.wav",
       firstCutscene: "assets/audio/First Cutscene Sound.ogg",
       saveGame: "assets/audio/EnterDoor_Sound.wav",
       loadGame: "assets/audio/PauseMenu_Sound.wav",
@@ -101,9 +103,13 @@ export function createGameRuntime() {
     disciplineXPNeeded: TRAINING.INITIAL_XP_NEEDED,
     combatLevel: 1,
     combatXP: 0,
-    combatXPNeeded: 6,
+    combatXPNeeded: 150,
     combatLevelFxStartedAt: 0,
-    combatLevelFxLevelsGained: 0
+    combatLevelFxLevelsGained: 0,
+    combatLevelCelebrationStartedAt: 0,
+    combatLevelCelebrationLevel: 0,
+    combatLevelCelebrationLevelsGained: 0,
+    combatLevelCelebrationLastFireworkAt: 0
   };
 
   const trainingPopup = {
@@ -180,7 +186,17 @@ export function createGameRuntime() {
     attackRecoveryMs: 85,
     attackRange: TILE * 0.9,
     attackHitRadius: TILE * 0.7,
-    attackDamage: 20,
+    attackDamage: 10,
+    attackDamageRollTable: [
+      { value: 8, weight: 1 },
+      { value: 9, weight: 2 },
+      { value: 10, weight: 6 },
+      { value: 11, weight: 4 },
+      { value: 12, weight: 3 },
+      { value: 13, weight: 2 },
+      { value: 14, weight: 1 },
+      { value: 15, weight: 1 }
+    ],
     equippedAttackId: "lightSlash",
     requestedAttackId: null,
     maxMana: 10,

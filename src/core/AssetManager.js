@@ -40,6 +40,7 @@ export const DEFAULT_SPRITE_MANIFEST = {
   leftovers: "assets/sprites/Leftovers.png",
   silverCoins: "assets/sprites/SilverCoins.png",
   dojoMembership: "assets/sprites/DojoMembership.png",
+  kendoStick: "assets/sprites/Kendo_Stick.png",
   insideDojoBackWall: "assets/sprites/Inside_Dojo_Back_wall.png",
   insideDojoSideWall: "assets/sprites/Inside_Dojo_Side_Wall.png",
   insideDojoExitWall: "assets/sprites/Dojo Exit wall.png",

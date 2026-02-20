@@ -252,12 +252,13 @@ function drawNpcOwBubble(ctx, npc, drawX, drawY, drawWidth) {
   ctx.restore();
 }
 
-function drawNPCs(ctx, state, canvas, tileSize, colors, owBubbleQueue = null) {
+function drawNPCs(ctx, state, canvas, tileSize, colors, owBubbleQueue = null, shouldDrawNpc = null) {
   const { currentAreaId, npcs, cam } = state;
   const now = performance.now();
 
   for (const npc of npcs) {
     if (npc.world !== currentAreaId) continue;
+    if (typeof shouldDrawNpc === "function" && !shouldDrawNpc(npc)) continue;
 
     let shakeX = 0;
     let shakeY = 0;
@@ -380,12 +381,13 @@ function drawEnemyHealthBar(ctx, enemy, ex, ey, drawWidth) {
   ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
 }
 
-function drawEnemies(ctx, state, canvas, tileSize) {
+function drawEnemies(ctx, state, canvas, tileSize, shouldDrawEnemy = null) {
   const { currentAreaId, enemies, cam } = state;
   if (!Array.isArray(enemies) || enemies.length === 0) return;
 
   for (const enemy of enemies) {
     if (!enemy || enemy.dead || enemy.world !== currentAreaId) continue;
+    if (typeof shouldDrawEnemy === "function" && !shouldDrawEnemy(enemy)) continue;
 
     let drawWidth = tileSize;
     let drawHeight = tileSize;
@@ -476,7 +478,7 @@ function drawEnemies(ctx, state, canvas, tileSize) {
   }
 }
 
-function drawLeftovers(ctx, state, canvas, tileSize) {
+function drawLeftovers(ctx, state, canvas, tileSize, shouldDrawLeftover = null) {
   const { leftovers, currentTownId, currentAreaId, cam } = state;
   if (!Array.isArray(leftovers) || leftovers.length === 0) return;
   const leftoversSprite = state?.leftoversSprite;
@@ -488,6 +490,7 @@ function drawLeftovers(ctx, state, canvas, tileSize) {
     const hasLoot = (Number(leftover.gold) > 0) || (Number(leftover.silver) > 0) || (Array.isArray(leftover.items) && leftover.items.length > 0);
     if (!hasLoot) continue;
     if (leftover.townId !== currentTownId || leftover.areaId !== currentAreaId) continue;
+    if (typeof shouldDrawLeftover === "function" && !shouldDrawLeftover(leftover)) continue;
 
     const worldX = Number.isFinite(leftover.x) ? leftover.x : 0;
     const worldY = Number.isFinite(leftover.y) ? leftover.y : 0;
@@ -588,9 +591,33 @@ export function drawEntitiesLayer({
   spriteFramesPerRow
 }) {
   const owBubbleQueue = [];
-  drawNPCs(ctx, state, canvas, tileSize, colors, owBubbleQueue);
-  drawEnemies(ctx, state, canvas, tileSize);
-  drawLeftovers(ctx, state, canvas, tileSize);
+  const playerFootY = (state?.player?.y || 0) + tileSize;
+  const isBehindPlayer = (footY) => footY <= playerFootY;
+  const isInFrontOfPlayer = (footY) => footY > playerFootY;
+
+  drawNPCs(
+    ctx,
+    state,
+    canvas,
+    tileSize,
+    colors,
+    owBubbleQueue,
+    (npc) => isBehindPlayer((Number.isFinite(npc?.y) ? npc.y : 0) + tileSize)
+  );
+  drawEnemies(
+    ctx,
+    state,
+    canvas,
+    tileSize,
+    (enemy) => isBehindPlayer((Number.isFinite(enemy?.y) ? enemy.y : 0) + tileSize)
+  );
+  drawLeftovers(
+    ctx,
+    state,
+    canvas,
+    tileSize,
+    (leftover) => isBehindPlayer(Number.isFinite(leftover?.y) ? leftover.y : 0)
+  );
   drawPlayerAttackReadability(ctx, state, tileSize);
   drawPlayer(
     ctx,
@@ -601,6 +628,29 @@ export function drawEntitiesLayer({
     spriteFrameWidth,
     spriteFrameHeight,
     spriteFramesPerRow
+  );
+  drawNPCs(
+    ctx,
+    state,
+    canvas,
+    tileSize,
+    colors,
+    owBubbleQueue,
+    (npc) => isInFrontOfPlayer((Number.isFinite(npc?.y) ? npc.y : 0) + tileSize)
+  );
+  drawEnemies(
+    ctx,
+    state,
+    canvas,
+    tileSize,
+    (enemy) => isInFrontOfPlayer((Number.isFinite(enemy?.y) ? enemy.y : 0) + tileSize)
+  );
+  drawLeftovers(
+    ctx,
+    state,
+    canvas,
+    tileSize,
+    (leftover) => isInFrontOfPlayer(Number.isFinite(leftover?.y) ? leftover.y : 0)
   );
   for (const bubble of owBubbleQueue) {
     drawNpcOwBubble(ctx, bubble.npc, bubble.drawX, bubble.drawY, bubble.drawWidth);
