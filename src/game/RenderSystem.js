@@ -1498,6 +1498,86 @@ function drawAtmosphere(ctx, canvas, colors, state) {
   const now = Number.isFinite(state?.atmosphereTimeSec)
     ? state.atmosphereTimeSec
     : performance.now() * 0.001;
+
+  if (isOverworld) {
+    // Strong 4-phase cycle for readability: Day -> Dusk -> Night -> Dawn.
+    // Full loop is 30s for testing.
+    const cycleSec = 30;
+    const cycleT = ((now % cycleSec) + cycleSec) % cycleSec / cycleSec; // 0..1
+    const phasePos = cycleT * 4;
+    const phaseA = Math.floor(phasePos) % 4;
+    const phaseB = (phaseA + 1) % 4;
+    const blend = phasePos - Math.floor(phasePos);
+    const phaseWeights = [0, 0, 0, 0]; // day, dusk, night, dawn
+    phaseWeights[phaseA] = 1 - blend;
+    phaseWeights[phaseB] = blend;
+    const dayWeight = phaseWeights[0];
+    const duskWeight = phaseWeights[1];
+    const nightWeight = phaseWeights[2];
+    const dawnWeight = phaseWeights[3];
+
+    // Off-screen light source moves right->left->right across the cycle.
+    const travel = (Math.sin(cycleT * Math.PI * 2 - Math.PI * 0.5) + 1) * 0.5; // 0..1..0
+    const lightX = canvas.width * (1.18 - travel * 1.36);
+    const lightY = -canvas.height * (0.16 - Math.sin(cycleT * Math.PI * 2) * 0.03);
+
+    const warmBoost = (dayWeight * 0.18 + dawnWeight * 0.12) * intensity;
+    const duskBoost = duskWeight * 0.34 * intensity;
+    const darken = (nightWeight * 0.66 + duskWeight * 0.26 + dawnWeight * 0.2) * intensity;
+    const blueCast = (nightWeight * 0.3 + dawnWeight * 0.14) * intensity;
+
+    if (warmBoost > 0.001) {
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      const warmGlow = ctx.createRadialGradient(
+        lightX,
+        lightY,
+        canvas.width * 0.04,
+        lightX,
+        lightY,
+        canvas.width * 1.1
+      );
+      warmGlow.addColorStop(0, `rgba(255, 250, 226, ${0.3 * warmBoost})`);
+      warmGlow.addColorStop(0.45, `rgba(255, 233, 158, ${0.6 * warmBoost})`);
+      warmGlow.addColorStop(1, "rgba(255, 220, 130, 0)");
+      ctx.fillStyle = warmGlow;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
+    }
+
+    if (duskBoost > 0.001) {
+      ctx.fillStyle = `rgba(255, 120, 28, ${duskBoost})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    if (blueCast > 0.001) {
+      ctx.fillStyle = `rgba(60, 98, 168, ${blueCast})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    if (darken > 0.001) {
+      ctx.fillStyle = `rgba(0, 0, 0, ${darken})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    const vignetteAlpha = (nightWeight * 0.6 + duskWeight * 0.24 + dawnWeight * 0.18) * intensity;
+    if (vignetteAlpha > 0.001) {
+      const nightVignette = ctx.createRadialGradient(
+        canvas.width * 0.5,
+        canvas.height * 0.52,
+        canvas.height * 0.16,
+        canvas.width * 0.5,
+        canvas.height * 0.55,
+        canvas.width * 0.7
+      );
+      nightVignette.addColorStop(0, "rgba(0,0,0,0)");
+      nightVignette.addColorStop(1, `rgba(0,0,0,${vignetteAlpha})`);
+      ctx.fillStyle = nightVignette;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+  }
+
   const particleCount = Math.round((isOverworld ? 42 : 18) * intensity);
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
