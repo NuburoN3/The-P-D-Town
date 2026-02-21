@@ -210,7 +210,7 @@ const collisionService = new CollisionService({
 const movementSystem = createMovementSystem({
   keys: input.keys,
   getActionPressed: (action) => input.isActionPressed(action),
-  getSprintPressed: () => mouseUiState.sprintPressed,
+  getSprintPressed: () => Boolean(mouseUiState.sprintPressed || input.keys.shift),
   tileSize: TILE,
   spriteFramesPerRow: SPRITE_FRAMES_PER_ROW,
   cameraZoom: CAMERA_ZOOM,
@@ -256,16 +256,32 @@ const OBEY_CAST_RADIUS_TILES = 4;
 const OBEY_CHANNEL_DURATION_MS = 10000;
 const OBEY_PET_FOLLOW_DISTANCE_TILES = 1;
 const OBEY_PET_TELEPORT_DISTANCE_TILES = 8;
+const OBEY_CANCEL_REVERT_DISTANCE_TILES = 6;
+const OBEY_PET_ASSIST_RADIUS_TILES = 6;
+const OBEY_PET_ASSIST_ATTACK_RANGE_TILES = 1.05;
+const OBEY_PET_ASSIST_ATTACK_COOLDOWN_MS = 700;
 
 const obeyState = {
   active: false,
   startedAt: 0,
   durationMs: OBEY_CHANNEL_DURATION_MS,
+  startedPlayerX: 0,
+  startedPlayerY: 0,
   targetNpcId: "",
   targetTownId: "",
   targetAreaId: "",
+  hostileEnemyId: "",
+  hostileSourceNpc: null,
+  hostileState: "",
+  assistActive: false,
+  assistTargetEnemyId: "",
+  assistLastAttackAt: 0,
   petId: "",
+  petTypeName: "",
   petSpriteName: "",
+  petLevel: 1,
+  petMaxHp: 15,
+  petHp: 15,
   petWidth: 25,
   petHeight: 16,
   lastFollowUpdateAt: 0
@@ -432,23 +448,203 @@ function getNearestObeyAnimalInRange(radiusTiles = OBEY_CAST_RADIUS_TILES) {
   return nearest;
 }
 
-function cancelObeyChannel() {
+function clearObeyHostileState() {
+  obeyState.hostileEnemyId = "";
+  obeyState.hostileSourceNpc = null;
+  obeyState.hostileState = "";
+}
+
+function resetObeyChannelState() {
   obeyState.active = false;
   obeyState.startedAt = 0;
+  obeyState.startedPlayerX = 0;
+  obeyState.startedPlayerY = 0;
   obeyState.targetNpcId = "";
   obeyState.targetTownId = "";
   obeyState.targetAreaId = "";
 }
 
+function findObeyHostileEnemy() {
+  if (!obeyState.hostileEnemyId) return null;
+  return enemies.find((enemy) => enemy && enemy.id === obeyState.hostileEnemyId) || null;
+}
+
+function removeEnemyById(enemyId) {
+  if (!enemyId) return;
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const enemy = enemies[i];
+    if (!enemy || enemy.id !== enemyId) continue;
+    enemies.splice(i, 1);
+  }
+}
+
+function restoreObeyHostileAnimalToNpc() {
+  const sourceNpc = obeyState.hostileSourceNpc && typeof obeyState.hostileSourceNpc === "object"
+    ? obeyState.hostileSourceNpc
+    : null;
+  const hostileEnemy = findObeyHostileEnemy();
+  if (!sourceNpc && !hostileEnemy) {
+    clearObeyHostileState();
+    return false;
+  }
+
+  const fallbackId = hostileEnemy?.obeySourceNpcId || `obey-animal-${Math.floor(performance.now())}`;
+  const restored = {
+    ...(sourceNpc || {}),
+    id: sourceNpc?.id || fallbackId,
+    name: sourceNpc?.name || hostileEnemy?.name || "Animal",
+    obeyAnimal: true,
+    isPlayerPet: false,
+    petOwner: "",
+    canRoam: sourceNpc?.canRoam !== false,
+    blocking: sourceNpc?.blocking !== false,
+    world: hostileEnemy?.world || sourceNpc?.world || currentAreaId,
+    x: Number.isFinite(hostileEnemy?.x) ? hostileEnemy.x : (Number.isFinite(sourceNpc?.x) ? sourceNpc.x : player.x),
+    y: Number.isFinite(hostileEnemy?.y) ? hostileEnemy.y : (Number.isFinite(sourceNpc?.y) ? sourceNpc.y : player.y),
+    dir: hostileEnemy?.dir || sourceNpc?.dir || "down"
+  };
+
+  const restoredMaxHp = Number.isFinite(hostileEnemy?.maxHp)
+    ? Math.max(1, hostileEnemy.maxHp)
+    : (Number.isFinite(sourceNpc?.maxHp) ? Math.max(1, sourceNpc.maxHp) : 15);
+  restored.maxHp = restoredMaxHp;
+  restored.hp = Number.isFinite(hostileEnemy?.hp)
+    ? Math.max(0, Math.min(restoredMaxHp, hostileEnemy.hp))
+    : (Number.isFinite(sourceNpc?.hp) ? Math.max(0, Math.min(restoredMaxHp, sourceNpc.hp)) : restoredMaxHp);
+  if (restored.hp <= 0) restored.hp = restored.maxHp;
+  restored.level = Number.isFinite(hostileEnemy?.level)
+    ? Math.max(1, Math.floor(hostileEnemy.level))
+    : (Number.isFinite(sourceNpc?.level) ? Math.max(1, Math.floor(sourceNpc.level)) : 1);
+  if ((!restored.sprite || !restored.sprite.width) && restored.spriteName) {
+    restored.sprite = assets.getSprite(restored.spriteName);
+  }
+
+  removeEnemyById(obeyState.hostileEnemyId);
+  for (let i = npcs.length - 1; i >= 0; i--) {
+    const npc = npcs[i];
+    if (!npc || npc.id !== restored.id) continue;
+    npcs.splice(i, 1);
+  }
+  npcs.push(restored);
+  clearObeyHostileState();
+  return true;
+}
+
+function cancelObeyChannel() {
+  resetObeyChannelState();
+  if (obeyState.hostileEnemyId) {
+    restoreObeyHostileAnimalToNpc();
+  }
+}
+
+function interruptObeyChannelToHostileAggro() {
+  if (!obeyState.active) return;
+  resetObeyChannelState();
+  if (obeyState.hostileEnemyId) {
+    obeyState.hostileState = "cancelled";
+  } else {
+    clearObeyHostileState();
+  }
+}
+
+function createObeyHostileEnemyFromNpc(targetNpc) {
+  if (!targetNpc || !targetNpc.id) return null;
+  const npcIndex = npcs.findIndex((npc) => npc && npc.id === targetNpc.id && npc.world === targetNpc.world);
+  if (npcIndex < 0) return null;
+  const sourceNpc = {
+    ...targetNpc,
+    dialogue: Array.isArray(targetNpc.dialogue) ? [...targetNpc.dialogue] : []
+  };
+  npcs.splice(npcIndex, 1);
+
+  const enemyId = `obeyHostile:${targetNpc.id}:${Math.floor(performance.now())}`;
+  const maxHp = Number.isFinite(targetNpc.maxHp) ? Math.max(1, targetNpc.maxHp) : 15;
+  const hp = Number.isFinite(targetNpc.hp) ? Math.max(0, Math.min(maxHp, targetNpc.hp)) : maxHp;
+  const level = Number.isFinite(targetNpc.level) ? Math.max(1, Math.floor(targetNpc.level)) : 1;
+  const isPossum = String(targetNpc?.name || "").toLowerCase().includes("possum")
+    || String(targetNpc?.spriteName || "").toLowerCase().includes("possum");
+  const possumDamageRollTable = [
+    { value: 1, weight: 2 },
+    { value: 2, weight: 6 },
+    { value: 3, weight: 2 },
+    { value: 4, weight: 1 }
+  ];
+  const hostileEnemy = {
+    id: enemyId,
+    obeyHostile: true,
+    obeySourceNpcId: targetNpc.id,
+    name: targetNpc.name || "Animal",
+    world: targetNpc.world || currentAreaId,
+    x: Number.isFinite(targetNpc.x) ? targetNpc.x : player.x,
+    y: Number.isFinite(targetNpc.y) ? targetNpc.y : player.y,
+    spawnX: Number.isFinite(targetNpc.x) ? targetNpc.x : player.x,
+    spawnY: Number.isFinite(targetNpc.y) ? targetNpc.y : player.y,
+    width: Number.isFinite(targetNpc.width) ? targetNpc.width : TILE,
+    height: Number.isFinite(targetNpc.height) ? targetNpc.height : TILE,
+    dir: targetNpc.dir || "down",
+    spriteName: targetNpc.spriteName || "",
+    sprite: targetNpc.sprite || (targetNpc.spriteName ? assets.getSprite(targetNpc.spriteName) : null),
+    spriteWidth: Number.isFinite(targetNpc.spriteWidth) ? targetNpc.spriteWidth : undefined,
+    spriteHeight: Number.isFinite(targetNpc.spriteHeight) ? targetNpc.spriteHeight : undefined,
+    desiredHeightTiles: Number.isFinite(targetNpc.desiredHeightTiles) ? targetNpc.desiredHeightTiles : undefined,
+    level,
+    maxHp,
+    hp,
+    damage: isPossum ? 2 : Math.max(4, 3 + level * 2),
+    damageRollTable: isPossum ? possumDamageRollTable : undefined,
+    speed: Math.max(0.9, Number.isFinite(targetNpc.wanderSpeed) ? targetNpc.wanderSpeed * 1.25 : 1.15),
+    aggroRange: TILE * 7,
+    attackRange: TILE * 0.95,
+    attackCooldownMs: 1500,
+    attackWindupMs: 480,
+    attackRecoveryMs: 290,
+    attackType: "lightSlash",
+    behaviorType: "meleeChaser",
+    respawnEnabled: false,
+    countsForChallenge: false,
+    countsForBogTrial: false,
+    challengeDefeatedCounted: false,
+    bogDefeatedCounted: false,
+    invulnerableUntil: 0,
+    hitStunUntil: 0,
+    state: "idle",
+    dead: false,
+    respawnAt: 0,
+    lastAttackAt: -Infinity,
+    attackStrikeAt: 0,
+    recoverUntil: 0,
+    pendingStrike: false
+  };
+
+  enemies.push(hostileEnemy);
+  obeyState.hostileEnemyId = enemyId;
+  obeyState.hostileSourceNpc = sourceNpc;
+  obeyState.hostileState = "channel";
+  return hostileEnemy;
+}
+
 function beginObeyChannel(targetNpc) {
   if (!targetNpc) return false;
+  const hostileEnemy = createObeyHostileEnemyFromNpc(targetNpc);
+  if (!hostileEnemy) return false;
   obeyState.active = true;
   obeyState.startedAt = performance.now();
   obeyState.durationMs = OBEY_CHANNEL_DURATION_MS;
+  obeyState.startedPlayerX = Number.isFinite(player.x) ? player.x : 0;
+  obeyState.startedPlayerY = Number.isFinite(player.y) ? player.y : 0;
   obeyState.targetNpcId = targetNpc.id || "";
   obeyState.targetTownId = currentTownId;
   obeyState.targetAreaId = currentAreaId;
   return true;
+}
+
+function isSkillChannelInterruptedByPlayerAction() {
+  if (!obeyState.active) return false;
+  if (player.attackState && player.attackState !== "idle") return true;
+  if (!Number.isFinite(player.x) || !Number.isFinite(player.y)) return false;
+  const movedX = Math.abs(player.x - obeyState.startedPlayerX);
+  const movedY = Math.abs(player.y - obeyState.startedPlayerY);
+  return movedX > 0.001 || movedY > 0.001;
 }
 
 function completeObeyChannelIfReady(now) {
@@ -456,36 +652,206 @@ function completeObeyChannelIfReady(now) {
   const elapsed = Math.max(0, now - obeyState.startedAt);
   if (elapsed < obeyState.durationMs) return;
 
-  const targetNpc = npcs.find((npc) =>
-    npc &&
-    npc.id === obeyState.targetNpcId &&
-    npc.world === obeyState.targetAreaId &&
-    npc.obeyAnimal
-  );
-  if (!targetNpc) {
+  const hostileEnemy = findObeyHostileEnemy();
+  const sourceNpc = obeyState.hostileSourceNpc && typeof obeyState.hostileSourceNpc === "object"
+    ? obeyState.hostileSourceNpc
+    : null;
+  if (!hostileEnemy && !sourceNpc) {
     cancelObeyChannel();
     return;
   }
 
-  targetNpc.canRoam = false;
-  targetNpc.blocking = false;
-  targetNpc.isPlayerPet = true;
-  targetNpc.petOwner = "player";
-  targetNpc.world = currentAreaId;
-  obeyState.petId = targetNpc.id;
-  obeyState.petSpriteName = targetNpc.spriteName || "possum";
-  obeyState.petWidth = Number.isFinite(targetNpc.spriteWidth) ? targetNpc.spriteWidth : 25;
-  obeyState.petHeight = Number.isFinite(targetNpc.spriteHeight) ? targetNpc.spriteHeight : 16;
+  const resolvedTypeName = String(sourceNpc?.name || hostileEnemy?.name || "Companion");
+  const resolvedSpriteName = sourceNpc?.spriteName || hostileEnemy?.spriteName || "possum";
+  const resolvedLevel = Number.isFinite(hostileEnemy?.level)
+    ? Math.max(1, Math.floor(hostileEnemy.level))
+    : (Number.isFinite(sourceNpc?.level) ? Math.max(1, Math.floor(sourceNpc.level)) : 1);
+  const resolvedMaxHp = Number.isFinite(hostileEnemy?.maxHp)
+    ? Math.max(1, hostileEnemy.maxHp)
+    : (Number.isFinite(sourceNpc?.maxHp) ? Math.max(1, sourceNpc.maxHp) : 15);
+  const resolvedHp = Number.isFinite(hostileEnemy?.hp)
+    ? Math.max(0, Math.min(resolvedMaxHp, hostileEnemy.hp))
+    : (Number.isFinite(sourceNpc?.hp) ? Math.max(0, Math.min(resolvedMaxHp, sourceNpc.hp)) : resolvedMaxHp);
+  const resolvedLivingHp = resolvedHp > 0 ? resolvedHp : resolvedMaxHp;
+
+  obeyState.petId = sourceNpc?.id || hostileEnemy?.obeySourceNpcId || obeyState.targetNpcId;
+  obeyState.petTypeName = resolvedTypeName;
+  obeyState.petSpriteName = resolvedSpriteName;
+  obeyState.petLevel = resolvedLevel;
+  obeyState.petMaxHp = resolvedMaxHp;
+  obeyState.petHp = resolvedLivingHp;
+  obeyState.petWidth = Number.isFinite(sourceNpc?.spriteWidth)
+    ? sourceNpc.spriteWidth
+    : (Number.isFinite(hostileEnemy?.spriteWidth) ? hostileEnemy.spriteWidth : 25);
+  obeyState.petHeight = Number.isFinite(sourceNpc?.spriteHeight)
+    ? sourceNpc.spriteHeight
+    : (Number.isFinite(hostileEnemy?.spriteHeight) ? hostileEnemy.spriteHeight : 16);
+  if (obeyState.hostileEnemyId) {
+    removeEnemyById(obeyState.hostileEnemyId);
+  }
+  clearObeyHostileState();
   cancelObeyChannel();
 
   itemAlert.active = true;
-  itemAlert.text = "A Possum now follows you as your pet.";
+  itemAlert.text = `A ${resolvedTypeName} now follows you as your pet.`;
   itemAlert.startedAt = now;
   vfxSystem.spawn("pickupGlow", {
     x: player.x + TILE / 2,
     y: player.y + TILE * 0.35,
     size: 30
   });
+}
+
+function maybeRevertCancelledObeyHostile() {
+  if (obeyState.active || obeyState.hostileState !== "cancelled" || !obeyState.hostileEnemyId) return;
+  const hostileEnemy = findObeyHostileEnemy();
+  if (!hostileEnemy) {
+    clearObeyHostileState();
+    return;
+  }
+  if (hostileEnemy.world !== currentAreaId) {
+    restoreObeyHostileAnimalToNpc();
+    return;
+  }
+
+  const playerCenterX = player.x + TILE * 0.5;
+  const playerCenterY = player.y + TILE * 0.5;
+  const enemyCenterX = hostileEnemy.x + (Number.isFinite(hostileEnemy.width) ? hostileEnemy.width : TILE) * 0.5;
+  const enemyCenterY = hostileEnemy.y + (Number.isFinite(hostileEnemy.height) ? hostileEnemy.height : TILE) * 0.5;
+  const distance = Math.hypot(enemyCenterX - playerCenterX, enemyCenterY - playerCenterY);
+  if (distance >= OBEY_CANCEL_REVERT_DISTANCE_TILES * TILE) {
+    restoreObeyHostileAnimalToNpc();
+  }
+}
+
+function clearPetAssistState() {
+  obeyState.assistActive = false;
+  obeyState.assistTargetEnemyId = "";
+  obeyState.assistLastAttackAt = 0;
+}
+
+function getNearbyEnemiesAroundPlayerForPetAssist(radiusTiles = OBEY_PET_ASSIST_RADIUS_TILES) {
+  const radiusPx = Math.max(TILE, radiusTiles * TILE);
+  const radiusSq = radiusPx * radiusPx;
+  const playerCenterX = player.x + TILE * 0.5;
+  const playerCenterY = player.y + TILE * 0.5;
+  const nearby = [];
+  for (const enemy of enemies) {
+    if (!enemy || enemy.dead || enemy.world !== currentAreaId) continue;
+    const enemyCenterX = enemy.x + (Number.isFinite(enemy.width) ? enemy.width : TILE) * 0.5;
+    const enemyCenterY = enemy.y + (Number.isFinite(enemy.height) ? enemy.height : TILE) * 0.5;
+    const dx = enemyCenterX - playerCenterX;
+    const dy = enemyCenterY - playerCenterY;
+    const distSq = dx * dx + dy * dy;
+    if (distSq > radiusSq) continue;
+    nearby.push({ enemy, distSq });
+  }
+  nearby.sort((a, b) => a.distSq - b.distSq);
+  return nearby.map((entry) => entry.enemy);
+}
+
+function getPetAssistTargetEnemy() {
+  const nearby = getNearbyEnemiesAroundPlayerForPetAssist();
+  if (nearby.length === 0) return null;
+  if (obeyState.assistTargetEnemyId) {
+    const existing = nearby.find((enemy) => enemy.id === obeyState.assistTargetEnemyId);
+    if (existing) return existing;
+  }
+  return nearby[0];
+}
+
+function engagePetAssistMode() {
+  if (!obeyState.petId || obeyState.active) return;
+  const nearby = getNearbyEnemiesAroundPlayerForPetAssist();
+  if (nearby.length === 0) return;
+  obeyState.assistActive = true;
+  obeyState.assistTargetEnemyId = nearby[0].id;
+}
+
+function applyPetAssistDamageToEnemy(enemy, now) {
+  if (!enemy || enemy.dead) return;
+  const petDamage = 2;
+  enemy.hp = Math.max(0, (Number.isFinite(enemy.hp) ? enemy.hp : enemy.maxHp) - petDamage);
+  enemy.invulnerableUntil = now + 120;
+  enemy.hitStunUntil = now + 160;
+  enemy.state = "hitStun";
+  enemy.pendingStrike = false;
+  vfxSystem.spawn("hitSpark", {
+    x: enemy.x + (Number(enemy.width) || TILE) * 0.5,
+    y: enemy.y + (Number(enemy.height) || TILE) * 0.45,
+    size: 16,
+    durationMs: 180
+  });
+  if (enemy.hp <= 0) {
+    enemy.dead = true;
+    enemy.state = "dead";
+    enemy.pendingStrike = false;
+    enemy.respawnAt = now + (Number.isFinite(enemy.respawnDelayMs) ? enemy.respawnDelayMs : 5000);
+    handleEnemyDefeatRewards(enemy, now);
+  }
+}
+
+function updatePetAssistCombat(now) {
+  const pet = ensurePetExistsInCurrentArea();
+  if (!pet) {
+    clearPetAssistState();
+    return;
+  }
+  const nearby = getNearbyEnemiesAroundPlayerForPetAssist();
+  if (nearby.length === 0) {
+    clearPetAssistState();
+    return;
+  }
+  obeyState.assistActive = true;
+  const targetEnemy = getPetAssistTargetEnemy();
+  if (!targetEnemy) {
+    clearPetAssistState();
+    return;
+  }
+  obeyState.assistTargetEnemyId = targetEnemy.id;
+  const last = Number.isFinite(obeyState.lastFollowUpdateAt) ? obeyState.lastFollowUpdateAt : now;
+  const dtScale = Math.max(0, Math.min(3, (now - last) / 16.667));
+  obeyState.lastFollowUpdateAt = now;
+
+  const petCenterX = pet.x + (Number.isFinite(pet.width) ? pet.width : TILE) * 0.5;
+  const petCenterY = pet.y + (Number.isFinite(pet.height) ? pet.height : TILE) * 0.5;
+  const enemyCenterX = targetEnemy.x + (Number.isFinite(targetEnemy.width) ? targetEnemy.width : TILE) * 0.5;
+  const enemyCenterY = targetEnemy.y + (Number.isFinite(targetEnemy.height) ? targetEnemy.height : TILE) * 0.5;
+  const dx = enemyCenterX - petCenterX;
+  const dy = enemyCenterY - petCenterY;
+  const distance = Math.hypot(dx, dy);
+  const attackRange = OBEY_PET_ASSIST_ATTACK_RANGE_TILES * TILE;
+
+  if (distance > attackRange) {
+    const speed = Math.max(1.2, (Number.isFinite(pet.speed) ? pet.speed : 1.4)) * 1.55 * Math.max(0.55, dtScale);
+    const step = Math.min(distance, speed);
+    const vx = distance > 0.001 ? (dx / distance) * step : 0;
+    const vy = distance > 0.001 ? (dy / distance) * step : 0;
+    const tryX = pet.x + vx;
+    const tryY = pet.y + vy;
+    if (!collisionService.collides(tryX, pet.y, currentMap, currentMapW, currentMapH)) {
+      pet.x = tryX;
+    }
+    if (!collisionService.collides(pet.x, tryY, currentMap, currentMapW, currentMapH)) {
+      pet.y = tryY;
+    }
+    if (Math.abs(vx) >= Math.abs(vy)) {
+      pet.dir = vx >= 0 ? "right" : "left";
+    } else {
+      pet.dir = vy >= 0 ? "down" : "up";
+    }
+    return;
+  }
+
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    pet.dir = dx >= 0 ? "right" : "left";
+  } else {
+    pet.dir = dy >= 0 ? "down" : "up";
+  }
+  const lastAttackAt = Number.isFinite(obeyState.assistLastAttackAt) ? obeyState.assistLastAttackAt : 0;
+  if (now - lastAttackAt < OBEY_PET_ASSIST_ATTACK_COOLDOWN_MS) return;
+  obeyState.assistLastAttackAt = now;
+  applyPetAssistDamageToEnemy(targetEnemy, now);
 }
 
 function ensurePetExistsInCurrentArea() {
@@ -496,7 +862,7 @@ function ensurePetExistsInCurrentArea() {
   const petSpriteName = obeyState.petSpriteName || "possum";
   pet = {
     id: obeyState.petId,
-    name: "Possum",
+    name: obeyState.petTypeName || "Companion",
     world: currentAreaId,
     x: player.x - TILE,
     y: player.y,
@@ -512,9 +878,13 @@ function ensurePetExistsInCurrentArea() {
     sprite: assets.getSprite(petSpriteName),
     spriteWidth: obeyState.petWidth,
     spriteHeight: obeyState.petHeight,
+    level: Number.isFinite(obeyState.petLevel) ? Math.max(1, Math.floor(obeyState.petLevel)) : 1,
+    maxHp: Number.isFinite(obeyState.petMaxHp) ? Math.max(1, obeyState.petMaxHp) : 15,
+    hp: Number.isFinite(obeyState.petHp) ? Math.max(0, obeyState.petHp) : 15,
     dialogue: ["*Your possum companion watches you closely.*"],
     hasTrainingChoice: false
   };
+  if (pet.hp > pet.maxHp) pet.hp = pet.maxHp;
   npcs.push(pet);
   return pet;
 }
@@ -526,6 +896,13 @@ function updatePetFollow(now) {
   pet.canRoam = false;
   pet.blocking = false;
   pet.isPlayerPet = true;
+  pet.level = Number.isFinite(pet.level) ? Math.max(1, Math.floor(pet.level)) : 1;
+  pet.maxHp = Number.isFinite(pet.maxHp) ? Math.max(1, pet.maxHp) : 15;
+  pet.hp = Number.isFinite(pet.hp) ? Math.max(0, Math.min(pet.maxHp, pet.hp)) : pet.maxHp;
+  obeyState.petTypeName = String(pet.name || obeyState.petTypeName || "Companion");
+  obeyState.petLevel = pet.level;
+  obeyState.petMaxHp = pet.maxHp;
+  obeyState.petHp = pet.hp;
 
   const last = Number.isFinite(obeyState.lastFollowUpdateAt) ? obeyState.lastFollowUpdateAt : now;
   const dtScale = Math.max(0, Math.min(3, (now - last) / 16.667));
@@ -560,10 +937,10 @@ function updatePetFollow(now) {
 
   const tryX = pet.x + vx;
   const tryY = pet.y + vy;
-  if (!collisionService.collidesAt(tryX, pet.y, currentMap, currentMapW, currentMapH)) {
+  if (!collisionService.collides(tryX, pet.y, currentMap, currentMapW, currentMapH)) {
     pet.x = tryX;
   }
-  if (!collisionService.collidesAt(pet.x, tryY, currentMap, currentMapW, currentMapH)) {
+  if (!collisionService.collides(pet.x, tryY, currentMap, currentMapW, currentMapH)) {
     pet.y = tryY;
   }
 
@@ -575,6 +952,10 @@ function updatePetFollow(now) {
 }
 
 function updateObeySystem(now) {
+  if (isSkillChannelInterruptedByPlayerAction()) {
+    interruptObeyChannelToHostileAggro();
+  }
+
   if (
     obeyState.active &&
     (
@@ -590,9 +971,38 @@ function updateObeySystem(now) {
     completeObeyChannelIfReady(now);
   }
 
+  maybeRevertCancelledObeyHostile();
+
   if (obeyState.petId) {
-    updatePetFollow(now);
+    if (obeyState.assistActive) {
+      updatePetAssistCombat(now);
+      if (!obeyState.assistActive) {
+        updatePetFollow(now);
+      }
+    } else {
+      updatePetFollow(now);
+    }
   }
+}
+
+function dismissObeyPet(now = performance.now()) {
+  if (!obeyState.petId) return false;
+  removeNpcById(obeyState.petId);
+  clearPetAssistState();
+  obeyState.assistLastAttackAt = 0;
+  obeyState.petId = "";
+  obeyState.petTypeName = "";
+  obeyState.petSpriteName = "";
+  obeyState.petLevel = 1;
+  obeyState.petMaxHp = 15;
+  obeyState.petHp = 15;
+  obeyState.petWidth = 25;
+  obeyState.petHeight = 16;
+  obeyState.lastFollowUpdateAt = 0;
+  itemAlert.active = true;
+  itemAlert.text = "Your pet returns to the wild.";
+  itemAlert.startedAt = now;
+  return true;
 }
 
 function tryActivateSkillSlot(slotIndex) {
@@ -614,10 +1024,13 @@ function tryActivateSkillSlot(slotIndex) {
       setSkillHudFeedback(slotIndex, "used");
       return false;
     }
-    const obeyTarget = getNearestObeyAnimalInRange();
-    if (!obeyTarget) {
-      setSkillHudFeedback(slotIndex, "empty");
-      return false;
+    const hasPet = Boolean(obeyState.petId);
+    if (!hasPet) {
+      const obeyTarget = getNearestObeyAnimalInRange();
+      if (!obeyTarget) {
+        setSkillHudFeedback(slotIndex, "empty");
+        return false;
+      }
     }
   }
 
@@ -628,10 +1041,18 @@ function tryActivateSkillSlot(slotIndex) {
   }
 
   if (slot.id === OBEY_SKILL_ID) {
-    const obeyTarget = getNearestObeyAnimalInRange();
-    if (!beginObeyChannel(obeyTarget)) {
-      setSkillHudFeedback(slotIndex, "empty");
-      return false;
+    const hasPet = Boolean(obeyState.petId);
+    if (hasPet) {
+      if (!dismissObeyPet(now)) {
+        setSkillHudFeedback(slotIndex, "empty");
+        return false;
+      }
+    } else {
+      const obeyTarget = getNearestObeyAnimalInRange();
+      if (!beginObeyChannel(obeyTarget)) {
+        setSkillHudFeedback(slotIndex, "empty");
+        return false;
+      }
     }
   }
 
@@ -1260,6 +1681,12 @@ function findClosestNearbyLeftoverForInteraction() {
 }
 
 function grantCombatXpAndCollectSummary(enemy, now) {
+  if (enemy?.obeyHostile) {
+    return {
+      xpGained: 0,
+      completedLevelUp: false
+    };
+  }
   const enemyId = typeof enemy?.id === "string" ? enemy.id.toLowerCase() : "";
   const enemyName = typeof enemy?.name === "string" ? enemy.name.toLowerCase() : "";
   const isOgre = enemyId.includes("ogre") || enemyName.includes("ogre");
@@ -1291,6 +1718,27 @@ function grantCombatXpAndCollectSummary(enemy, now) {
     xpGained,
     completedLevelUp: levelsGained > 0
   };
+}
+
+function handleEnemyDefeatRewards(enemy, now) {
+  if (enemy?.obeyHostile) {
+    syncObjectiveState(now);
+    return;
+  }
+  handleChallengeEnemyDefeat(enemy, now);
+  const reward = grantCombatXpAndCollectSummary(enemy, now);
+  spawnEnemyLeftovers(enemy, now);
+  const ex = Number.isFinite(enemy?.x) ? enemy.x + (Number(enemy?.width) || TILE) * 0.5 : player.x + TILE * 0.5;
+  const ey = Number.isFinite(enemy?.y) ? enemy.y + (Number(enemy?.height) || TILE) * 0.25 : player.y;
+  vfxSystem.spawn("xpGainText", {
+    x: ex,
+    y: ey,
+    text: `+${reward.xpGained} xp`,
+    color: reward.completedLevelUp ? "#fff2ba" : "#a8e4ff",
+    glowColor: reward.completedLevelUp ? "rgba(255, 206, 96, 0.4)" : "rgba(101, 197, 255, 0.34)",
+    durationMs: 1450
+  });
+  syncObjectiveState(now);
 }
 
 function getPatInnkeeperNpc() {
@@ -2105,25 +2553,16 @@ const combatSystem = createCombatSystem({
     onRequestVfx: (type, options) => vfxSystem.spawn(type, options),
     onPlayerAttackStarted: () => {
       musicManager.playSfx("attackSwing");
+      engagePetAssistMode();
     },
     onHitConfirmed: (event) => {
       handleCombatHitConfirmed(event);
+      if (event?.type === "entityDamaged") {
+        engagePetAssistMode();
+      }
     },
     onEntityDefeated: (enemy, now) => {
-      handleChallengeEnemyDefeat(enemy, now);
-      const reward = grantCombatXpAndCollectSummary(enemy, now);
-      spawnEnemyLeftovers(enemy, now);
-      const ex = Number.isFinite(enemy?.x) ? enemy.x + (Number(enemy?.width) || TILE) * 0.5 : player.x + TILE * 0.5;
-      const ey = Number.isFinite(enemy?.y) ? enemy.y + (Number(enemy?.height) || TILE) * 0.25 : player.y;
-      vfxSystem.spawn("xpGainText", {
-        x: ex,
-        y: ey,
-        text: `+${reward.xpGained} xp`,
-        color: reward.completedLevelUp ? "#fff2ba" : "#a8e4ff",
-        glowColor: reward.completedLevelUp ? "rgba(255, 206, 96, 0.4)" : "rgba(101, 197, 255, 0.34)",
-        durationMs: 1450
-      });
-      syncObjectiveState(now);
+      handleEnemyDefeatRewards(enemy, now);
     },
     onPlayerDefeated: ({ player: defeatedPlayer }) => {
       handlePlayerDefeated({ player: defeatedPlayer });

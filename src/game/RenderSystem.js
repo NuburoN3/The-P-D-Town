@@ -632,25 +632,6 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom, getItemSprite =
   ctx.strokeRect(barX + 0.5, manaBarY + 0.5, barW - 1, barH - 1);
   ctx.restore();
 
-  const obeyState = state.obeyState && typeof state.obeyState === "object" ? state.obeyState : null;
-  if (obeyState?.active && Number.isFinite(obeyState.startedAt) && Number.isFinite(obeyState.durationMs) && obeyState.durationMs > 0) {
-    const obeyElapsed = Math.max(0, now - obeyState.startedAt);
-    const obeyRatio = Math.max(0, Math.min(1, obeyElapsed / obeyState.durationMs));
-    const obeyBarW = Math.min(Math.max(180, slotsW), ctx.canvas.width - 44);
-    const obeyBarH = 10;
-    const obeyBarX = Math.round((ctx.canvas.width - obeyBarW) / 2);
-    const obeyBarY = manaBarY - 22;
-    ctx.fillStyle = "rgba(8, 12, 16, 0.85)";
-    ctx.fillRect(obeyBarX, obeyBarY, obeyBarW, obeyBarH);
-    ctx.fillStyle = "#7ecf9a";
-    ctx.fillRect(obeyBarX, obeyBarY, Math.round(obeyBarW * obeyRatio), obeyBarH);
-    ctx.strokeStyle = "rgba(245, 250, 236, 0.65)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(obeyBarX + 0.5, obeyBarY + 0.5, obeyBarW - 1, obeyBarH - 1);
-    ctx.font = FONT_12;
-    drawUiText(ctx, "Obeying...", obeyBarX + 2, obeyBarY - 3, colors);
-  }
-
   for (let i = 0; i < slotCount; i++) {
     const slotX = slotsX + i * (slotSize + slotGap);
     const slot = skillSlots[i];
@@ -895,6 +876,92 @@ function drawCombatLevelHud(ctx, state, colors) {
   const xpTextY = barY + 10;
   ctx.fillStyle = highContrast ? "rgba(226, 239, 249, 0.98)" : "rgba(63, 37, 14, 0.98)";
   ctx.fillText(xpText, xpTextX, xpTextY);
+}
+
+function drawFriendliesHud(ctx, state, colors) {
+  if (!isFreeExploreState(state.gameState)) return;
+  const obeyState = state.obeyState && typeof state.obeyState === "object" ? state.obeyState : null;
+  if (!obeyState?.petId) return;
+  const npcs = Array.isArray(state.npcs) ? state.npcs : [];
+  const pet = npcs.find((npc) => npc && npc.id === obeyState.petId) || null;
+  if (!pet) return;
+
+  const petType = String(pet.name || obeyState.petTypeName || "Companion").trim() || "Companion";
+  const petName = `Pet ${petType}`;
+  const petMaxHp = Number.isFinite(pet.maxHp) ? Math.max(1, pet.maxHp) : 15;
+  const petHp = Number.isFinite(pet.hp) ? Math.max(0, Math.min(petMaxHp, pet.hp)) : petMaxHp;
+  const hpRatio = Math.max(0, Math.min(1, petHp / petMaxHp));
+
+  const panelW = Math.min(232, ctx.canvas.width - 28);
+  const panelH = 66;
+  const panelX = ctx.canvas.width - panelW - 14;
+  const panelY = 148;
+  const barX = panelX + 12;
+  const barY = panelY + 36;
+  const barW = panelW - 24;
+  const barH = 12;
+
+  drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors, { titleBand: true });
+  ctx.font = FONT_12;
+  drawUiText(ctx, "Friendlies", panelX + 10, panelY + 16, colors);
+  ctx.font = FONT_16;
+  drawUiText(ctx, petName, panelX + 10, panelY + 30, colors);
+
+  ctx.fillStyle = "rgba(10, 12, 18, 0.9)";
+  ctx.fillRect(barX, barY, barW, barH);
+  ctx.fillStyle = hpRatio > 0.5 ? "#df4949" : hpRatio > 0.25 ? "#cf3434" : "#b91f1f";
+  ctx.fillRect(barX, barY, Math.round(barW * hpRatio), barH);
+  ctx.strokeStyle = "rgba(255,255,255,0.45)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
+
+  ctx.font = FONT_12;
+  ctx.textAlign = "right";
+  drawUiText(ctx, `${Math.round(petHp)} / ${Math.round(petMaxHp)}`, panelX + panelW - 10, panelY + panelH - 8, colors);
+  ctx.textAlign = "start";
+}
+
+function drawPlayerSkillChannelBar(ctx, state, tileSize, getItemSprite = null) {
+  if (!state?.player || !state?.cam) return;
+  const obeyState = state.obeyState && typeof state.obeyState === "object" ? state.obeyState : null;
+  if (!obeyState?.active || !Number.isFinite(obeyState.startedAt) || !Number.isFinite(obeyState.durationMs) || obeyState.durationMs <= 0) {
+    return;
+  }
+
+  const now = performance.now();
+  const elapsed = Math.max(0, now - obeyState.startedAt);
+  const ratio = Math.max(0, Math.min(1, elapsed / obeyState.durationMs));
+  const playerX = Number.isFinite(state.player.x) ? state.player.x : 0;
+  const playerY = Number.isFinite(state.player.y) ? state.player.y : 0;
+  const camX = Number.isFinite(state.cam.x) ? state.cam.x : 0;
+  const camY = Number.isFinite(state.cam.y) ? state.cam.y : 0;
+  const barW = Math.max(18, tileSize * 1.18);
+  const barH = Math.max(3, Math.round(tileSize * 0.13));
+  const barX = Math.round(playerX - camX + (tileSize - barW) * 0.5);
+  const barY = Math.round(playerY - camY + tileSize + Math.max(2, Math.round(tileSize * 0.05)));
+  ctx.fillStyle = "rgba(8, 12, 16, 0.86)";
+  ctx.fillRect(barX, barY, barW, barH);
+  ctx.fillStyle = "#7ecf9a";
+  ctx.fillRect(barX, barY, Math.round(barW * ratio), barH);
+  ctx.strokeStyle = "rgba(245, 250, 236, 0.68)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
+
+  const obeyIcon = typeof getItemSprite === "function" ? getItemSprite("obey") : null;
+  const iconSize = Math.max(18, Math.round(tileSize * 0.92));
+  const iconX = Math.round(barX + (barW - iconSize) * 0.5);
+  const iconY = Math.round(barY + barH + 4);
+  if (obeyIcon && obeyIcon.width && obeyIcon.height) {
+    ctx.fillStyle = "rgba(10, 14, 18, 0.72)";
+    ctx.fillRect(iconX - 2, iconY - 2, iconSize + 4, iconSize + 4);
+    ctx.drawImage(obeyIcon, iconX, iconY, iconSize, iconSize);
+  }
+
+  ctx.font = FONT_12;
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(245, 250, 236, 0.95)";
+  ctx.fillText("Obey", Math.round(barX + barW * 0.5), iconY + iconSize + 10);
+  ctx.textAlign = "start";
 }
 
 function drawCombatLevelCelebrationOverlay(ctx, state) {
@@ -1501,8 +1568,8 @@ function drawAtmosphere(ctx, canvas, colors, state) {
 
   if (isOverworld) {
     // Strong 4-phase cycle for readability: Day -> Dusk -> Night -> Dawn.
-    // Full loop is 30s for testing.
-    const cycleSec = 30;
+    // Full loop is 20 minutes.
+    const cycleSec = 20 * 60;
     const cycleT = ((now % cycleSec) + cycleSec) % cycleSec / cycleSec; // 0..1
     const phasePos = cycleT * 4;
     const phaseA = Math.floor(phasePos) % 4;
@@ -2218,6 +2285,7 @@ export function renderGameFrame({
     spriteFrameHeight,
     spriteFramesPerRow
   });
+  drawPlayerSkillChannelBar(ctx, state, tileSize, getItemSprite);
   drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoom, drawTile);
   drawWorldVfx(ctx, state);
   drawTrainingPopup(ctx, state, canvas, ui, colors, tileSize);
@@ -2254,6 +2322,7 @@ export function renderGameFrame({
     drawCombatLevelHud(ctx, state, uiColors);
     drawObjectiveTracker(ctx, state, uiColors);
     drawMinimap(ctx, state, uiColors);
+    drawFriendliesHud(ctx, state, uiColors);
     drawDoorHint(ctx, state, uiColors, dialogue, cameraZoom);
     // Enemy XP feedback now uses world-space floating VFX instead of panel notifications.
     if (typeof drawCustomOverlays === "function") {

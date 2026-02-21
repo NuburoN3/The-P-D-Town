@@ -114,6 +114,7 @@ export class CollisionService {
 
     for (const npc of npcs) {
       if (npc.world !== currentAreaId) continue;
+      if (npc.isPlayerPet) continue;
       if (npc.blocking === false) continue;
       if (this.rectsOverlap(playerRect, npc)) return true;
     }

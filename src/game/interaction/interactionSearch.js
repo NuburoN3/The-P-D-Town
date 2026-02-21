@@ -9,7 +9,9 @@ export function findClosestInteractableNpc({
   let closestNpcDistance = Number.POSITIVE_INFINITY;
 
   for (const npc of npcs) {
+    if (!npc) continue;
     if (npc.world !== currentAreaId) continue;
+    if (npc.isPlayerPet) continue;
 
     const npcCenterX = npc.x + npc.width / 2;
     const npcCenterY = npc.y + npc.height / 2;

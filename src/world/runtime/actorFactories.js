@@ -17,6 +17,16 @@ export function createNPCsForTown(town, tileSize, getSprite) {
       dir,
       ...customFields
     } = npc;
+    const obeyAnimal = Boolean(customFields.obeyAnimal);
+    const resolvedLevel = Number.isFinite(customFields.level)
+      ? Math.max(1, Math.floor(customFields.level))
+      : (obeyAnimal ? 1 : null);
+    const resolvedMaxHp = Number.isFinite(customFields.maxHp)
+      ? Math.max(1, customFields.maxHp)
+      : (obeyAnimal ? 15 : null);
+    const resolvedHp = Number.isFinite(customFields.hp)
+      ? Math.max(0, Math.min(Number.isFinite(resolvedMaxHp) ? resolvedMaxHp : customFields.hp, customFields.hp))
+      : (Number.isFinite(resolvedMaxHp) ? resolvedMaxHp : null);
 
     return {
       ...customFields,
@@ -31,7 +41,10 @@ export function createNPCsForTown(town, tileSize, getSprite) {
       sprite: getSprite(spriteName),
       dialogue: Array.isArray(dialogue) ? [...dialogue] : [String(dialogue ?? "")],
       hasTrainingChoice: Boolean(hasTrainingChoice),
-      dir: dir || "down"
+      dir: dir || "down",
+      ...(Number.isFinite(resolvedLevel) ? { level: resolvedLevel } : {}),
+      ...(Number.isFinite(resolvedMaxHp) ? { maxHp: resolvedMaxHp } : {}),
+      ...(Number.isFinite(resolvedHp) ? { hp: resolvedHp } : {})
     };
   });
 }
