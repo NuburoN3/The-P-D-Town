@@ -22,6 +22,8 @@ import {
   drawTextbox,
   drawTrainingPopup
 } from "./rendering/overlayCore.js";
+import { getFountainRenderSprite } from "../world/buildings/fountainSprite.js";
+import { beginBuildingRenderFrame } from "../world/buildingRenderers.js";
 
 // hash01 imported from ../core/mathUtils.js
 
@@ -544,7 +546,7 @@ function drawBarMinigameOverlay(ctx, state, canvas, colors) {
   ctx.restore();
 }
 
-function drawCombatHud(ctx, state, colors, tileSize, cameraZoom) {
+function drawCombatHud(ctx, state, colors, tileSize, cameraZoom, getItemSprite = null) {
   if (!isFreeExploreState(state.gameState)) return;
   if (!state.player || !Number.isFinite(state.player.maxHp)) return;
 
@@ -630,6 +632,25 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom) {
   ctx.strokeRect(barX + 0.5, manaBarY + 0.5, barW - 1, barH - 1);
   ctx.restore();
 
+  const obeyState = state.obeyState && typeof state.obeyState === "object" ? state.obeyState : null;
+  if (obeyState?.active && Number.isFinite(obeyState.startedAt) && Number.isFinite(obeyState.durationMs) && obeyState.durationMs > 0) {
+    const obeyElapsed = Math.max(0, now - obeyState.startedAt);
+    const obeyRatio = Math.max(0, Math.min(1, obeyElapsed / obeyState.durationMs));
+    const obeyBarW = Math.min(Math.max(180, slotsW), ctx.canvas.width - 44);
+    const obeyBarH = 10;
+    const obeyBarX = Math.round((ctx.canvas.width - obeyBarW) / 2);
+    const obeyBarY = manaBarY - 22;
+    ctx.fillStyle = "rgba(8, 12, 16, 0.85)";
+    ctx.fillRect(obeyBarX, obeyBarY, obeyBarW, obeyBarH);
+    ctx.fillStyle = "#7ecf9a";
+    ctx.fillRect(obeyBarX, obeyBarY, Math.round(obeyBarW * obeyRatio), obeyBarH);
+    ctx.strokeStyle = "rgba(245, 250, 236, 0.65)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(obeyBarX + 0.5, obeyBarY + 0.5, obeyBarW - 1, obeyBarH - 1);
+    ctx.font = FONT_12;
+    drawUiText(ctx, "Obeying...", obeyBarX + 2, obeyBarY - 3, colors);
+  }
+
   for (let i = 0; i < slotCount; i++) {
     const slotX = slotsX + i * (slotSize + slotGap);
     const slot = skillSlots[i];
@@ -647,7 +668,19 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom) {
       ctx.strokeStyle = "rgba(255,255,255,0.2)";
       ctx.lineWidth = 1;
       ctx.strokeRect(slotX + 6.5, slotsY + 6.5, slotSize - 13, slotSize - 13);
+    } else if (typeof getItemSprite === "function") {
+      const skillSpriteName = slot.id === "obey" ? "obey" : null;
+      const skillSprite = skillSpriteName ? getItemSprite(skillSpriteName) : null;
+      if (skillSprite && skillSprite.width && skillSprite.height) {
+        const iconSize = slotSize - 12;
+        ctx.drawImage(skillSprite, slotX + 6, slotsY + 6, iconSize, iconSize);
+      }
     } else if (!hasMana) {
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.fillRect(slotX + 6, slotsY + 6, slotSize - 12, slotSize - 12);
+    }
+
+    if (isAssigned && !hasMana) {
       ctx.fillStyle = "rgba(0,0,0,0.45)";
       ctx.fillRect(slotX + 6, slotsY + 6, slotSize - 12, slotSize - 12);
     }
@@ -1967,6 +2000,7 @@ function drawIntroCutsceneOverlay(ctx, canvas, state) {
 
 function drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoom, drawTile) {
   if (typeof state.getBuildingAtWorldTile !== "function") return;
+  const drawnFountainForeground = new Set();
 
   const visibleW = canvas.width / cameraZoom;
   const visibleH = canvas.height / cameraZoom;
@@ -1994,6 +2028,51 @@ function drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoo
       }
 
       const building = state.getBuildingAtWorldTile(x, y);
+      if (building && building.type === "FOUNTAIN") {
+        const localY = y - building.y;
+        const depthRows = 2;
+        const upperVisualRows = Math.max(0, building.height - depthRows);
+        if (localY < upperVisualRows) {
+          const key = building.id || `${building.x},${building.y},${building.width},${building.height}`;
+          if (!drawnFountainForeground.has(key)) {
+            drawnFountainForeground.add(key);
+            const sprite = getFountainRenderSprite();
+            if (sprite) {
+              const drawX = building.x * tileSize - state.cam.x;
+              const drawY = building.y * tileSize - state.cam.y;
+              const drawW = building.width * tileSize;
+              const drawH = building.height * tileSize;
+              const buildingBottomWorldY = (building.y + building.height) * tileSize;
+              const playerFootWorldY = (Number.isFinite(state.player?.y) ? state.player.y : 0) + tileSize * 0.92;
+              // NPC-like depth rule: if protagonist foot-Y is above fountain front edge, protagonist is behind it.
+              const playerBehindFountain = playerFootWorldY < buildingBottomWorldY;
+              // The fountain's full height (except bottom 2 depth rows) draws in front.
+              const clipY = drawY;
+              const clipH = Math.max(0, drawH - tileSize * 2);
+              if (playerBehindFountain && clipH > 0) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(drawX, clipY, drawW, clipH);
+                ctx.clip();
+                ctx.drawImage(sprite, drawX, drawY, drawW, drawH);
+                ctx.restore();
+
+                // Hide tiny foot/leg bleed-through at the upper/lower fountain seam.
+                const seamTop = drawY + clipH - tileSize * 0.34;
+                const seamHeight = tileSize * 0.82;
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(drawX, seamTop, drawW, seamHeight);
+                ctx.clip();
+                ctx.drawImage(sprite, drawX, drawY, drawW, drawH);
+                ctx.restore();
+              }
+            }
+          }
+        }
+        continue;
+      }
+
       // Redraw dojo top row after entities so roof/eaves occlude player behind it.
       if (!building || building.type !== "DOJO" || y !== building.y) continue;
 
@@ -2023,6 +2102,7 @@ export function renderGameFrame({
   dialogue
 }) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  beginBuildingRenderFrame();
 
   ctx.save();
   ctx.scale(cameraZoom, cameraZoom);
@@ -2090,7 +2170,7 @@ export function renderGameFrame({
   if (nonDialogueUiAlpha > 0.01) {
     ctx.save();
     ctx.globalAlpha *= nonDialogueUiAlpha;
-    drawCombatHud(ctx, state, uiColors, tileSize, cameraZoom);
+    drawCombatHud(ctx, state, uiColors, tileSize, cameraZoom, getItemSprite);
     drawCombatLevelHud(ctx, state, uiColors);
     drawObjectiveTracker(ctx, state, uiColors);
     drawMinimap(ctx, state, uiColors);

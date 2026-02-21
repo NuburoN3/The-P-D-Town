@@ -1,6 +1,5 @@
 import { TILE_TYPES } from "../../core/constants.js";
 import { BUILDING_TYPES } from "../buildingRenderers.js";
-import { isFountainSolidTile } from "../fountainGeometry.js";
 
 function keyForTile(x, y) {
   return `${x},${y}`;
@@ -8,7 +7,7 @@ function keyForTile(x, y) {
 
 function resolveBuildingTileType(building, tileX, tileY) {
   if (building.type === BUILDING_TYPES.FOUNTAIN) {
-    return isFountainSolidTile(building, tileX, tileY) ? TILE_TYPES.WALL : TILE_TYPES.PATH;
+    return TILE_TYPES.PATH;
   }
 
   if (building.type === BUILDING_TYPES.PEN) {

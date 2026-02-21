@@ -13,6 +13,8 @@ export function createMovementSystem({
   sprintMultiplier = 1.5
 }) {
   let lastWalkSoundTime = 0;
+  let preferredWallDriftY = 1;
+  let preferredWallDriftX = 1;
 
   // clamp and lerp imported from ../core/mathUtils.js
 
@@ -42,6 +44,11 @@ export function createMovementSystem({
     doorFromCollision,
     beginDoorSequence
   }) {
+    const canOccupy = (testX, testY) => (
+      !collides(testX, testY, currentMap, currentMapW, currentMapH) &&
+      !collidesWithNPC(testX, testY, npcs, currentAreaId)
+    );
+
     const isPressed = (action, legacyKeys = []) => {
       if (typeof getActionPressed === "function") {
         return Boolean(getActionPressed(action));
@@ -53,6 +60,112 @@ export function createMovementSystem({
     let dy = 0;
     const sprinting = typeof getSprintPressed === "function" && Boolean(getSprintPressed());
     const movementSpeed = player.speed * (sprinting ? sprintMultiplier : 1);
+    const slideStep = Math.max(0.2, Math.min(0.7, movementSpeed * dtScale * 0.16));
+    const driftStep = Math.max(0.12, Math.min(0.45, slideStep * 0.55));
+
+    const trySlideAroundHorizontalBlock = (targetX) => {
+      const nudges = [-slideStep, slideStep, -(slideStep * 2), slideStep * 2];
+      for (let i = 0; i < nudges.length; i++) {
+        const testY = player.y + nudges[i];
+        if (!canOccupy(targetX, testY)) continue;
+        player.x = targetX;
+        player.y = testY;
+        return true;
+      }
+      return false;
+    };
+
+    const trySlideAroundVerticalBlock = (targetY) => {
+      const nudges = [-slideStep, slideStep, -(slideStep * 2), slideStep * 2];
+      for (let i = 0; i < nudges.length; i++) {
+        const testX = player.x + nudges[i];
+        if (!canOccupy(testX, targetY)) continue;
+        player.x = testX;
+        player.y = targetY;
+        return true;
+      }
+      return false;
+    };
+
+    const tryDeadEndDriftFromHorizontalBlock = (targetX) => {
+      const hint = dy !== 0 ? Math.sign(dy) : preferredWallDriftY;
+      const primary = hint >= 0 ? 1 : -1;
+      const offsets = [
+        primary * driftStep,
+        -primary * driftStep,
+        primary * driftStep * 2,
+        -primary * driftStep * 2,
+        primary * driftStep * 3,
+        -primary * driftStep * 3
+      ];
+      for (let i = 0; i < offsets.length; i++) {
+        const offset = offsets[i];
+        // Preferred: drift while still inching toward intended X so wall-follow feels responsive.
+        const partialX = player.x + dx * 0.35;
+        const testYWithPartialX = player.y + offset;
+        if (canOccupy(partialX, testYWithPartialX)) {
+          player.x = partialX;
+          player.y = testYWithPartialX;
+          preferredWallDriftY = offset >= 0 ? 1 : -1;
+          return true;
+        }
+
+        const testYWithTargetX = player.y + offset;
+        if (canOccupy(targetX, testYWithTargetX)) {
+          player.x = targetX;
+          player.y = testYWithTargetX;
+          preferredWallDriftY = offset >= 0 ? 1 : -1;
+          return true;
+        }
+
+        const testY = player.y + offset;
+        if (!canOccupy(player.x, testY)) continue;
+        player.y = testY;
+        preferredWallDriftY = offset >= 0 ? 1 : -1;
+        return true;
+      }
+      return false;
+    };
+
+    const tryDeadEndDriftFromVerticalBlock = (targetY) => {
+      const hint = dx !== 0 ? Math.sign(dx) : preferredWallDriftX;
+      const primary = hint >= 0 ? 1 : -1;
+      const offsets = [
+        primary * driftStep,
+        -primary * driftStep,
+        primary * driftStep * 2,
+        -primary * driftStep * 2,
+        primary * driftStep * 3,
+        -primary * driftStep * 3
+      ];
+      for (let i = 0; i < offsets.length; i++) {
+        const offset = offsets[i];
+        // Symmetric with horizontal handling: drift while inching toward intended Y.
+        const partialY = player.y + dy * 0.35;
+        const testXWithPartialY = player.x + offset;
+        if (canOccupy(testXWithPartialY, partialY)) {
+          player.x = testXWithPartialY;
+          player.y = partialY;
+          preferredWallDriftX = offset >= 0 ? 1 : -1;
+          return true;
+        }
+
+        const testXWithTargetY = player.x + offset;
+        if (canOccupy(testXWithTargetY, targetY)) {
+          player.x = testXWithTargetY;
+          player.y = targetY;
+          preferredWallDriftX = offset >= 0 ? 1 : -1;
+          return true;
+        }
+
+        const testX = player.x + offset;
+        if (!canOccupy(testX, player.y)) continue;
+        player.x = testX;
+        preferredWallDriftX = offset >= 0 ? 1 : -1;
+        return true;
+      }
+      return false;
+    };
 
     if (isPressed("moveUp", ["w", "arrowup"])) {
       dy -= movementSpeed * dtScale;
@@ -90,27 +203,37 @@ export function createMovementSystem({
     const nx = player.x + dx;
     const ny = player.y + dy;
 
-    if (!collides(nx, player.y, currentMap, currentMapW, currentMapH) &&
-      !collidesWithNPC(nx, player.y, npcs, currentAreaId)) {
+    if (canOccupy(nx, player.y)) {
       player.x = nx;
     } else if (dx !== 0) {
       const doorTile = doorFromCollision(nx, player.y, currentMap, currentMapW, currentMapH);
       if (doorTile) {
         beginDoorSequence(doorTile);
-      } else {
-        musicManager.playSfx("collision");
+        return;
+      }
+      if (!trySlideAroundHorizontalBlock(nx) && !tryDeadEndDriftFromHorizontalBlock(nx)) {
+        const fallbackDoorTile = doorFromCollision(nx, player.y, currentMap, currentMapW, currentMapH);
+        if (fallbackDoorTile) {
+          beginDoorSequence(fallbackDoorTile);
+          return;
+        }
       }
     }
 
-    if (!collides(player.x, ny, currentMap, currentMapW, currentMapH) &&
-      !collidesWithNPC(player.x, ny, npcs, currentAreaId)) {
+    if (canOccupy(player.x, ny)) {
       player.y = ny;
     } else if (dy !== 0) {
       const doorTile = doorFromCollision(player.x, ny, currentMap, currentMapW, currentMapH);
       if (doorTile) {
         beginDoorSequence(doorTile);
-      } else {
-        musicManager.playSfx("collision");
+        return;
+      }
+      if (!trySlideAroundVerticalBlock(ny) && !tryDeadEndDriftFromVerticalBlock(ny)) {
+        const fallbackDoorTile = doorFromCollision(player.x, ny, currentMap, currentMapW, currentMapH);
+        if (fallbackDoorTile) {
+          beginDoorSequence(fallbackDoorTile);
+          return;
+        }
       }
     }
 

@@ -9,10 +9,11 @@ import { TILE, TILE_TYPES } from "./constants.js";
  */
 export class CollisionService {
   /**
-   * @param {{tileSize?: number}} [opts]
+   * @param {{tileSize?: number, isTileBlocked?: ((tx:number, ty:number, px:number, py:number) => boolean) | null}} [opts]
    */
-  constructor({ tileSize = TILE } = {}) {
+  constructor({ tileSize = TILE, isTileBlocked = null } = {}) {
     this.tileSize = tileSize;
+    this.isTileBlocked = typeof isTileBlocked === "function" ? isTileBlocked : null;
   }
 
   /**
@@ -51,7 +52,7 @@ export class CollisionService {
    */
   isBlockedAtPixel(px, py, currentMap, currentMapW, currentMapH) {
     const tile = this.tileAtPixel(px, py, currentMap, currentMapW, currentMapH);
-    return (
+    const blockedByTile = (
       tile === TILE_TYPES.TREE ||
       tile === TILE_TYPES.WALL ||
       tile === TILE_TYPES.SIGNPOST ||
@@ -66,6 +67,12 @@ export class CollisionService {
       tile === TILE_TYPES.HIFI ||
       tile === TILE_TYPES.OVAL_MIRROR
     );
+    if (blockedByTile) return true;
+    if (!this.isTileBlocked) return false;
+    const tx = Math.floor(px / this.tileSize);
+    const ty = Math.floor(py / this.tileSize);
+    if (tx < 0 || ty < 0 || tx >= currentMapW || ty >= currentMapH) return true;
+    return Boolean(this.isTileBlocked(tx, ty, px, py));
   }
 
   /**

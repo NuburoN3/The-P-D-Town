@@ -102,8 +102,18 @@ export function createNPCInteractionHandler({
   function normalizeProgressState(tp) {
     normalizeGlobalStoryFlags(gameFlags);
     const normalized = normalizeTownProgress(tp);
+    const ensureTrainingCompletionConsistency = (progress) => {
+      const kills = Number.isFinite(progress.challengeKills) ? progress.challengeKills : 0;
+      const target = Number.isFinite(progress.challengeTarget) ? progress.challengeTarget : 3;
+      if (kills >= target) {
+        if (!gameFlags.completedTraining) gameFlags.completedTraining = true;
+      } else if (gameFlags.completedTraining) {
+        gameFlags.completedTraining = false;
+      }
+    };
     if (tp && typeof tp === "object") {
       Object.assign(tp, normalized);
+      ensureTrainingCompletionConsistency(tp);
       tp.bogQuestTarget = getBogQuestTarget(tp, trainingContent);
       tp.bogQuestKills = Math.max(0, Math.min(tp.bogQuestTarget, tp.bogQuestKills));
       const rumorClues = getRumorCluesFound(tp);
@@ -118,6 +128,7 @@ export function createNPCInteractionHandler({
       }
       return tp;
     }
+    ensureTrainingCompletionConsistency(normalized);
     normalized.bogQuestTarget = getBogQuestTarget(normalized, trainingContent);
     normalized.bogQuestKills = Math.max(0, Math.min(normalized.bogQuestTarget, normalized.bogQuestKills));
     const rumorClues = getRumorCluesFound(normalized);
@@ -509,6 +520,81 @@ export function createNPCInteractionHandler({
     );
   }
 
+  function grantObeySkillToFirstEmptySlot() {
+    if (!Array.isArray(player.skillSlots) || player.skillSlots.length === 0) return -1;
+    const existingIndex = player.skillSlots.findIndex((slot) => slot && slot.id === "obey");
+    if (existingIndex >= 0) return existingIndex;
+
+    for (let i = 0; i < player.skillSlots.length; i++) {
+      const slot = player.skillSlots[i] && typeof player.skillSlots[i] === "object"
+        ? player.skillSlots[i]
+        : {};
+      if (slot.id) continue;
+      player.skillSlots[i] = {
+        slot: Number.isFinite(slot.slot) ? slot.slot : (i + 1),
+        id: "obey",
+        name: "Obey",
+        manaCost: 5,
+        cooldownMs: 1400,
+        lastUsedAt: Number.isFinite(slot.lastUsedAt) ? slot.lastUsedAt : -Infinity
+      };
+      return i;
+    }
+    return -1;
+  }
+
+  function handleFarmerEliasInteraction(npc, tp) {
+    if (tp.obeySkillAwarded) {
+      showDialogue(npc.name, [
+        "'Obey' will keep an animal companion close to you at all times."
+      ]);
+      return;
+    }
+
+    showDialogue(npc.name, [
+      "Oh, you're Adrian aren't you? Pat's new guest.",
+      "I'm Elias, and I love animals.",
+      "Do you love animals too?"
+    ], () => {
+      openYesNoChoice((selectedOption) => {
+        if (selectedOption !== "Yes") {
+          showDialogue(npc.name, [
+            "That's alright. Animals still like patient people.",
+            "Come back if you change your mind."
+          ]);
+          return;
+        }
+
+        const slotIndex = grantObeySkillToFirstEmptySlot();
+        if (slotIndex < 0) {
+          showDialogue(npc.name, [
+            "Fantastic! You might find this useful then.",
+            "But your skill slots are full. Free one up and speak to me again."
+          ]);
+          return;
+        }
+
+        tp.obeySkillAwarded = true;
+        itemAlert.active = true;
+        itemAlert.text = `Learned skill: Obey (slot ${slotIndex + 1}).`;
+        itemAlert.startedAt = performance.now();
+        spawnVisualEffect("pickupGlow", {
+          x: player.x + tileSize / 2,
+          y: player.y + tileSize * 0.4,
+          size: 30
+        });
+        try {
+          musicManager.playSfx("itemUnlock");
+        } catch (_) { }
+
+        showDialogue(npc.name, [
+          "Fantastic! You might find this useful then.",
+          "'Obey' will keep an animal companion close to you at all times. Try using it on one of those Possums over there."
+        ]);
+      });
+    });
+  }
+
   return function handleNPCInteraction(npc) {
     const playerCenterX = player.x + tileSize / 2;
     const playerCenterY = player.y + tileSize / 2;
@@ -527,6 +613,11 @@ export function createNPCInteractionHandler({
       return;
     }
 
+    if (npc.id === "farmerElias") {
+      handleFarmerEliasInteraction(npc, tp);
+      return;
+    }
+
     if (!npc.hasTrainingChoice) {
       const clueDialogue = tryCollectRumorClue(npc, tp);
       if (clueDialogue) {
@@ -535,6 +626,22 @@ export function createNPCInteractionHandler({
       }
       showDialogue(npc.name, getContextualDialogue(npc, tp));
       return;
+    }
+
+    const challengeKills = Number.isFinite(tp.challengeKills) ? tp.challengeKills : 0;
+    const challengeTarget = Number.isFinite(tp.challengeTarget) ? tp.challengeTarget : 3;
+    const dojoChallengeComplete = challengeKills >= challengeTarget;
+
+    if (gameFlags.acceptedTraining) {
+      if (!dojoChallengeComplete) {
+        if (gameFlags.completedTraining) gameFlags.completedTraining = false;
+        showDialogue(npc.name, [
+          trainingContent.acceptedDialogue,
+          `Challenge progress: ${challengeKills}/${challengeTarget}.`
+        ]);
+        return;
+      }
+      if (!gameFlags.completedTraining) gameFlags.completedTraining = true;
     }
 
     if (gameFlags.completedTraining) {
@@ -609,20 +716,12 @@ export function createNPCInteractionHandler({
       return;
     }
 
-    if (gameFlags.acceptedTraining) {
-      const kills = Number.isFinite(tp.challengeKills) ? tp.challengeKills : 0;
-      const target = Number.isFinite(tp.challengeTarget) ? tp.challengeTarget : 3;
-      showDialogue(npc.name, [
-        trainingContent.acceptedDialogue,
-        `Challenge progress: ${kills}/${target}.`
-      ]);
-      return;
-    }
-
     showDialogue(npc.name, npc.dialogue, () => {
       openYesNoChoice((selectedOption) => {
         if (selectedOption === "Yes") {
           gameFlags.acceptedTraining = true;
+          // Restart challenge state so Hanami cannot advance story beats before the upstairs goal is done.
+          gameFlags.completedTraining = false;
           tp.challengeKills = 0;
           tp.challengeTarget = 3;
           tp.challengeCompleteAnnounced = false;

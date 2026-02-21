@@ -38,15 +38,24 @@ export function createTryTrainingAction({
     const onTrainingTile = tilePos.x === trainingTile.x && tilePos.y === trainingTile.y;
     if (!onTrainingTile) return;
 
-    if (gameFlags.acceptedTraining && !gameFlags.completedTraining) {
+    const tp = getTownProgress();
+    const challengeKills = Number.isFinite(tp.challengeKills) ? tp.challengeKills : 0;
+    const challengeTarget = Number.isFinite(tp.challengeTarget) ? tp.challengeTarget : 3;
+    const dojoChallengeComplete = challengeKills >= challengeTarget;
+    if (dojoChallengeComplete) {
+      if (!gameFlags.completedTraining) gameFlags.completedTraining = true;
+    } else if (gameFlags.completedTraining) {
+      gameFlags.completedTraining = false;
+    }
+
+    if (gameFlags.acceptedTraining && !dojoChallengeComplete) {
       if (!isDialogueActive()) {
         showDialogue("", "Mr. Hanami's challenge is upstairs. Defeat three opponents.");
       }
       return;
     }
 
-    if (gameFlags.completedTraining && !getTownProgress().enduranceUnlocked) {
-      const tp = getTownProgress();
+    if (dojoChallengeComplete && !tp.enduranceUnlocked) {
       if (!isDialogueActive()) {
         if (tp.rumorQuestActive && !tp.rumorQuestReported) {
           showDialogue("", "Investigation comes first. Gather witness leads in this order: piazza, chapel, then bar.");

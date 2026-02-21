@@ -12,6 +12,7 @@ const DEFAULT_TOWN_PROGRESS = Object.freeze({
   rumorCluePiazza: false,
   rumorClueChapel: false,
   rumorClueBar: false,
+  obeySkillAwarded: false,
   bogQuestOffered: false,
   bogQuestActive: false,
   bogQuestKills: 0,

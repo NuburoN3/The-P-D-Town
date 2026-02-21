@@ -21,6 +21,15 @@ export function initializeBuildingRenderers(ctx, tileSize) {
   buildingRenderers = createBuildingRendererRegistry(ctx, tileSize);
 }
 
+export function beginBuildingRenderFrame() {
+  if (!buildingRenderers) return;
+  for (const renderer of Object.values(buildingRenderers)) {
+    if (renderer && typeof renderer.beginFrame === "function") {
+      renderer.beginFrame();
+    }
+  }
+}
+
 export function renderBuildingTile(building, x, y, tileX, tileY) {
   if (!buildingRenderers) return false;
   const renderer = buildingRenderers[building.type];

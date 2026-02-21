@@ -40,6 +40,7 @@ import { createGameRenderer } from "./gameRenderer.js";
 import { createInputBindings } from "./inputBindings.js";
 import { createMenuStateController } from "./menuStateController.js";
 import { normalizeGlobalStoryFlags, normalizeTownProgress } from "../game/progression/progressDefaults.js";
+import { isFountainSpriteOpaqueAtWorldPixel } from "../world/buildings/fountainSprite.js";
 
 const { canvas, ctx, assets, worldService, musicManager, state } = createGameRuntime();
 
@@ -192,7 +193,19 @@ const input = new InputManager({
   )
 });
 
-const collisionService = new CollisionService({ tileSize: TILE });
+const collisionService = new CollisionService({
+  tileSize: TILE,
+  isTileBlocked: (tx, ty, px, py) => {
+    const building = worldService.getBuilding(currentTownId, currentAreaId, tx, ty);
+    if (!building || building.type !== "FOUNTAIN") return false;
+    return isFountainSpriteOpaqueAtWorldPixel({
+      building,
+      tileSize: TILE,
+      worldX: px,
+      worldY: py
+    });
+  }
+});
 
 const movementSystem = createMovementSystem({
   keys: input.keys,
@@ -236,6 +249,26 @@ const objectiveState = {
   updatedAt: 0,
   marker: null,
   markerArea: null
+};
+
+const OBEY_SKILL_ID = "obey";
+const OBEY_CAST_RADIUS_TILES = 4;
+const OBEY_CHANNEL_DURATION_MS = 10000;
+const OBEY_PET_FOLLOW_DISTANCE_TILES = 1;
+const OBEY_PET_TELEPORT_DISTANCE_TILES = 8;
+
+const obeyState = {
+  active: false,
+  startedAt: 0,
+  durationMs: OBEY_CHANNEL_DURATION_MS,
+  targetNpcId: "",
+  targetTownId: "",
+  targetAreaId: "",
+  petId: "",
+  petSpriteName: "",
+  petWidth: 25,
+  petHeight: 16,
+  lastFollowUpdateAt: 0
 };
 
 const uiMotionState = {
@@ -346,11 +379,13 @@ function ensurePlayerSkillState(targetPlayer) {
   const normalizedSlots = [];
   for (let i = 0; i < SKILL_SLOT_COUNT; i++) {
     const source = currentSlots[i] && typeof currentSlots[i] === "object" ? currentSlots[i] : {};
+    const normalizedSkillId = source.id || null;
+    const normalizedManaCost = Number.isFinite(source.manaCost) ? Math.max(0, source.manaCost) : 0;
     normalizedSlots.push({
       slot: i + 1,
-      id: source.id || null,
+      id: normalizedSkillId,
       name: String(source.name || ""),
-      manaCost: Number.isFinite(source.manaCost) ? Math.max(0, source.manaCost) : 0,
+      manaCost: normalizedSkillId === "obey" ? 5 : normalizedManaCost,
       cooldownMs: Number.isFinite(source.cooldownMs) ? Math.max(0, source.cooldownMs) : 0,
       lastUsedAt: Number.isFinite(source.lastUsedAt) ? source.lastUsedAt : -Infinity
     });
@@ -370,6 +405,196 @@ function setSkillHudFeedback(slotIndex, status, durationMs = HUD_FEEDBACK_DURATI
   };
 }
 
+function getNearestObeyAnimalInRange(radiusTiles = OBEY_CAST_RADIUS_TILES) {
+  const radiusPx = Math.max(TILE, radiusTiles * TILE);
+  const radiusSq = radiusPx * radiusPx;
+  const playerCenterX = player.x + TILE * 0.5;
+  const playerCenterY = player.y + TILE * 0.5;
+  let nearest = null;
+  let nearestDistSq = Infinity;
+
+  for (const npc of npcs) {
+    if (!npc || npc.world !== currentAreaId) continue;
+    if (!npc.obeyAnimal) continue;
+    if (npc.isPlayerPet) continue;
+    const npcCenterX = npc.x + (Number.isFinite(npc.width) ? npc.width : TILE) * 0.5;
+    const npcCenterY = npc.y + (Number.isFinite(npc.height) ? npc.height : TILE) * 0.5;
+    const dx = npcCenterX - playerCenterX;
+    const dy = npcCenterY - playerCenterY;
+    const distSq = dx * dx + dy * dy;
+    if (distSq > radiusSq) continue;
+    if (distSq < nearestDistSq) {
+      nearest = npc;
+      nearestDistSq = distSq;
+    }
+  }
+
+  return nearest;
+}
+
+function cancelObeyChannel() {
+  obeyState.active = false;
+  obeyState.startedAt = 0;
+  obeyState.targetNpcId = "";
+  obeyState.targetTownId = "";
+  obeyState.targetAreaId = "";
+}
+
+function beginObeyChannel(targetNpc) {
+  if (!targetNpc) return false;
+  obeyState.active = true;
+  obeyState.startedAt = performance.now();
+  obeyState.durationMs = OBEY_CHANNEL_DURATION_MS;
+  obeyState.targetNpcId = targetNpc.id || "";
+  obeyState.targetTownId = currentTownId;
+  obeyState.targetAreaId = currentAreaId;
+  return true;
+}
+
+function completeObeyChannelIfReady(now) {
+  if (!obeyState.active || !Number.isFinite(obeyState.startedAt)) return;
+  const elapsed = Math.max(0, now - obeyState.startedAt);
+  if (elapsed < obeyState.durationMs) return;
+
+  const targetNpc = npcs.find((npc) =>
+    npc &&
+    npc.id === obeyState.targetNpcId &&
+    npc.world === obeyState.targetAreaId &&
+    npc.obeyAnimal
+  );
+  if (!targetNpc) {
+    cancelObeyChannel();
+    return;
+  }
+
+  targetNpc.canRoam = false;
+  targetNpc.blocking = false;
+  targetNpc.isPlayerPet = true;
+  targetNpc.petOwner = "player";
+  targetNpc.world = currentAreaId;
+  obeyState.petId = targetNpc.id;
+  obeyState.petSpriteName = targetNpc.spriteName || "possum";
+  obeyState.petWidth = Number.isFinite(targetNpc.spriteWidth) ? targetNpc.spriteWidth : 25;
+  obeyState.petHeight = Number.isFinite(targetNpc.spriteHeight) ? targetNpc.spriteHeight : 16;
+  cancelObeyChannel();
+
+  itemAlert.active = true;
+  itemAlert.text = "A Possum now follows you as your pet.";
+  itemAlert.startedAt = now;
+  vfxSystem.spawn("pickupGlow", {
+    x: player.x + TILE / 2,
+    y: player.y + TILE * 0.35,
+    size: 30
+  });
+}
+
+function ensurePetExistsInCurrentArea() {
+  if (!obeyState.petId) return null;
+  let pet = npcs.find((npc) => npc && npc.id === obeyState.petId);
+  if (pet) return pet;
+
+  const petSpriteName = obeyState.petSpriteName || "possum";
+  pet = {
+    id: obeyState.petId,
+    name: "Possum",
+    world: currentAreaId,
+    x: player.x - TILE,
+    y: player.y,
+    width: TILE,
+    height: TILE,
+    dir: "left",
+    canRoam: false,
+    blocking: false,
+    obeyAnimal: true,
+    isPlayerPet: true,
+    petOwner: "player",
+    spriteName: petSpriteName,
+    sprite: assets.getSprite(petSpriteName),
+    spriteWidth: obeyState.petWidth,
+    spriteHeight: obeyState.petHeight,
+    dialogue: ["*Your possum companion watches you closely.*"],
+    hasTrainingChoice: false
+  };
+  npcs.push(pet);
+  return pet;
+}
+
+function updatePetFollow(now) {
+  const pet = ensurePetExistsInCurrentArea();
+  if (!pet) return;
+  if (pet.world !== currentAreaId) pet.world = currentAreaId;
+  pet.canRoam = false;
+  pet.blocking = false;
+  pet.isPlayerPet = true;
+
+  const last = Number.isFinite(obeyState.lastFollowUpdateAt) ? obeyState.lastFollowUpdateAt : now;
+  const dtScale = Math.max(0, Math.min(3, (now - last) / 16.667));
+  obeyState.lastFollowUpdateAt = now;
+
+  const dirVec = player.dir === "up"
+    ? { x: 0, y: -1 }
+    : player.dir === "left"
+      ? { x: -1, y: 0 }
+      : player.dir === "right"
+        ? { x: 1, y: 0 }
+        : { x: 0, y: 1 };
+  const sideVec = { x: -dirVec.y, y: dirVec.x };
+  const desiredDist = OBEY_PET_FOLLOW_DISTANCE_TILES * TILE;
+  const targetX = player.x - dirVec.x * desiredDist + sideVec.x * TILE * 0.28;
+  const targetY = player.y - dirVec.y * desiredDist + sideVec.y * TILE * 0.28;
+
+  const dx = targetX - pet.x;
+  const dy = targetY - pet.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance <= 0.001) return;
+
+  if (distance > OBEY_PET_TELEPORT_DISTANCE_TILES * TILE) {
+    pet.x = targetX;
+    pet.y = targetY;
+    return;
+  }
+
+  const step = Math.min(distance, Math.max(0.35, 1.8 * dtScale));
+  const vx = (dx / distance) * step;
+  const vy = (dy / distance) * step;
+
+  const tryX = pet.x + vx;
+  const tryY = pet.y + vy;
+  if (!collisionService.collidesAt(tryX, pet.y, currentMap, currentMapW, currentMapH)) {
+    pet.x = tryX;
+  }
+  if (!collisionService.collidesAt(pet.x, tryY, currentMap, currentMapW, currentMapH)) {
+    pet.y = tryY;
+  }
+
+  if (Math.abs(vx) >= Math.abs(vy)) {
+    pet.dir = vx >= 0 ? "right" : "left";
+  } else {
+    pet.dir = vy >= 0 ? "down" : "up";
+  }
+}
+
+function updateObeySystem(now) {
+  if (
+    obeyState.active &&
+    (
+      !isFreeExploreState(getSimulationGameState(gameState)) ||
+      obeyState.targetTownId !== currentTownId ||
+      obeyState.targetAreaId !== currentAreaId
+    )
+  ) {
+    cancelObeyChannel();
+  }
+
+  if (obeyState.active) {
+    completeObeyChannelIfReady(now);
+  }
+
+  if (obeyState.petId) {
+    updatePetFollow(now);
+  }
+}
+
 function tryActivateSkillSlot(slotIndex) {
   ensurePlayerSkillState(player);
   if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= SKILL_SLOT_COUNT) return false;
@@ -384,10 +609,30 @@ function tryActivateSkillSlot(slotIndex) {
     return false;
   }
 
+  if (slot.id === OBEY_SKILL_ID) {
+    if (obeyState.active) {
+      setSkillHudFeedback(slotIndex, "used");
+      return false;
+    }
+    const obeyTarget = getNearestObeyAnimalInRange();
+    if (!obeyTarget) {
+      setSkillHudFeedback(slotIndex, "empty");
+      return false;
+    }
+  }
+
   const manaCost = Number.isFinite(slot.manaCost) ? Math.max(0, slot.manaCost) : 0;
   if (player.mana < manaCost) {
     setSkillHudFeedback(slotIndex, "noMana");
     return false;
+  }
+
+  if (slot.id === OBEY_SKILL_ID) {
+    const obeyTarget = getNearestObeyAnimalInRange();
+    if (!beginObeyChannel(obeyTarget)) {
+      setSkillHudFeedback(slotIndex, "empty");
+      return false;
+    }
   }
 
   player.mana = Math.max(0, player.mana - manaCost);
@@ -488,6 +733,14 @@ function getTownProgressForCurrentTown() {
   }
   normalizeGlobalStoryFlags(gameFlags);
   const normalized = normalizeTownProgress(gameFlags.townProgress[townId]);
+  const challengeKills = Number.isFinite(normalized.challengeKills) ? normalized.challengeKills : 0;
+  const challengeTarget = Number.isFinite(normalized.challengeTarget) ? normalized.challengeTarget : 3;
+  const dojoChallengeComplete = challengeKills >= challengeTarget;
+  if (dojoChallengeComplete) {
+    if (!gameFlags.completedTraining) gameFlags.completedTraining = true;
+  } else if (gameFlags.completedTraining) {
+    gameFlags.completedTraining = false;
+  }
   const configuredBogTarget = Number.isFinite(trainingContent?.bogQuest?.targetKills)
     ? Math.max(1, Math.round(trainingContent.bogQuest.targetKills))
     : normalized.bogQuestTarget;
@@ -556,16 +809,18 @@ function deriveObjective() {
     };
   }
 
-  if (gameFlags.acceptedTraining && !gameFlags.completedTraining) {
-    const kills = Number.isFinite(tp.challengeKills) ? tp.challengeKills : 0;
-    const target = Number.isFinite(tp.challengeTarget) ? tp.challengeTarget : 3;
+  const kills = Number.isFinite(tp.challengeKills) ? tp.challengeKills : 0;
+  const target = Number.isFinite(tp.challengeTarget) ? tp.challengeTarget : 3;
+  const dojoChallengeComplete = kills >= target;
+
+  if (!dojoChallengeComplete) {
     return {
       id: "dojo-upstairs-challenge",
       text: `Objective: Defeat upstairs opponents (${kills}/${target}).`
     };
   }
 
-  if (gameFlags.completedTraining && !tp.rumorQuestOffered) {
+  if (!tp.rumorQuestOffered) {
     return {
       id: "start-investigation",
       text: "Objective: Speak to Mr. Hanami to accept your next challenge."
@@ -1661,6 +1916,7 @@ function updateRuntimeUi(now) {
   syncObjectiveState(now);
   markNearbyDoorsDiscovered();
   regenerateMana(now);
+  updateObeySystem(now);
   if (doorAccessNoticeState.active && now >= doorAccessNoticeState.until) {
     doorAccessNoticeState.active = false;
     doorAccessNoticeState.text = "";
@@ -2396,6 +2652,7 @@ const { render } = createGameRenderer({
   settingsUiState,
   settingsItems: SETTINGS_ITEMS,
   trainingPopup,
+  obeyState,
   playerStats,
   playerInventory,
   playerCurrency,

@@ -27,13 +27,25 @@ export function createChallengeSystem({ tileSize, vfxSystem }) {
     if (typeof tp.membershipAwarded !== "boolean") tp.membershipAwarded = false;
   }
 
+  function isDojoChallengeComplete(tp) {
+    const target = Number.isFinite(tp?.challengeTarget) ? Math.max(1, Math.round(tp.challengeTarget)) : 3;
+    const kills = Number.isFinite(tp?.challengeKills) ? Math.max(0, Math.round(tp.challengeKills)) : 0;
+    return kills >= target;
+  }
+
   function handleDojoChallengeDefeat({ gameFlags, player, itemAlert }, tp, enemy, now, outcome) {
     if (!enemy?.countsForChallenge) return;
     if (!gameFlags.acceptedTraining) {
       resetEnemyToSpawn(enemy, now);
       return;
     }
-    if (gameFlags.completedTraining || enemy.challengeDefeatedCounted) return;
+    const challengeComplete = isDojoChallengeComplete(tp);
+    if (challengeComplete) {
+      if (!gameFlags.completedTraining) gameFlags.completedTraining = true;
+      return;
+    }
+    if (gameFlags.completedTraining) gameFlags.completedTraining = false;
+    if (enemy.challengeDefeatedCounted) return;
 
     enemy.challengeDefeatedCounted = true;
     tp.challengeKills = Math.min(tp.challengeTarget, tp.challengeKills + 1);
@@ -121,9 +133,16 @@ export function createChallengeSystem({ tileSize, vfxSystem }) {
   }
 
   function prepareEnemies({ gameFlags, currentTownId, enemies }) {
-    if (!gameFlags.acceptedTraining || gameFlags.completedTraining) return;
+    if (!gameFlags.acceptedTraining) return;
     const tp = gameFlags.townProgress?.[currentTownId];
     if (!tp || tp.challengePrepared) return;
+    normalizeTownProgressForChallenges(tp);
+    const challengeComplete = isDojoChallengeComplete(tp);
+    if (challengeComplete) {
+      if (!gameFlags.completedTraining) gameFlags.completedTraining = true;
+      return;
+    }
+    if (gameFlags.completedTraining) gameFlags.completedTraining = false;
 
     for (const enemy of enemies) {
       if (!enemy || !enemy.countsForChallenge) continue;

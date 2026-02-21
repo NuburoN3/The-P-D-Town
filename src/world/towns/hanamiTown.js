@@ -731,6 +731,66 @@ export const hanamiTown = {
             hasTrainingChoice: false
         },
         {
+            id: "grassPossumNori",
+            name: "Possum",
+            spriteName: "possum",
+            areaId: "overworld",
+            x: 22,
+            y: 34,
+            dir: "right",
+            canRoam: true,
+            blocking: true,
+            obeyAnimal: true,
+            wanderRadiusTiles: 4,
+            wanderSpeed: 0.85,
+            spriteWidth: 25,
+            spriteHeight: 16,
+            dialogue: [
+                "*The possum sniffs the grass, then waddles off.*"
+            ],
+            hasTrainingChoice: false
+        },
+        {
+            id: "grassPossumKiko",
+            name: "Possum",
+            spriteName: "possum",
+            areaId: "overworld",
+            x: 25,
+            y: 36,
+            dir: "left",
+            canRoam: true,
+            blocking: true,
+            obeyAnimal: true,
+            wanderRadiusTiles: 4,
+            wanderSpeed: 0.9,
+            spriteWidth: 25,
+            spriteHeight: 16,
+            dialogue: [
+                "*It pauses, blinks at you, then continues wandering.*"
+            ],
+            hasTrainingChoice: false
+        },
+        {
+            id: "grassPossumTama",
+            name: "Possum",
+            spriteName: "possum",
+            areaId: "overworld",
+            x: 28,
+            y: 35,
+            dir: "down",
+            canRoam: true,
+            blocking: true,
+            obeyAnimal: true,
+            wanderRadiusTiles: 4,
+            wanderSpeed: 0.82,
+            spriteWidth: 25,
+            spriteHeight: 16,
+            dialogue: [
+                "*The possum rustles through the grass quietly.*"
+            ],
+            hasTrainingChoice: false
+        },
+        {
             id: "hillPilgrimKaito",
             name: "Kaito",
             spriteName: "townsfolk_daichi",
@@ -861,8 +921,9 @@ export const hanamiTown = {
             y: 33,
             dir: "down",
             dialogue: [
-                "This pen keeps the animals calm when storms gather.",
-                "If that dark cloud reaches us, we'll need every hand ready."
+                "Oh, you're Adrian aren't you? Pat's new guest.",
+                "I'm Elias, and I love animals.",
+                "Do you love animals too?"
             ],
             hasTrainingChoice: false
         },
