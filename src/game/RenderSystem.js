@@ -1340,26 +1340,50 @@ function drawQuestTrackerHint(ctx, state, colors) {
   if (!flags?.patInnIntroSeen || flags.questTrackerHintDismissed) return;
 
   const hintText = "Press 'G' to track quests";
-  const panelW = Math.max(220, Math.ceil(ctx.measureText(hintText).width) + 28);
-  const panelH = 26;
-  const panelX = Math.round((ctx.canvas.width - panelW) * 0.5);
-  const panelY = 10;
-
+  const pulse = 0.92 + Math.sin(performance.now() * 0.006) * 0.08;
   ctx.save();
-  ctx.globalAlpha = 0.72;
+  ctx.font = "700 22px 'Cinzel', 'Palatino Linotype', 'Book Antiqua', serif";
+  const panelW = Math.max(420, Math.ceil(ctx.measureText(hintText).width) + 48);
+  const panelH = 50;
+  const panelX = Math.round((ctx.canvas.width - panelW) * 0.5);
+  const panelY = 8;
+
+  ctx.globalAlpha = 0.94;
+  const glow = ctx.createRadialGradient(
+    panelX + panelW * 0.5,
+    panelY + panelH * 0.5,
+    12,
+    panelX + panelW * 0.5,
+    panelY + panelH * 0.5,
+    panelW * 0.62
+  );
+  glow.addColorStop(0, `rgba(136, 197, 255, ${(0.2 * pulse).toFixed(3)})`);
+  glow.addColorStop(1, "rgba(136, 197, 255, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(panelX - 18, panelY - 10, panelW + 36, panelH + 20);
+
   const hintGradient = ctx.createLinearGradient(0, panelY, 0, panelY + panelH);
-  hintGradient.addColorStop(0, "rgba(10, 15, 24, 0.74)");
-  hintGradient.addColorStop(1, "rgba(8, 10, 16, 0.6)");
+  hintGradient.addColorStop(0, "rgba(18, 34, 58, 0.96)");
+  hintGradient.addColorStop(1, "rgba(9, 16, 28, 0.92)");
   ctx.fillStyle = hintGradient;
   ctx.fillRect(panelX, panelY, panelW, panelH);
-  ctx.strokeStyle = "rgba(186, 207, 236, 0.36)";
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = `rgba(175, 225, 255, ${(0.92 * pulse).toFixed(3)})`;
+  ctx.lineWidth = 2;
   ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1);
-  drawUiText(ctx, hintText, panelX + 14, panelY + 17, {
-    ...colors,
-    TEXT: "rgba(222, 232, 248, 0.88)",
-    TEXT_SHADOW: "rgba(0, 0, 0, 0.46)"
-  });
+
+  const oldAlign = ctx.textAlign;
+  const oldBaseline = ctx.textBaseline;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const textX = panelX + panelW * 0.5;
+  const textY = panelY + panelH * 0.54;
+  ctx.strokeStyle = "rgba(4, 10, 18, 0.92)";
+  ctx.lineWidth = 4;
+  ctx.strokeText(hintText, textX, textY);
+  ctx.fillStyle = `rgba(226, 244, 255, ${(0.98 * pulse).toFixed(3)})`;
+  ctx.fillText(hintText, textX, textY);
+  ctx.textAlign = oldAlign;
+  ctx.textBaseline = oldBaseline;
   ctx.restore();
 }
 
