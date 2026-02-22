@@ -187,7 +187,16 @@ export function createRuntimeStateHandlers({
       const targetId = typeof event?.target?.id === "string" ? event.target.id.toLowerCase() : "";
       const targetName = typeof event?.target?.name === "string" ? event.target.name.toLowerCase() : "";
       const isOgreTarget = targetId.includes("ogre") || targetName.includes("ogre");
-      musicManager.playSfx(isOgreTarget ? "ogreHurt" : "hitImpact");
+      const isPossumTarget = targetId.includes("possum") || targetName.includes("possum");
+      musicManager.playSfx(isOgreTarget ? "ogreHurt" : (isPossumTarget ? "possumHurt" : "hitImpact"));
+      return;
+    }
+
+    if (event.type === "petDamaged") {
+      const targetId = typeof event?.target?.id === "string" ? event.target.id.toLowerCase() : "";
+      const targetName = typeof event?.target?.name === "string" ? event.target.name.toLowerCase() : "";
+      const isPossumPet = targetId.includes("possum") || targetName.includes("possum");
+      musicManager.playSfx(isPossumPet ? "possumHurt" : "hurt");
       return;
     }
 

@@ -56,7 +56,8 @@ export function createInteractionSystem({
   onDoorEntryBlocked = () => { },
   onLeftoversInteracted = () => { },
   handleFeatureNPCInteraction = () => false,
-  handleFeatureStateInteraction = () => false
+  handleFeatureStateInteraction = () => false,
+  openQuestCompletionPanel = () => false
 }) {
   const playerTilePosition = () => getPlayerTilePosition(player, tileSize);
   const getCurrentTownProgress = () => getTownProgress(gameFlags, getCurrentTownId());
@@ -88,6 +89,7 @@ export function createInteractionSystem({
     tileSize,
     gameFlags,
     playerInventory,
+    playerEquipment,
     playerStats,
     itemAlert,
     inventoryHint,
@@ -101,7 +103,8 @@ export function createInteractionSystem({
     spawnVisualEffect,
     getTownProgress: getCurrentTownProgress,
     handleFeatureNPCInteraction,
-    syncObjectiveState
+    syncObjectiveState,
+    openQuestCompletionPanel
   });
 
   const beginDoorSequence = createDoorSequenceStarter({
@@ -153,6 +156,8 @@ export function createInteractionSystem({
     if (
       gameState === GAME_STATES.TITLE_SCREEN ||
       gameState === GAME_STATES.INVENTORY ||
+      gameState === GAME_STATES.QUEST_TRACKER ||
+      gameState === GAME_STATES.QUEST_COMPLETION ||
       gameState === GAME_STATES.PAUSE_MENU ||
       gameState === GAME_STATES.SETTINGS ||
       gameState === GAME_STATES.ATTRIBUTES

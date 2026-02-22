@@ -46,6 +46,7 @@ export const DEFAULT_SPRITE_MANIFEST = {
   insideDojoExitWall: "assets/sprites/Dojo Exit wall.png",
   possum: "assets/sprites/Possum.png",
   obey: "assets/sprites/Obey.png",
+  bonk: "assets/sprites/Bonk.png",
   ogre64: "assets/sprites/Ogre-64x64.png",
   [ASSET_KEYS.TITLE_HERO_IMAGE]: ASSET_PATHS.TITLE_HERO_IMAGE
 };

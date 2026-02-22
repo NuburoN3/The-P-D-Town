@@ -18,7 +18,9 @@ const DEFAULT_TOWN_PROGRESS = Object.freeze({
   bogQuestKills: 0,
   bogQuestTarget: 3,
   bogQuestCompleted: false,
-  bogQuestReported: false
+  bogQuestReported: false,
+  bogQuestRewardAwarded: false,
+  basicTrainingQuestClaimed: false
 });
 
 export function createDefaultTownProgress(overrides = {}) {
@@ -53,4 +55,5 @@ export function normalizeGlobalStoryFlags(gameFlags) {
   if (typeof gameFlags.hanamiLeftDojo !== "boolean") gameFlags.hanamiLeftDojo = false;
   if (typeof gameFlags.taikoHouseUnlocked !== "boolean") gameFlags.taikoHouseUnlocked = false;
   if (typeof gameFlags.townRumorResolved !== "boolean") gameFlags.townRumorResolved = false;
+  if (typeof gameFlags.questTrackerHintDismissed !== "boolean") gameFlags.questTrackerHintDismissed = false;
 }

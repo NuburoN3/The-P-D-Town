@@ -85,6 +85,8 @@ export function createGameRenderer({
   inventoryUiLayout,
   leftoversUiState,
   objectiveState,
+  questTrackerState,
+  questCompletionState,
   uiMotionState,
   minimapDiscoveryState,
   itemAlert,
@@ -277,6 +279,8 @@ export function createGameRenderer({
       gameState === GAME_STATES.PAUSE_MENU ||
       gameState === GAME_STATES.SETTINGS ||
       gameState === GAME_STATES.INVENTORY ||
+      gameState === GAME_STATES.QUEST_TRACKER ||
+      gameState === GAME_STATES.QUEST_COMPLETION ||
       gameState === GAME_STATES.ATTRIBUTES
     );
     if (useStylizedMenuCursor) {
@@ -357,6 +361,8 @@ export function createGameRenderer({
         inventoryUiLayout,
         leftoversUiState,
         objectiveState,
+        questTrackerState,
+        questCompletionState,
         uiMotionState,
         itemAlert,
         inventoryHint,

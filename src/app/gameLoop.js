@@ -64,6 +64,7 @@ export function createGameLoop({
           isDialogueActive: isDialogueActive(),
           choiceActive: choiceState.active,
           enemies,
+          npcs,
           player,
           currentAreaId: getCurrentAreaId(),
           currentMap: getCurrentMap(),

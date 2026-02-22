@@ -19,6 +19,9 @@ export function createInputBindings({
   performLoadGame,
   resumeFromPauseMenu,
   openInventoryFromPauseMenu,
+  toggleQuestTracker = () => { },
+  closeQuestTracker = () => { },
+  closeQuestCompletionPanel = () => { },
   closeInventory,
   isInventoryOpenedFromPauseMenu,
   isLeftoversInventoryOpen = () => false,
@@ -84,6 +87,8 @@ export function createInputBindings({
       gameState === gameStates.TITLE_SCREEN ||
       gameState === gameStates.PAUSE_MENU ||
       gameState === gameStates.INVENTORY ||
+      gameState === gameStates.QUEST_TRACKER ||
+      gameState === gameStates.QUEST_COMPLETION ||
       gameState === gameStates.ATTRIBUTES ||
       gameState === gameStates.SETTINGS
     );
@@ -118,13 +123,26 @@ export function createInputBindings({
 
   function registerPointerBindings() {
     canvas.addEventListener("mousemove", updateMouseUiPosition);
+    window.addEventListener("mousemove", (e) => {
+      if (!mouseUiState.inventoryLeftDown) return;
+      if (
+        mouseUiState.inventorySkillsScrollDragging ||
+        mouseUiState.inventoryPanelDragTarget
+      ) {
+        updateMouseUiPosition(e);
+      }
+    });
     canvas.addEventListener("mouseleave", () => {
       mouseUiState.insideCanvas = false;
       mouseUiState.sprintPressed = false;
-      mouseUiState.inventoryLeftDown = false;
-      mouseUiState.inventoryPanelDragTarget = "";
+      if (!mouseUiState.inventorySkillsScrollDragging) {
+        mouseUiState.inventoryLeftDown = false;
+        mouseUiState.inventoryPanelDragTarget = "";
+      }
       mouseUiState.inventoryClickRequest = false;
       mouseUiState.inventoryDoubleClickRequest = false;
+      mouseUiState.questTrackerClickRequest = false;
+      mouseUiState.questCompletionClickRequest = false;
       clearMenuHoverState();
     });
     canvas.addEventListener("contextmenu", (e) => {
@@ -150,8 +168,18 @@ export function createInputBindings({
     });
     canvas.addEventListener("mouseup", (e) => {
       if (e.button === 0) {
+        const hadPanelDrag = Boolean(mouseUiState.inventoryPanelDragTarget);
+        const hadItemDrag = Boolean(mouseUiState.inventoryDragItemName);
+        const wasSkillsDragging = Boolean(mouseUiState.inventorySkillsScrollDragging);
         mouseUiState.inventoryLeftDown = false;
         mouseUiState.inventoryPanelDragTarget = "";
+        mouseUiState.inventorySkillsScrollDragging = false;
+        if (hadPanelDrag || hadItemDrag || wasSkillsDragging) {
+          mouseUiState.inventorySuppressNextClick = true;
+        }
+        if (wasSkillsDragging) {
+          mouseUiState.inventorySkillsScrollSuppressClick = true;
+        }
         if (mouseUiState.inventoryDragItemName) {
           mouseUiState.inventoryDragReleaseRequest = true;
         }
@@ -162,8 +190,18 @@ export function createInputBindings({
     });
     window.addEventListener("mouseup", (e) => {
       if (e.button === 0) {
+        const hadPanelDrag = Boolean(mouseUiState.inventoryPanelDragTarget);
+        const hadItemDrag = Boolean(mouseUiState.inventoryDragItemName);
+        const wasSkillsDragging = Boolean(mouseUiState.inventorySkillsScrollDragging);
         mouseUiState.inventoryLeftDown = false;
         mouseUiState.inventoryPanelDragTarget = "";
+        mouseUiState.inventorySkillsScrollDragging = false;
+        if (hadPanelDrag || hadItemDrag || wasSkillsDragging) {
+          mouseUiState.inventorySuppressNextClick = true;
+        }
+        if (wasSkillsDragging) {
+          mouseUiState.inventorySkillsScrollSuppressClick = true;
+        }
         if (mouseUiState.inventoryDragItemName) {
           mouseUiState.inventoryDragReleaseRequest = true;
         }
@@ -176,8 +214,11 @@ export function createInputBindings({
       mouseUiState.sprintPressed = false;
       mouseUiState.inventoryLeftDown = false;
       mouseUiState.inventoryPanelDragTarget = "";
+      mouseUiState.inventorySkillsScrollDragging = false;
       mouseUiState.inventoryClickRequest = false;
       mouseUiState.inventoryDoubleClickRequest = false;
+      mouseUiState.questTrackerClickRequest = false;
+      mouseUiState.questCompletionClickRequest = false;
       if (mouseUiState.inventoryDragItemName) {
         mouseUiState.inventoryDragReleaseRequest = true;
       }
@@ -200,7 +241,28 @@ export function createInputBindings({
         return;
       }
       if (gameState === gameStates.INVENTORY) {
+        if (mouseUiState.inventorySuppressNextClick) {
+          mouseUiState.inventorySuppressNextClick = false;
+          mouseUiState.inventoryClickRequest = false;
+          e.preventDefault();
+          return;
+        }
+        if (mouseUiState.inventorySkillsScrollSuppressClick) {
+          mouseUiState.inventorySkillsScrollSuppressClick = false;
+          e.preventDefault();
+          return;
+        }
         mouseUiState.inventoryClickRequest = true;
+        e.preventDefault();
+        return;
+      }
+      if (gameState === gameStates.QUEST_TRACKER) {
+        mouseUiState.questTrackerClickRequest = true;
+        e.preventDefault();
+        return;
+      }
+      if (gameState === gameStates.QUEST_COMPLETION) {
+        mouseUiState.questCompletionClickRequest = true;
         e.preventDefault();
         return;
       }
@@ -225,6 +287,14 @@ export function createInputBindings({
     });
     canvas.addEventListener("wheel", (e) => {
       const gameState = getGameState();
+      if (gameState === gameStates.INVENTORY) {
+        const direction = e.deltaY > 0 ? 1 : (e.deltaY < 0 ? -1 : 0);
+        if (direction !== 0) {
+          mouseUiState.inventorySkillsScrollDelta = (Number(mouseUiState.inventorySkillsScrollDelta) || 0) + direction;
+          e.preventDefault();
+        }
+        return;
+      }
       if (gameState !== gameStates.SETTINGS) return;
       const handled = pauseMenuSystem.handleSettingsWheel(e.deltaY);
       if (handled) {
@@ -286,6 +356,19 @@ export function createInputBindings({
         input.clearPausePressed();
         e.preventDefault();
         return;
+      }
+
+      if (!e.repeat && key === "g") {
+        if (gameState === gameStates.QUEST_TRACKER) {
+          closeQuestTracker();
+          e.preventDefault();
+          return;
+        }
+        if (isFreeExploreState(gameState) && !dialogueActive) {
+          toggleQuestTracker();
+          e.preventDefault();
+          return;
+        }
       }
 
       if (gameState === gameStates.SETTINGS && settingsUiState.awaitingRebindAction && !e.repeat) {
@@ -369,6 +452,22 @@ export function createInputBindings({
           } else {
             returnToPauseMenu();
           }
+          e.preventDefault();
+        }
+        return;
+      }
+
+      if (gameState === gameStates.QUEST_TRACKER) {
+        if ((key === "enter" || key === "escape" || isPauseKey(key)) && !e.repeat) {
+          closeQuestTracker();
+          e.preventDefault();
+        }
+        return;
+      }
+
+      if (gameState === gameStates.QUEST_COMPLETION) {
+        if ((key === "escape" || isPauseKey(key)) && !e.repeat) {
+          closeQuestCompletionPanel();
           e.preventDefault();
         }
         return;

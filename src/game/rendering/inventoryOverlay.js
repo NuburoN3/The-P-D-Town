@@ -19,6 +19,27 @@ const EQUIPMENT_SLOT_ORDER = [
   { id: "feet", label: "Feet" }
 ];
 const PREVIEW_DIRECTION_CYCLE = ["down", "left", "up", "right"];
+const SKILLS_GRID_COLS = 8;
+const SKILLS_TOTAL_ROWS = 50;
+const SKILLS_VISIBLE_ROWS = 3;
+const SKILLS_TOTAL_SLOTS = SKILLS_GRID_COLS * SKILLS_TOTAL_ROWS;
+const SKILLS_VISIBLE_SLOTS = SKILLS_GRID_COLS * SKILLS_VISIBLE_ROWS;
+const SKILL_PREVIEW_FADE_IN = 0.18;
+const SKILL_PREVIEW_FADE_OUT = 0.12;
+const SKILL_METADATA = Object.freeze({
+  obey: {
+    displayName: "Obey",
+    description: "Channel your will over a nearby animal. If successful it becomes your pet. If you already have a pet, channel to release it.",
+    manaCost: 5,
+    useSeconds: 10
+  },
+  bonk: {
+    displayName: "Bonk",
+    description: "A weapon-only heavy bonk. Wind up for 1 second, then strike for normal damage plus 20 bonus damage.",
+    manaCost: 2,
+    useSeconds: 1
+  }
+});
 
 const ITEM_METADATA = Object.freeze({
   "Training Headband": {
@@ -206,6 +227,155 @@ function normalizeInventoryPage(mouseUiState, totalPages) {
   return clamped;
 }
 
+function normalizeInventorySkillsScrollRow(mouseUiState, maxRow) {
+  const safeMax = Math.max(0, Number.isFinite(maxRow) ? maxRow : 0);
+  const raw = Number.isFinite(mouseUiState?.inventorySkillsScrollRow)
+    ? mouseUiState.inventorySkillsScrollRow
+    : 0;
+  const clamped = Math.max(0, Math.min(safeMax, raw));
+  if (mouseUiState) mouseUiState.inventorySkillsScrollRow = clamped;
+  return clamped;
+}
+
+function humanizeSkillName(skillId) {
+  if (!skillId) return "Skill";
+  return String(skillId)
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function collectUnlockedSkills(state) {
+  const skillSlots = Array.isArray(state?.player?.skillSlots) ? state.player.skillSlots : [];
+  const unlockedFromPlayer = Array.isArray(state?.player?.unlockedSkills)
+    ? state.player.unlockedSkills
+    : [];
+  const orderedIds = [];
+  const seen = new Set();
+  for (const id of unlockedFromPlayer) {
+    const normalized = typeof id === "string" ? id.trim() : "";
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    orderedIds.push(normalized);
+  }
+  for (const slot of skillSlots) {
+    const normalized = typeof slot?.id === "string" ? slot.id.trim() : "";
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    orderedIds.push(normalized);
+  }
+  const manaBySkill = new Map();
+  for (const slot of skillSlots) {
+    const normalized = typeof slot?.id === "string" ? slot.id.trim() : "";
+    if (!normalized) continue;
+    const manaCost = Number.isFinite(slot?.manaCost) ? Math.max(0, slot.manaCost) : 0;
+    if (!manaBySkill.has(normalized) || manaCost < manaBySkill.get(normalized)) {
+      manaBySkill.set(normalized, manaCost);
+    }
+  }
+  return orderedIds.map((id) => ({
+    id,
+    name: humanizeSkillName(id),
+    manaCost: manaBySkill.has(id)
+      ? manaBySkill.get(id)
+      : Math.max(0, Number(SKILL_METADATA[id]?.manaCost || 0))
+  }));
+}
+
+function getSkillPreviewInfo(skillEntry) {
+  const skillId = String(skillEntry?.id || "").trim();
+  const fallbackName = String(skillEntry?.name || humanizeSkillName(skillId) || "Skill");
+  const metadata = skillId ? (SKILL_METADATA[skillId] || null) : null;
+  const manaCost = Number.isFinite(skillEntry?.manaCost) ? Math.max(0, skillEntry.manaCost) : 0;
+  return {
+    id: skillId,
+    name: metadata?.displayName || fallbackName,
+    description: metadata?.description || "A learned technique.",
+    manaCost,
+    useSeconds: Number.isFinite(metadata?.useSeconds) ? Math.max(0, metadata.useSeconds) : 0
+  };
+}
+
+function wrapTextLines(ctx, text, maxWidth, maxLines = 6) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (ctx.measureText(next).width <= maxWidth || current.length === 0) {
+      current = next;
+    } else {
+      lines.push(current);
+      current = word;
+      if (lines.length >= maxLines - 1) break;
+    }
+  }
+  if (current && lines.length < maxLines) lines.push(current);
+  return lines;
+}
+
+function ensureInventorySkillSlots(player, slotCount = 9) {
+  if (!player || typeof player !== "object") return [];
+  const current = Array.isArray(player.skillSlots) ? player.skillSlots : [];
+  const normalized = [];
+  for (let i = 0; i < slotCount; i++) {
+    const source = current[i] && typeof current[i] === "object" ? current[i] : {};
+    const id = typeof source.id === "string" && source.id.trim() ? source.id.trim() : null;
+    const metadata = id ? (SKILL_METADATA[id] || null) : null;
+    normalized.push({
+      slot: i + 1,
+      id,
+      name: String(source.name || metadata?.displayName || (id ? humanizeSkillName(id) : "")),
+      manaCost: id
+        ? (Number.isFinite(source.manaCost) ? Math.max(0, source.manaCost) : Math.max(0, Number(metadata?.manaCost || 0)))
+        : 0,
+      cooldownMs: Number.isFinite(source.cooldownMs) ? Math.max(0, source.cooldownMs) : 0,
+      lastUsedAt: Number.isFinite(source.lastUsedAt) ? source.lastUsedAt : -Infinity
+    });
+  }
+  player.skillSlots = normalized;
+  return normalized;
+}
+
+function findAssignedSkillSlotIndex(skillSlots, skillId, excludeIndex = -1) {
+  if (!Array.isArray(skillSlots) || !skillId) return -1;
+  for (let i = 0; i < skillSlots.length; i++) {
+    if (i === excludeIndex) continue;
+    if (skillSlots[i]?.id === skillId) return i;
+  }
+  return -1;
+}
+
+function buildAssignedSkillSlotData(skillId, targetSlotNumber, skillLookup, fallbackFromSlot = null) {
+  const metadata = skillId ? (SKILL_METADATA[skillId] || null) : null;
+  const lookup = skillLookup && typeof skillLookup === "object" ? skillLookup[skillId] : null;
+  return {
+    slot: targetSlotNumber,
+    id: skillId || null,
+    name: String(
+      fallbackFromSlot?.name ||
+      lookup?.name ||
+      metadata?.displayName ||
+      (skillId ? humanizeSkillName(skillId) : "")
+    ),
+    manaCost: skillId
+      ? (
+        Number.isFinite(fallbackFromSlot?.manaCost)
+          ? Math.max(0, fallbackFromSlot.manaCost)
+          : (
+            Number.isFinite(lookup?.manaCost)
+              ? Math.max(0, lookup.manaCost)
+              : Math.max(0, Number(metadata?.manaCost || 0))
+          )
+      )
+      : 0,
+    cooldownMs: Number.isFinite(fallbackFromSlot?.cooldownMs) ? Math.max(0, fallbackFromSlot.cooldownMs) : 0,
+    lastUsedAt: Number.isFinite(fallbackFromSlot?.lastUsedAt) ? fallbackFromSlot.lastUsedAt : -Infinity
+  };
+}
+
 function clampValue(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -216,6 +386,8 @@ function normalizeInventoryUiLayout(layout) {
   if (!Number.isFinite(layout.inventoryPanelY)) layout.inventoryPanelY = null;
   if (!Number.isFinite(layout.equipmentPanelX)) layout.equipmentPanelX = null;
   if (!Number.isFinite(layout.equipmentPanelY)) layout.equipmentPanelY = null;
+  if (!Number.isFinite(layout.skillsPanelX)) layout.skillsPanelX = null;
+  if (!Number.isFinite(layout.skillsPanelY)) layout.skillsPanelY = null;
   return layout;
 }
 
@@ -1213,6 +1385,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
 
   normalizePlayerEquipment(playerEquipment);
   const playerCurrency = normalizePlayerCurrency(state?.playerCurrency);
+  const playerSkillSlots = ensureInventorySkillSlots(state?.player, 9);
 
   ctx.fillStyle = colors.INVENTORY_OVERLAY;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1229,8 +1402,25 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   const projectedEquipmentLayout = buildEquipmentLayout(0, 0, slotBodySize);
   const projectedEquipmentPanelH = Math.max(250, Math.round(projectedEquipmentLayout.bottomY + 44));
   const inventoryPanelW = gridWidth + 20;
-  const inventoryPanelMaxH = gridHeight + 68;
+  const skillsSliderW = 10;
+  const skillsGridW = SKILLS_GRID_COLS * (slotSize + margin) - margin;
+  const skillsGridH = SKILLS_VISIBLE_ROWS * (slotSize + margin) - margin;
+  const skillsPanelW = skillsGridW + 20 + skillsSliderW + 6;
+  const skillsPanelH = skillsGridH + 34;
+  const skillsPanelGap = 12;
   const panelGap = 24;
+  const equippedSkillsSlotSize = 38;
+  const equippedSkillsGap = 5;
+  const equippedSkillsCount = 9;
+  const equippedSkillsW = equippedSkillsCount * equippedSkillsSlotSize + (equippedSkillsCount - 1) * equippedSkillsGap;
+  const equippedSkillsX = Math.round((canvas.width - equippedSkillsW) * 0.5);
+  const equippedSkillsY = canvas.height - equippedSkillsSlotSize - 18;
+  const equippedSkillsRects = Array.from({ length: equippedSkillsCount }, (_, i) => ({
+    x: equippedSkillsX + i * (equippedSkillsSlotSize + equippedSkillsGap),
+    y: equippedSkillsY,
+    w: equippedSkillsSlotSize,
+    h: equippedSkillsSlotSize
+  }));
 
   let sortedItems = [];
   let itemsByName = new Map();
@@ -1256,13 +1446,16 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   const showPager = totalPages > 1;
   const inventoryPanelH = gridHeight + (showPager ? 68 : 42);
   const equipmentPanelH = projectedEquipmentPanelH;
+  const defaultSkillsPanelY = (panelY) => panelY + inventoryPanelH + skillsPanelGap;
 
   const defaultClusterW = inventoryPanelW + panelGap + equipmentPanelW;
-  const defaultClusterH = Math.max(inventoryPanelMaxH, equipmentPanelH);
+  const defaultClusterH = Math.max(inventoryPanelH + skillsPanelGap + skillsPanelH, equipmentPanelH);
   const defaultInventoryPanelX = Math.round((canvas.width - defaultClusterW) * 0.5);
   const defaultInventoryPanelY = Math.round((canvas.height - defaultClusterH) * 0.5) + 18;
   const defaultEquipmentPanelX = defaultInventoryPanelX + inventoryPanelW + panelGap;
   const defaultEquipmentPanelY = defaultInventoryPanelY + 4;
+  const defaultSkillsPanelX = defaultInventoryPanelX;
+  const defaultSkillsPanelYValue = defaultSkillsPanelY(defaultInventoryPanelY);
 
   const inventoryLayoutState = normalizeInventoryUiLayout(state?.inventoryUiLayout);
   let inventoryPanelX = Number.isFinite(inventoryLayoutState?.inventoryPanelX)
@@ -1277,9 +1470,16 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   let equipmentPanelY = Number.isFinite(inventoryLayoutState?.equipmentPanelY)
     ? inventoryLayoutState.equipmentPanelY
     : defaultEquipmentPanelY;
+  let skillsPanelX = Number.isFinite(inventoryLayoutState?.skillsPanelX)
+    ? inventoryLayoutState.skillsPanelX
+    : defaultSkillsPanelX;
+  let skillsPanelY = Number.isFinite(inventoryLayoutState?.skillsPanelY)
+    ? inventoryLayoutState.skillsPanelY
+    : defaultSkillsPanelYValue;
 
   if (mouseUiState && !mouseUiState.inventoryLeftDown) {
     mouseUiState.inventoryPanelDragTarget = "";
+    mouseUiState.inventorySkillsScrollDragging = false;
   }
 
   if (mouseUiState?.inventoryPanelDragTarget && mouseUiState.inventoryLeftDown && mouseInsideCanvas) {
@@ -1290,6 +1490,9 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     } else if (target === "equipment") {
       equipmentPanelX = mouseX - (mouseUiState.inventoryPanelDragOffsetX || 0);
       equipmentPanelY = mouseY - (mouseUiState.inventoryPanelDragOffsetY || 0);
+    } else if (target === "skills") {
+      skillsPanelX = mouseX - (mouseUiState.inventoryPanelDragOffsetX || 0);
+      skillsPanelY = mouseY - (mouseUiState.inventoryPanelDragOffsetY || 0);
     }
   }
 
@@ -1299,16 +1502,26 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   const clampedEquipmentPanel = clampPanelPosition(equipmentPanelX, equipmentPanelY, equipmentPanelW, equipmentPanelH, canvas);
   equipmentPanelX = clampedEquipmentPanel.x;
   equipmentPanelY = clampedEquipmentPanel.y;
+  const clampedSkillsPanel = clampPanelPosition(skillsPanelX, skillsPanelY, skillsPanelW, skillsPanelH, canvas);
+  skillsPanelX = clampedSkillsPanel.x;
+  skillsPanelY = clampedSkillsPanel.y;
 
   if (inventoryLayoutState) {
     inventoryLayoutState.inventoryPanelX = inventoryPanelX;
     inventoryLayoutState.inventoryPanelY = inventoryPanelY;
     inventoryLayoutState.equipmentPanelX = equipmentPanelX;
     inventoryLayoutState.equipmentPanelY = equipmentPanelY;
+    inventoryLayoutState.skillsPanelX = skillsPanelX;
+    inventoryLayoutState.skillsPanelY = skillsPanelY;
   }
 
   const gridX = inventoryPanelX + 10;
   const gridY = inventoryPanelY + 14;
+  const skillsGridX = skillsPanelX + 10;
+  const skillsGridY = skillsPanelY + 12;
+  const skillsTrackX = skillsGridX + skillsGridW + 4;
+  const skillsTrackY = skillsGridY;
+  const skillsTrackH = skillsGridH;
   const equipmentLayout = buildEquipmentLayout(equipmentPanelX, equipmentPanelY, slotBodySize);
   let previewDirection = normalizePreviewDirection(mouseUiState);
 
@@ -1326,6 +1539,12 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   const equipmentTitleW = Math.ceil(ctx.measureText(equipmentTitleText).width) + equipmentTitlePadX * 2;
   const equipmentTitleX = equipmentPanelX + 1;
   const equipmentTitleY = equipmentPanelY - equipmentTitleH + 1;
+  const skillsTitleText = "Skills";
+  const skillsTitlePadX = 12;
+  const skillsTitleH = 24;
+  const skillsTitleW = Math.ceil(ctx.measureText(skillsTitleText).width) + skillsTitlePadX * 2;
+  const skillsTitleX = skillsPanelX + 1;
+  const skillsTitleY = skillsPanelY - skillsTitleH + 1;
 
   const previewRotateButtons = getPreviewRotateButtons(equipmentPanelX, equipmentPanelY, equipmentPanelW, equipmentPanelH);
   const rotateLeftHovered = mouseInsideCanvas && isPointInsideExpandedRect(
@@ -1384,19 +1603,15 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   const inventoryClickInsideInventoryPanel = mouseInsideCanvas && isPointInsideExpandedRect(
     mouseX, mouseY, inventoryPanelX, inventoryPanelY - titlePlateH, inventoryPanelW, inventoryPanelH + titlePlateH, 0
   );
+  const inventoryClickInsideSkillsPanel = mouseInsideCanvas && isPointInsideExpandedRect(
+    mouseX, mouseY, skillsPanelX, skillsPanelY - skillsTitleH, skillsPanelW, skillsPanelH + skillsTitleH, 0
+  );
   const inventoryClickInsideEquipmentPanel = mouseInsideCanvas && isPointInsideExpandedRect(
     mouseX, mouseY, equipmentPanelX, equipmentPanelY - equipmentTitleH, equipmentPanelW, equipmentPanelH + equipmentTitleH, 0
   );
-  if (
-    mouseUiState?.inventoryClickRequest &&
-    mouseInsideCanvas &&
-    !inventoryClickInsideInventoryPanel &&
-    !inventoryClickInsideEquipmentPanel
-  ) {
-    state.leftoversUiState.requestCloseInventory = true;
-    mouseUiState.inventoryClickRequest = false;
-    mouseUiState.inventoryDoubleClickRequest = false;
-  }
+  const inventoryClickInsideEquippedSkillsBar = mouseInsideCanvas && isPointInsideExpandedRect(
+    mouseX, mouseY, equippedSkillsX, equippedSkillsY, equippedSkillsW, equippedSkillsSlotSize, 0
+  );
   const inventoryTabHovered = mouseInsideCanvas && isPointInsideExpandedRect(
     mouseX,
     mouseY,
@@ -1415,25 +1630,40 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     equipmentTitleH,
     0
   );
+  const skillsTabHovered = mouseInsideCanvas && isPointInsideExpandedRect(
+    mouseX,
+    mouseY,
+    skillsTitleX,
+    skillsTitleY,
+    skillsTitleW,
+    skillsTitleH,
+    0
+  );
 
   if (
     mouseUiState?.inventoryDragStartRequest &&
     !mouseUiState.inventoryDragItemName &&
-    (inventoryTabHovered || equipmentTabHovered)
+    (inventoryTabHovered || equipmentTabHovered || skillsTabHovered)
   ) {
-    mouseUiState.inventoryPanelDragTarget = inventoryTabHovered ? "inventory" : "equipment";
+    mouseUiState.inventoryPanelDragTarget = inventoryTabHovered
+      ? "inventory"
+      : (equipmentTabHovered ? "equipment" : "skills");
     mouseUiState.inventoryPanelDragOffsetX = inventoryTabHovered
       ? (mouseX - inventoryPanelX)
-      : (mouseX - equipmentPanelX);
+      : (equipmentTabHovered ? (mouseX - equipmentPanelX) : (mouseX - skillsPanelX));
     mouseUiState.inventoryPanelDragOffsetY = inventoryTabHovered
       ? (mouseY - inventoryPanelY)
-      : (mouseY - equipmentPanelY);
+      : (equipmentTabHovered ? (mouseY - equipmentPanelY) : (mouseY - skillsPanelY));
     mouseUiState.inventoryDragStartRequest = false;
     mouseUiState.inventoryClickRequest = false;
     clearItemInspection(mouseUiState);
   }
 
   if (mouseUiState?.inventoryPanelDragTarget) {
+    mouseUiState.inventoryClickRequest = false;
+    mouseUiState.inventoryDoubleClickRequest = false;
+  }
+  if (mouseUiState?.inventorySkillsScrollDragging) {
     mouseUiState.inventoryClickRequest = false;
     mouseUiState.inventoryDoubleClickRequest = false;
   }
@@ -1490,6 +1720,145 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     clearItemInspection(mouseUiState);
     hover = computeHoverState(sortedItems);
   }
+
+  const unlockedSkills = collectUnlockedSkills(state);
+  const unlockedSkillLookup = Object.create(null);
+  for (const skill of unlockedSkills) {
+    if (!skill?.id) continue;
+    unlockedSkillLookup[skill.id] = skill;
+  }
+  const maxSkillScrollRow = Math.max(0, SKILLS_TOTAL_ROWS - SKILLS_VISIBLE_ROWS);
+  let skillsScrollRow = normalizeInventorySkillsScrollRow(mouseUiState, maxSkillScrollRow);
+  const pendingSkillWheelDelta = Number.isFinite(mouseUiState?.inventorySkillsScrollDelta)
+    ? Math.trunc(mouseUiState.inventorySkillsScrollDelta)
+    : 0;
+  if (pendingSkillWheelDelta !== 0) {
+    skillsScrollRow = Math.max(0, Math.min(maxSkillScrollRow, skillsScrollRow + pendingSkillWheelDelta));
+    if (mouseUiState) {
+      mouseUiState.inventorySkillsScrollRow = skillsScrollRow;
+      mouseUiState.inventorySkillsScrollDelta = 0;
+    }
+  }
+  const skillThumbH = Math.max(
+    14,
+    Math.round(skillsTrackH * (SKILLS_VISIBLE_ROWS / Math.max(SKILLS_VISIBLE_ROWS, SKILLS_TOTAL_ROWS)))
+  );
+  const skillThumbTravel = Math.max(1, skillsTrackH - skillThumbH);
+  const skillThumbRatio = maxSkillScrollRow > 0 ? skillsScrollRow / maxSkillScrollRow : 0;
+  let skillThumbY = Math.round(skillsTrackY + skillThumbTravel * skillThumbRatio);
+  const skillsTrackHovered = mouseInsideCanvas && isPointInsideExpandedRect(
+    mouseX, mouseY, skillsTrackX, skillsTrackY, skillsSliderW, skillsTrackH, 0
+  );
+  const skillsThumbHovered = mouseInsideCanvas && isPointInsideExpandedRect(
+    mouseX, mouseY, skillsTrackX + 1, skillThumbY, Math.max(1, skillsSliderW - 2), skillThumbH, 0
+  );
+  if (
+    mouseUiState?.inventoryDragStartRequest &&
+    !mouseUiState.inventoryPanelDragTarget &&
+    !mouseUiState.inventoryDragItemName &&
+    skillsThumbHovered
+  ) {
+    mouseUiState.inventorySkillsScrollDragging = true;
+    mouseUiState.inventorySkillsScrollDragOffsetY = mouseY - skillThumbY;
+    mouseUiState.inventoryDragStartRequest = false;
+    mouseUiState.inventoryClickRequest = false;
+    mouseUiState.inventoryDoubleClickRequest = false;
+  }
+  if (mouseUiState?.inventorySkillsScrollDragging && mouseUiState.inventoryLeftDown) {
+    const dragOffsetY = Number.isFinite(mouseUiState.inventorySkillsScrollDragOffsetY)
+      ? mouseUiState.inventorySkillsScrollDragOffsetY
+      : Math.round(skillThumbH * 0.5);
+    const relativeY = clampValue(mouseY - skillsTrackY - dragOffsetY, 0, skillThumbTravel);
+    const dragRatio = skillThumbTravel > 0 ? relativeY / skillThumbTravel : 0;
+    skillsScrollRow = dragRatio * maxSkillScrollRow;
+    if (mouseUiState) {
+      mouseUiState.inventorySkillsScrollRow = skillsScrollRow;
+    }
+  }
+  if (mouseUiState?.inventoryClickRequest && skillsTrackHovered && !mouseUiState.inventorySkillsScrollDragging) {
+    const relativeY = clampValue(mouseY - skillsTrackY - Math.round(skillThumbH * 0.5), 0, skillThumbTravel);
+    const clickedRatio = skillThumbTravel > 0 ? relativeY / skillThumbTravel : 0;
+    skillsScrollRow = clickedRatio * maxSkillScrollRow;
+    if (mouseUiState) {
+      mouseUiState.inventorySkillsScrollRow = skillsScrollRow;
+      mouseUiState.inventoryClickRequest = false;
+    }
+  }
+  skillsScrollRow = normalizeInventorySkillsScrollRow(mouseUiState, maxSkillScrollRow);
+  const skillRowStep = slotSize + margin;
+  const visibleSkillStartRow = Math.floor(skillsScrollRow);
+  const skillRowPixelOffset = (skillsScrollRow - visibleSkillStartRow) * skillRowStep;
+  skillThumbY = Math.round(
+    skillsTrackY +
+    skillThumbTravel * (maxSkillScrollRow > 0 ? (skillsScrollRow / maxSkillScrollRow) : 0)
+  );
+  let hoveredSkillEntry = null;
+  let hoveredSkillIndex = -1;
+  if (
+    mouseInsideCanvas &&
+    !mouseUiState?.inventoryDragItemName &&
+    isPointInsideExpandedRect(mouseX, mouseY, skillsGridX, skillsGridY, skillsGridW, skillsGridH, 0)
+  ) {
+    const localX = mouseX - skillsGridX;
+    const localY = mouseY - skillsGridY + skillRowPixelOffset;
+    const col = Math.floor(localX / skillRowStep);
+    const rowInContent = Math.floor(localY / skillRowStep);
+    const xInCell = localX - col * skillRowStep;
+    const yInCell = localY - rowInContent * skillRowStep;
+    if (
+      col >= 0 &&
+      col < SKILLS_GRID_COLS &&
+      rowInContent >= 0 &&
+      xInCell >= 0 &&
+      xInCell < slotSize &&
+      yInCell >= 0 &&
+      yInCell < slotSize
+    ) {
+      const absoluteRow = visibleSkillStartRow + rowInContent;
+      if (absoluteRow >= 0 && absoluteRow < SKILLS_TOTAL_ROWS) {
+        const skillIndex = absoluteRow * SKILLS_GRID_COLS + col;
+        hoveredSkillIndex = skillIndex;
+        hoveredSkillEntry = skillIndex >= 0 && skillIndex < unlockedSkills.length ? unlockedSkills[skillIndex] : null;
+      }
+    }
+  }
+  let hoveredEquippedSkillSlotIndex = -1;
+  if (mouseInsideCanvas) {
+    for (let i = 0; i < equippedSkillsRects.length; i++) {
+      const rect = equippedSkillsRects[i];
+      if (isPointInsideExpandedRect(mouseX, mouseY, rect.x, rect.y, rect.w, rect.h, 0)) {
+        hoveredEquippedSkillSlotIndex = i;
+        break;
+      }
+    }
+  }
+  if (!hoveredSkillEntry && hoveredEquippedSkillSlotIndex >= 0 && !mouseUiState?.inventoryDragItemName) {
+    const equippedSkill = playerSkillSlots[hoveredEquippedSkillSlotIndex];
+    if (equippedSkill?.id) {
+      hoveredSkillEntry = {
+        id: equippedSkill.id,
+        name: String(equippedSkill.name || humanizeSkillName(equippedSkill.id)),
+        manaCost: Number.isFinite(equippedSkill.manaCost) ? Math.max(0, equippedSkill.manaCost) : 0
+      };
+    }
+  }
+  let skillsPreviewAlpha = Number.isFinite(mouseUiState?.inventorySkillsPreviewAlpha)
+    ? mouseUiState.inventorySkillsPreviewAlpha
+    : 0;
+  if (hoveredSkillEntry) {
+    const previewInfo = getSkillPreviewInfo(hoveredSkillEntry);
+    if (mouseUiState) {
+      mouseUiState.inventorySkillsPreviewSkillId = previewInfo.id;
+      mouseUiState.inventorySkillsPreviewName = previewInfo.name;
+      mouseUiState.inventorySkillsPreviewDescription = previewInfo.description;
+      mouseUiState.inventorySkillsPreviewManaCost = previewInfo.manaCost;
+      mouseUiState.inventorySkillsPreviewUseSeconds = previewInfo.useSeconds;
+    }
+    skillsPreviewAlpha = Math.min(1, skillsPreviewAlpha + SKILL_PREVIEW_FADE_IN);
+  } else {
+    skillsPreviewAlpha = Math.max(0, skillsPreviewAlpha - SKILL_PREVIEW_FADE_OUT);
+  }
+  if (mouseUiState) mouseUiState.inventorySkillsPreviewAlpha = skillsPreviewAlpha;
 
   if (mouseUiState?.inventoryDoubleClickRequest) {
     let handledDoubleClick = false;
@@ -1589,7 +1958,16 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   }
 
   if (mouseUiState?.inventoryDragStartRequest && !mouseUiState?.inventoryPanelDragTarget) {
-    if (hover.hoveredItemIndex >= 0) {
+    if (hoveredEquippedSkillSlotIndex >= 0 && playerSkillSlots[hoveredEquippedSkillSlotIndex]?.id) {
+      const sourceSlot = playerSkillSlots[hoveredEquippedSkillSlotIndex];
+      mouseUiState.inventoryDragItemName = sourceSlot.id;
+      mouseUiState.inventoryDragSource = "skillEquip";
+      mouseUiState.inventoryDragSourceSlot = String(hoveredEquippedSkillSlotIndex);
+    } else if (hoveredSkillEntry?.id) {
+      mouseUiState.inventoryDragItemName = hoveredSkillEntry.id;
+      mouseUiState.inventoryDragSource = "skillLibrary";
+      mouseUiState.inventoryDragSourceSlot = String(hoveredSkillIndex);
+    } else if (hover.hoveredItemIndex >= 0) {
       const draggedItem = hover.hoveredItem;
       if (draggedItem) {
         mouseUiState.inventoryDragItemName = draggedItem.name;
@@ -1621,8 +1999,85 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   if (mouseUiState?.inventoryDragReleaseRequest) {
     const draggedItemName = mouseUiState.inventoryDragItemName;
     if (draggedItemName) {
-      let placed = false;
-      const sourceSlotIndex = Number.parseInt(mouseUiState.inventoryDragSourceSlot, 10);
+      const draggedFromSkillLibrary = mouseUiState.inventoryDragSource === "skillLibrary";
+      const draggedFromSkillEquip = mouseUiState.inventoryDragSource === "skillEquip";
+      if (draggedFromSkillLibrary || draggedFromSkillEquip) {
+        const sourceSkillSlotIndex = Number.parseInt(mouseUiState.inventoryDragSourceSlot, 10);
+        const skillId = String(draggedItemName || "").trim();
+        const sourceSlotData = (
+          draggedFromSkillEquip &&
+          Number.isInteger(sourceSkillSlotIndex) &&
+          sourceSkillSlotIndex >= 0 &&
+          sourceSkillSlotIndex < playerSkillSlots.length
+        )
+          ? playerSkillSlots[sourceSkillSlotIndex]
+          : null;
+        if (skillId && hoveredEquippedSkillSlotIndex >= 0 && hoveredEquippedSkillSlotIndex < playerSkillSlots.length) {
+          const targetIndex = hoveredEquippedSkillSlotIndex;
+          const targetPrevious = playerSkillSlots[targetIndex];
+          const duplicateIndex = findAssignedSkillSlotIndex(
+            playerSkillSlots,
+            skillId,
+            draggedFromSkillEquip ? sourceSkillSlotIndex : targetIndex
+          );
+          if (duplicateIndex >= 0) {
+            playerSkillSlots[duplicateIndex] = buildAssignedSkillSlotData(null, duplicateIndex + 1, unlockedSkillLookup, null);
+          }
+
+          const assignedData = buildAssignedSkillSlotData(
+            skillId,
+            targetIndex + 1,
+            unlockedSkillLookup,
+            sourceSlotData
+          );
+          playerSkillSlots[targetIndex] = assignedData;
+
+          if (
+            draggedFromSkillEquip &&
+            Number.isInteger(sourceSkillSlotIndex) &&
+            sourceSkillSlotIndex >= 0 &&
+            sourceSkillSlotIndex < playerSkillSlots.length &&
+            sourceSkillSlotIndex !== targetIndex
+          ) {
+            if (targetPrevious?.id && targetPrevious.id !== skillId) {
+              playerSkillSlots[sourceSkillSlotIndex] = buildAssignedSkillSlotData(
+                targetPrevious.id,
+                sourceSkillSlotIndex + 1,
+                unlockedSkillLookup,
+                targetPrevious
+              );
+            } else {
+              playerSkillSlots[sourceSkillSlotIndex] = buildAssignedSkillSlotData(
+                null,
+                sourceSkillSlotIndex + 1,
+                unlockedSkillLookup,
+                null
+              );
+            }
+          }
+        } else if (
+          draggedFromSkillEquip &&
+          Number.isInteger(sourceSkillSlotIndex) &&
+          sourceSkillSlotIndex >= 0 &&
+          sourceSkillSlotIndex < playerSkillSlots.length
+        ) {
+          playerSkillSlots[sourceSkillSlotIndex] = buildAssignedSkillSlotData(
+            null,
+            sourceSkillSlotIndex + 1,
+            unlockedSkillLookup,
+            null
+          );
+        }
+
+        mouseUiState.inventoryDragItemName = "";
+        mouseUiState.inventoryDragSource = "";
+        mouseUiState.inventoryDragSourceSlot = "";
+        clearItemInspection(mouseUiState);
+        mouseUiState.inventoryDragReleaseRequest = false;
+        hover = computeHoverState(sortedItems);
+      } else {
+        let placed = false;
+        const sourceSlotIndex = Number.parseInt(mouseUiState.inventoryDragSourceSlot, 10);
 
       if (mouseUiState.inventoryDragSource === "inventoryGrid") {
         if (hover.hoveredEquipmentSlotId && canEquipItemInSlot(draggedItemName, hover.hoveredEquipmentSlotId)) {
@@ -1711,21 +2166,22 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
         placed = true;
       }
 
-      if (!placed) {
-        if (mouseUiState.inventoryDragSource === "inventoryGrid") {
-          if (Number.isInteger(sourceSlotIndex) && sourceSlotIndex >= 0 && sourceSlotIndex < totalSlots) {
-            slotOrder[sourceSlotIndex] = draggedItemName;
+        if (!placed) {
+          if (mouseUiState.inventoryDragSource === "inventoryGrid") {
+            if (Number.isInteger(sourceSlotIndex) && sourceSlotIndex >= 0 && sourceSlotIndex < totalSlots) {
+              slotOrder[sourceSlotIndex] = draggedItemName;
+            } else {
+              placeInFirstEmptyInventorySlot(slotOrder, draggedItemName);
+            }
           } else {
-            placeInFirstEmptyInventorySlot(slotOrder, draggedItemName);
+            restoreDraggedItem(mouseUiState, playerInventory, playerEquipment);
           }
-        } else {
-          restoreDraggedItem(mouseUiState, playerInventory, playerEquipment);
         }
+        mouseUiState.inventoryDragItemName = "";
+        mouseUiState.inventoryDragSource = "";
+        mouseUiState.inventoryDragSourceSlot = "";
+        clearItemInspection(mouseUiState);
       }
-      mouseUiState.inventoryDragItemName = "";
-      mouseUiState.inventoryDragSource = "";
-      mouseUiState.inventoryDragSourceSlot = "";
-      clearItemInspection(mouseUiState);
     }
     mouseUiState.inventoryDragReleaseRequest = false;
     refreshInventoryCollections();
@@ -1900,6 +2356,95 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   ctx.stroke();
   drawUiText(ctx, String(playerCurrency.silver), silverX + 12, coinTextY, colors);
 
+  ctx.font = FONT_16;
+  ctx.fillStyle = colors.INVENTORY_SLOT_BG;
+  ctx.fillRect(skillsTitleX, skillsTitleY, skillsTitleW, skillsTitleH);
+  ctx.strokeStyle = skillsTabHovered ? "rgba(255, 236, 194, 0.95)" : colors.INVENTORY_SLOT_BORDER;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(skillsTitleX + 0.5, skillsTitleY + 0.5, skillsTitleW - 1, skillsTitleH - 1);
+  ctx.strokeStyle = "rgba(255, 242, 214, 0.22)";
+  ctx.strokeRect(skillsTitleX + 2.5, skillsTitleY + 2.5, skillsTitleW - 5, skillsTitleH - 5);
+  drawUiText(ctx, skillsTitleText, skillsTitleX + skillsTitlePadX, skillsTitleY + 17, colors);
+
+  ctx.fillStyle = "rgba(58, 52, 42, 0.42)";
+  ctx.fillRect(skillsPanelX, skillsPanelY, skillsPanelW, skillsPanelH);
+  ctx.strokeStyle = "rgba(255, 231, 167, 0.5)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(skillsPanelX + 0.5, skillsPanelY + 0.5, skillsPanelW - 1, skillsPanelH - 1);
+
+  const skillRowsToRender = SKILLS_VISIBLE_ROWS + 1;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(skillsGridX, skillsGridY, skillsGridW, skillsGridH);
+  ctx.clip();
+  for (let localRow = 0; localRow < skillRowsToRender; localRow++) {
+    const absoluteRow = visibleSkillStartRow + localRow;
+    if (absoluteRow >= SKILLS_TOTAL_ROWS) break;
+    const y = skillsGridY + localRow * skillRowStep - skillRowPixelOffset;
+    for (let col = 0; col < SKILLS_GRID_COLS; col++) {
+      const x = skillsGridX + col * skillRowStep;
+      const skillIndex = absoluteRow * SKILLS_GRID_COLS + col;
+      const skillEntry = skillIndex < unlockedSkills.length ? unlockedSkills[skillIndex] : null;
+
+      ctx.fillStyle = colors.INVENTORY_SLOT_BG;
+      ctx.fillRect(x, y, slotSize, slotSize);
+      ctx.strokeStyle = colors.INVENTORY_SLOT_BORDER;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, y, slotSize, slotSize);
+
+      if (!skillEntry) continue;
+      const skillSprite = typeof getItemSprite === "function" ? getItemSprite(skillEntry.id) : null;
+      if (skillSprite && (skillSprite.width > 0 || skillSprite.naturalWidth > 0)) {
+        const iconInset = 4;
+        const iconSize = slotSize - iconInset * 2;
+        ctx.drawImage(skillSprite, x + iconInset, y + iconInset, iconSize, iconSize);
+      } else {
+        ctx.fillStyle = "rgba(24, 20, 14, 0.65)";
+        ctx.fillRect(x + 3, y + 3, slotSize - 6, slotSize - 6);
+        const shortName = skillEntry.name.slice(0, 3).toUpperCase();
+        ctx.font = "600 9px 'Spectral', 'Garamond', 'Trebuchet MS', serif";
+        ctx.textAlign = "center";
+        ctx.fillStyle = "rgba(236, 230, 219, 0.96)";
+        ctx.fillText(shortName, x + slotSize * 0.5, y + slotSize * 0.6);
+        ctx.textAlign = "start";
+      }
+      if (skillEntry.manaCost > 0) {
+        const manaText = String(skillEntry.manaCost);
+        ctx.font = FONT_12;
+        const chipW = Math.max(12, Math.ceil(ctx.measureText(manaText).width) + 6);
+        const chipH = 10;
+        const chipX = x + slotSize - chipW - 2;
+        const chipY = y + 2;
+        ctx.fillStyle = "rgba(8, 14, 24, 0.82)";
+        ctx.fillRect(chipX, chipY, chipW, chipH);
+        ctx.strokeStyle = "rgba(132, 194, 255, 0.55)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(chipX + 0.5, chipY + 0.5, chipW - 1, chipH - 1);
+        ctx.fillStyle = "rgba(132, 202, 255, 0.98)";
+        ctx.fillText(manaText, chipX + 3, chipY + 8);
+      }
+    }
+  }
+  ctx.restore();
+
+  ctx.fillStyle = "rgba(12, 10, 8, 0.76)";
+  ctx.fillRect(skillsTrackX, skillsTrackY, skillsSliderW, skillsTrackH);
+  ctx.strokeStyle = "rgba(255, 231, 167, 0.42)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(skillsTrackX + 0.5, skillsTrackY + 0.5, skillsSliderW - 1, skillsTrackH - 1);
+  ctx.fillStyle = skillsTrackHovered ? "rgba(240, 220, 175, 0.84)" : "rgba(219, 193, 147, 0.74)";
+  ctx.fillRect(skillsTrackX + 1, skillThumbY, skillsSliderW - 2, skillThumbH);
+  ctx.strokeStyle = "rgba(77, 54, 24, 0.75)";
+  ctx.strokeRect(skillsTrackX + 1.5, skillThumbY + 0.5, Math.max(1, skillsSliderW - 3), Math.max(1, skillThumbH - 1));
+  ctx.font = FONT_12;
+  drawUiText(
+    ctx,
+    `${Math.min(unlockedSkills.length, SKILLS_TOTAL_SLOTS)} / ${SKILLS_TOTAL_SLOTS}`,
+    skillsPanelX + skillsPanelW - 76,
+    skillsPanelY + 16,
+    colors
+  );
+
   ctx.fillStyle = "rgba(58, 52, 42, 0.42)";
   ctx.fillRect(equipmentPanelX, equipmentPanelY, equipmentPanelW, equipmentPanelH);
   ctx.strokeStyle = "rgba(255, 231, 167, 0.5)";
@@ -2004,6 +2549,91 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   }
 
   const draggingItemName = mouseUiState?.inventoryDragItemName || "";
+  const previewSkillId = String(mouseUiState?.inventorySkillsPreviewSkillId || "");
+  const previewSkillName = String(mouseUiState?.inventorySkillsPreviewName || "");
+  const previewSkillDescription = String(mouseUiState?.inventorySkillsPreviewDescription || "");
+  const previewSkillManaCost = Number.isFinite(mouseUiState?.inventorySkillsPreviewManaCost)
+    ? Math.max(0, mouseUiState.inventorySkillsPreviewManaCost)
+    : 0;
+  const previewSkillUseSeconds = Number.isFinite(mouseUiState?.inventorySkillsPreviewUseSeconds)
+    ? Math.max(0, mouseUiState.inventorySkillsPreviewUseSeconds)
+    : 0;
+  const previewSkillAlpha = Number.isFinite(mouseUiState?.inventorySkillsPreviewAlpha)
+    ? Math.max(0, Math.min(1, mouseUiState.inventorySkillsPreviewAlpha))
+    : 0;
+  if (previewSkillId && previewSkillAlpha > 0.01 && mouseUiState?.insideCanvas && !draggingItemName) {
+    const previewIconSize = 132;
+    const iconHalf = previewIconSize * 0.5;
+    const iconX = Math.max(8, Math.min(canvas.width - previewIconSize - 8, mouseX - iconHalf));
+    const iconY = Math.max(30, Math.min(canvas.height - previewIconSize - 8, mouseY - iconHalf + 10));
+
+    const previewSprite = typeof getItemSprite === "function" ? getItemSprite(previewSkillId) : null;
+    const detailsText = [
+      `Cost: ${previewSkillManaCost} mana`,
+      `Use Time: ${previewSkillUseSeconds > 0 ? `${previewSkillUseSeconds}s` : "Instant"}`
+    ];
+
+    ctx.save();
+    ctx.globalAlpha = previewSkillAlpha;
+    ctx.fillStyle = "rgba(6, 10, 16, 0.78)";
+    ctx.fillRect(iconX - 2, iconY - 2, previewIconSize + 4, previewIconSize + 4);
+    ctx.strokeStyle = "rgba(144, 199, 255, 0.62)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(iconX - 1.5, iconY - 1.5, previewIconSize + 3, previewIconSize + 3);
+    ctx.fillStyle = "rgba(12, 18, 26, 0.62)";
+    ctx.fillRect(iconX, iconY, previewIconSize, previewIconSize);
+    if (previewSprite && (previewSprite.width > 0 || previewSprite.naturalWidth > 0)) {
+      ctx.drawImage(previewSprite, iconX, iconY, previewIconSize, previewIconSize);
+    } else {
+      ctx.font = "700 18px 'Spectral', 'Garamond', 'Trebuchet MS', serif";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(226, 240, 255, 0.92)";
+      ctx.fillText(previewSkillName.slice(0, 12), iconX + previewIconSize * 0.5, iconY + previewIconSize * 0.54);
+      ctx.textAlign = "start";
+    }
+
+    const descW = 300;
+    const nameLine = previewSkillName || humanizeSkillName(previewSkillId);
+    ctx.font = "600 18px 'Cinzel', 'Palatino Linotype', 'Book Antiqua', serif";
+    const nameLineW = Math.ceil(ctx.measureText(nameLine).width);
+    ctx.font = FONT_12;
+    const descLines = wrapTextLines(ctx, previewSkillDescription, descW - 20, 5);
+    const allLines = [...descLines, ...detailsText];
+    const maxLineW = Math.max(
+      nameLineW,
+      ...allLines.map((line) => Math.ceil(ctx.measureText(line).width))
+    );
+    const panelW = Math.max(220, Math.min(descW, maxLineW + 20));
+    const panelH = 18 + 8 + allLines.length * 14 + 10;
+    const panelX = Math.max(8, Math.min(canvas.width - panelW - 8, iconX + previewIconSize * 0.5 - panelW * 0.5));
+    const panelY = Math.max(8, iconY - panelH - 10);
+    ctx.fillStyle = "rgba(10, 15, 21, 0.9)";
+    ctx.fillRect(panelX, panelY, panelW, panelH);
+    ctx.strokeStyle = "rgba(149, 207, 255, 0.78)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1);
+    ctx.font = "600 18px 'Cinzel', 'Palatino Linotype', 'Book Antiqua', serif";
+    drawUiText(
+      ctx,
+      nameLine,
+      panelX + 10,
+      panelY + 18,
+      { ...colors, TEXT: "#e9f5ff", TEXT_SHADOW: "rgba(3, 7, 12, 0.9)" }
+    );
+    ctx.font = FONT_12;
+    let lineY = panelY + 32;
+    for (const line of allLines) {
+      drawUiText(
+        ctx,
+        line,
+        panelX + 10,
+        lineY,
+        { ...colors, TEXT: "rgba(220, 237, 255, 0.95)", TEXT_SHADOW: "rgba(3, 7, 12, 0.85)" }
+      );
+      lineY += 14;
+    }
+    ctx.restore();
+  }
   const hoveredTooltipItem = inspectedItem
     ? null
     : (hover.hoveredItem?.name || hover.hoveredEquipmentItem || "");
@@ -2215,7 +2845,91 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     }
   }
 
+  for (let i = 0; i < equippedSkillsRects.length; i++) {
+    const rect = equippedSkillsRects[i];
+    const slotSkill = playerSkillSlots[i];
+    const skillId = String(slotSkill?.id || "").trim().toLowerCase();
+    const bonkBlocked = skillId === "bonk" && !String(playerEquipment?.weapon || "").trim();
+    const sourceDragSkillSlot = (
+      mouseUiState?.inventoryDragSource === "skillEquip" &&
+      Number.parseInt(mouseUiState.inventoryDragSourceSlot, 10) === i &&
+      mouseUiState?.inventoryDragItemName
+    );
+    const assignedSkillId = sourceDragSkillSlot ? "" : (slotSkill?.id || "");
+    const slotHovered = hoveredEquippedSkillSlotIndex === i;
+    ctx.fillStyle = "rgba(20, 22, 28, 0.86)";
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.strokeStyle = slotHovered ? "rgba(255, 236, 194, 0.95)" : "rgba(255, 231, 167, 0.58)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+
+    if (assignedSkillId) {
+      const skillSprite = typeof getItemSprite === "function" ? getItemSprite(assignedSkillId) : null;
+      if (skillSprite && (skillSprite.width > 0 || skillSprite.naturalWidth > 0)) {
+        ctx.drawImage(skillSprite, rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2);
+      } else {
+        ctx.font = FONT_12;
+        drawUiText(ctx, humanizeSkillName(assignedSkillId).slice(0, 4), rect.x + 4, rect.y + 18, colors);
+      }
+      const manaCost = Number.isFinite(slotSkill?.manaCost) ? Math.max(0, slotSkill.manaCost) : 0;
+      if (manaCost > 0) {
+        const manaText = String(manaCost);
+        ctx.font = FONT_12;
+        const manaW = Math.max(12, Math.ceil(ctx.measureText(manaText).width) + 6);
+        ctx.fillStyle = "rgba(8, 14, 24, 0.82)";
+        ctx.fillRect(rect.x + rect.w - manaW - 2, rect.y + 2, manaW, 10);
+        ctx.strokeStyle = "rgba(132, 194, 255, 0.55)";
+        ctx.strokeRect(rect.x + rect.w - manaW - 1.5, rect.y + 2.5, manaW - 1, 9);
+        ctx.fillStyle = "rgba(132, 202, 255, 0.98)";
+        ctx.fillText(manaText, rect.x + rect.w - manaW + 1, rect.y + 10);
+      }
+      if (bonkBlocked) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(255, 88, 88, 0.95)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(rect.x + 4, rect.y + 4);
+        ctx.lineTo(rect.x + rect.w - 4, rect.y + rect.h - 4);
+        ctx.moveTo(rect.x + rect.w - 4, rect.y + 4);
+        ctx.lineTo(rect.x + 4, rect.y + rect.h - 4);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    const slotLabel = String(i + 1);
+    ctx.font = FONT_12;
+    const labelW = Math.ceil(ctx.measureText(slotLabel).width);
+    const chipW = Math.max(12, labelW + 8);
+    const chipX = Math.round(rect.x + (rect.w - chipW) * 0.5);
+    const chipY = rect.y + rect.h - 12;
+    ctx.fillStyle = "rgba(9, 14, 20, 0.78)";
+    ctx.fillRect(chipX, chipY, chipW, 11);
+    ctx.strokeStyle = "rgba(228, 212, 182, 0.5)";
+    ctx.strokeRect(chipX + 0.5, chipY + 0.5, chipW - 1, 10);
+    ctx.fillStyle = "rgba(244, 244, 244, 0.98)";
+    ctx.fillText(slotLabel, chipX + 4, chipY + 9);
+  }
+
   if (mouseUiState.inventoryClickRequest) {
+    const hasDragInteraction = Boolean(
+      mouseUiState.inventoryPanelDragTarget ||
+      mouseUiState.inventoryDragItemName ||
+      mouseUiState.inventoryDragStartRequest ||
+      mouseUiState.inventoryDragReleaseRequest ||
+      mouseUiState.inventorySkillsScrollDragging
+    );
+    if (
+      mouseInsideCanvas &&
+      !hasDragInteraction &&
+      !inventoryClickInsideInventoryPanel &&
+      !inventoryClickInsideSkillsPanel &&
+      !inventoryClickInsideEquipmentPanel &&
+      !inventoryClickInsideEquippedSkillsBar
+    ) {
+      state.leftoversUiState.requestCloseInventory = true;
+      mouseUiState.inventoryDoubleClickRequest = false;
+    }
     mouseUiState.inventoryClickRequest = false;
   }
 
@@ -2230,7 +2944,18 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     ctx.strokeStyle = "rgba(255, 231, 167, 0.72)";
     ctx.lineWidth = 1;
     ctx.strokeRect(drawX - 1.5, drawY - 1.5, dragSize + 3, dragSize + 3);
-    drawItemInSlot(ctx, draggingItemName, drawX, drawY, dragSize, colors, getItemSprite);
+    const draggingSkill = mouseUiState.inventoryDragSource === "skillLibrary" || mouseUiState.inventoryDragSource === "skillEquip";
+    if (draggingSkill) {
+      const draggingSkillSprite = typeof getItemSprite === "function" ? getItemSprite(draggingItemName) : null;
+      if (draggingSkillSprite && (draggingSkillSprite.width > 0 || draggingSkillSprite.naturalWidth > 0)) {
+        ctx.drawImage(draggingSkillSprite, drawX, drawY, dragSize, dragSize);
+      } else {
+        ctx.font = FONT_12;
+        drawUiText(ctx, humanizeSkillName(draggingItemName).slice(0, 4), drawX + 4, drawY + 20, colors);
+      }
+    } else {
+      drawItemInSlot(ctx, draggingItemName, drawX, drawY, dragSize, colors, getItemSprite);
+    }
     ctx.restore();
   }
 }

@@ -20,6 +20,8 @@ export const GAME_STATES = Object.freeze({
   OVERWORLD: "overworld",
   INTERIOR: "interior",
   INVENTORY: "inventory",
+  QUEST_TRACKER: "questTracker",
+  QUEST_COMPLETION: "questCompletion",
   ENTERING_DOOR: "enteringDoor",
   TRANSITION: "transition",
   PLAYER_DEFEATED: "playerDefeated",

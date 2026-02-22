@@ -259,6 +259,18 @@ function drawNPCs(ctx, state, canvas, tileSize, colors, owBubbleQueue = null, sh
   for (const npc of npcs) {
     if (npc.world !== currentAreaId) continue;
     if (typeof shouldDrawNpc === "function" && !shouldDrawNpc(npc)) continue;
+    const isPassedOutPet = Boolean(npc.isPlayerPet && (npc.passedOut || (Number.isFinite(npc.hp) && npc.hp <= 0)));
+    if (isPassedOutPet && (!Number.isFinite(npc.passedOutAt) || npc.passedOutAt <= 0)) {
+      npc.passedOutAt = now;
+    }
+    const passedOutElapsed = isPassedOutPet && Number.isFinite(npc.passedOutAt) ? Math.max(0, now - npc.passedOutAt) : 0;
+    const passedOutFadeDurationMs = 540;
+    if (isPassedOutPet && passedOutElapsed >= passedOutFadeDurationMs) {
+      continue;
+    }
+    const passedOutProgress = isPassedOutPet
+      ? Math.max(0, Math.min(1, passedOutElapsed / passedOutFadeDurationMs))
+      : 0;
 
     let shakeX = 0;
     let shakeY = 0;
@@ -300,9 +312,18 @@ function drawNPCs(ctx, state, canvas, tileSize, colors, owBubbleQueue = null, sh
           drawX = Math.round(npc.x - cam.x - (drawWidth - tileSize) / 2 + shakeX);
           drawY = Math.round(npc.y - cam.y - (drawHeight - tileSize) + shakeY);
         }
+        const sinkOffset = isPassedOutPet ? Math.round(passedOutProgress * 12) : 0;
+        drawY += sinkOffset;
 
         drawEntityShadow(ctx, drawX, drawY, drawWidth, drawHeight, colors.GROUND_SHADOW);
-        drawNPCSprite(ctx, npc, drawX, drawY, drawWidth, drawHeight);
+        if (isPassedOutPet) {
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, 1 - passedOutProgress);
+          drawNPCSprite(ctx, npc, drawX, drawY, drawWidth, drawHeight);
+          ctx.restore();
+        } else {
+          drawNPCSprite(ctx, npc, drawX, drawY, drawWidth, drawHeight);
+        }
         if (now < (Number.isFinite(npc.hitBubbleUntil) ? npc.hitBubbleUntil : 0)) {
           if (Array.isArray(owBubbleQueue)) {
             owBubbleQueue.push({ npc, drawX, drawY, drawWidth });
@@ -311,6 +332,9 @@ function drawNPCs(ctx, state, canvas, tileSize, colors, owBubbleQueue = null, sh
           }
         }
       } else {
+        if (isPassedOutPet) {
+          continue;
+        }
         drawNPCPlaceholder(ctx, nx, ny, colors);
         if (now < (Number.isFinite(npc.hitBubbleUntil) ? npc.hitBubbleUntil : 0)) {
           if (Array.isArray(owBubbleQueue)) {

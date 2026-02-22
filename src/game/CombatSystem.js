@@ -151,9 +151,12 @@ export function createCombatSystem({
 
   function hitEnemy(player, enemy, profile, now, playerEquipment = null) {
     const fallbackDamage = Number.isFinite(profile.damage) ? profile.damage : 0;
-    const baseDamage = resolveEntityDamage(player, fallbackDamage, "attackDamageRollTable");
-    const bonusDamage = resolveWeaponBonusDamage(playerEquipment);
-    const damage = baseDamage + bonusDamage;
+    const baseDamage = profile?.useProfileDamageOnly
+      ? fallbackDamage
+      : resolveEntityDamage(player, fallbackDamage, "attackDamageRollTable");
+    const bonusDamage = profile?.ignoreWeaponBonus ? 0 : resolveWeaponBonusDamage(playerEquipment);
+    const flatProfileBonus = Number.isFinite(profile?.damageBonusFlat) ? profile.damageBonusFlat : 0;
+    const damage = Math.max(0, baseDamage + bonusDamage + flatProfileBonus);
     enemy.hp = Math.max(0, enemy.hp - damage);
     enemy.invulnerableUntil = now + 180;
     enemy.hitStunUntil = now + 230;
@@ -263,7 +266,23 @@ export function createCombatSystem({
     }
   }
 
-  function processEnemyStrikes({ now, player, enemies, currentAreaId }) {
+  function processEnemyStrikes({ now, player, enemies, npcs, currentAreaId }) {
+    const findPetTarget = (enemy) => {
+      if (!Array.isArray(npcs) || !enemy) return null;
+      let pet = null;
+      if (enemy.targetEntityType === "pet" && enemy.targetEntityId) {
+        pet = npcs.find((npc) => npc && npc.id === enemy.targetEntityId && npc.isPlayerPet && npc.world === currentAreaId) || null;
+      }
+      if (!pet) {
+        pet = npcs.find((npc) => npc && npc.isPlayerPet && npc.world === currentAreaId) || null;
+      }
+      if (!pet) return null;
+      const maxHp = Number.isFinite(pet.maxHp) ? Math.max(1, pet.maxHp) : 1;
+      const hp = Number.isFinite(pet.hp) ? Math.max(0, Math.min(maxHp, pet.hp)) : maxHp;
+      if (hp <= 0) return null;
+      return pet;
+    };
+
     for (const enemy of enemies) {
       if (!enemy || enemy.dead || enemy.world !== currentAreaId) continue;
       if (!enemy.pendingStrike) continue;
@@ -271,8 +290,11 @@ export function createCombatSystem({
       enemy.pendingStrike = false;
       const enemyProfile = getAttackProfileForEntity(enemy, enemy.attackType || enemy.equippedAttackId || null);
 
-      const playerCenterX = player.x + tileSize / 2;
-      const playerCenterY = player.y + tileSize / 2;
+      const petTarget = findPetTarget(enemy);
+      const strikeTarget = enemy.targetEntityType === "pet" && petTarget ? petTarget : player;
+      const targetIsPet = strikeTarget !== player;
+      const targetCenterX = strikeTarget.x + (targetIsPet ? ((Number.isFinite(strikeTarget.width) ? strikeTarget.width : tileSize) / 2) : (tileSize / 2));
+      const targetCenterY = strikeTarget.y + (targetIsPet ? ((Number.isFinite(strikeTarget.height) ? strikeTarget.height : tileSize) / 2) : (tileSize / 2));
       const enemyCenterX = enemy.x + enemy.width / 2;
       const enemyCenterY = enemy.y + enemy.height / 2;
       const strikeCenter = enemyProfile?.getAttackCenter
@@ -281,29 +303,39 @@ export function createCombatSystem({
       const strikeRadius = Number.isFinite(enemyProfile?.hitRadius)
         ? enemyProfile.hitRadius
         : (Number.isFinite(enemy.attackRange) ? enemy.attackRange : tileSize * 0.9);
-      const d = distance(playerCenterX, playerCenterY, strikeCenter.x, strikeCenter.y);
+      const d = distance(targetCenterX, targetCenterY, strikeCenter.x, strikeCenter.y);
       if (d > strikeRadius + tileSize * 0.25) continue;
-      if (player.invulnerableUntil > now) continue;
+      if (!targetIsPet && player.invulnerableUntil > now) continue;
 
       const fallbackDamage = Number.isFinite(enemyProfile?.damage)
         ? enemyProfile.damage
         : (Number.isFinite(enemy?.damage) ? enemy.damage : 0);
       const enemyDamage = resolveEntityDamage(enemy, fallbackDamage, "damageRollTable");
-      player.hp = Math.max(0, player.hp - enemyDamage);
-      player.invulnerableUntil = now + player.invulnerableMs;
+      if (targetIsPet) {
+        const maxHp = Number.isFinite(strikeTarget.maxHp) ? Math.max(1, strikeTarget.maxHp) : 1;
+        const currentHp = Number.isFinite(strikeTarget.hp) ? Math.max(0, Math.min(maxHp, strikeTarget.hp)) : maxHp;
+        strikeTarget.hp = Math.max(0, currentHp - enemyDamage);
+        if (strikeTarget.hp <= 0) {
+          strikeTarget.passedOut = true;
+          strikeTarget.passedOutAt = now;
+        }
+      } else {
+        player.hp = Math.max(0, player.hp - enemyDamage);
+        player.invulnerableUntil = now + player.invulnerableMs;
+      }
 
-      const toEnemyX = enemyCenterX - playerCenterX;
-      const toEnemyY = enemyCenterY - playerCenterY;
+      const toEnemyX = enemyCenterX - targetCenterX;
+      const toEnemyY = enemyCenterY - targetCenterY;
       const toEnemyLength = Math.max(0.001, Math.hypot(toEnemyX, toEnemyY));
       const fromEnemyDirX = toEnemyX / toEnemyLength;
       const fromEnemyDirY = toEnemyY / toEnemyLength;
       const damageTextOffset = tileSize * 0.62;
-      const damageTextX = playerCenterX + fromEnemyDirX * damageTextOffset;
-      const damageTextY = playerCenterY + fromEnemyDirY * (damageTextOffset * 0.45) - tileSize * 0.22;
+      const damageTextX = targetCenterX + fromEnemyDirX * damageTextOffset;
+      const damageTextY = targetCenterY + fromEnemyDirY * (damageTextOffset * 0.45) - tileSize * 0.22;
 
       handlers.onRequestVfx("hitSpark", {
-        x: playerCenterX,
-        y: playerCenterY - 6,
+        x: targetCenterX,
+        y: targetCenterY - 6,
         size: 20,
         durationMs: 260
       });
@@ -312,36 +344,46 @@ export function createCombatSystem({
         y: damageTextY,
         text: `-${enemyDamage}`,
         color: "#ff3b3b",
-        size: 32,
+        size: targetIsPet ? 24 : 32,
         durationMs: 620
       });
-      handlers.onPlayerDamaged({
-        source: enemy,
-        target: player,
-        damage: enemyDamage,
-        now
-      });
-      handlers.onHitConfirmed({
-        type: "playerDamaged",
-        source: enemy,
-        target: player,
-        damage: enemyDamage,
-        now
-      });
+      if (targetIsPet) {
+        handlers.onHitConfirmed({
+          type: "petDamaged",
+          source: enemy,
+          target: strikeTarget,
+          damage: enemyDamage,
+          now
+        });
+      } else {
+        handlers.onPlayerDamaged({
+          source: enemy,
+          target: player,
+          damage: enemyDamage,
+          now
+        });
+        handlers.onHitConfirmed({
+          type: "playerDamaged",
+          source: enemy,
+          target: player,
+          damage: enemyDamage,
+          now
+        });
 
-      if (player.hp <= 0) {
-        if (typeof handlers.onPlayerDefeated === "function") {
-          handlers.onPlayerDefeated({ player, source: enemy, now });
-        } else {
-          player.hp = player.maxHp;
-          player.x = player.spawnX;
-          player.y = player.spawnY;
-          handlers.onRequestVfx("doorSwirl", {
-            x: player.x + tileSize / 2,
-            y: player.y + tileSize / 2,
-            size: 30,
-            durationMs: 500
-          });
+        if (player.hp <= 0) {
+          if (typeof handlers.onPlayerDefeated === "function") {
+            handlers.onPlayerDefeated({ player, source: enemy, now });
+          } else {
+            player.hp = player.maxHp;
+            player.x = player.spawnX;
+            player.y = player.spawnY;
+            handlers.onRequestVfx("doorSwirl", {
+              x: player.x + tileSize / 2,
+              y: player.y + tileSize / 2,
+              size: 30,
+              durationMs: 500
+            });
+          }
         }
       }
     }
@@ -402,7 +444,7 @@ export function createCombatSystem({
       currentAreaId,
       profile: player.attackState === "active" ? activeProfile : null
     });
-    processEnemyStrikes({ now, player, enemies, currentAreaId });
+    processEnemyStrikes({ now, player, enemies, npcs, currentAreaId });
   }
 
   return {

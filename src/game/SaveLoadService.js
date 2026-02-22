@@ -61,6 +61,9 @@ export function buildGameSnapshot({
                     lastUsedAt: Number.isFinite(slot?.lastUsedAt) ? slot.lastUsedAt : -Infinity
                 }))
                 : [],
+            unlockedSkills: Array.isArray(player.unlockedSkills)
+                ? player.unlockedSkills.filter((id) => typeof id === "string" && id.length > 0)
+                : [],
             equippedAttackId: player.equippedAttackId || "lightSlash"
         },
         gameFlags: {
@@ -78,7 +81,9 @@ export function buildGameSnapshot({
             inventoryPanelX: Number.isFinite(inventoryUiLayout?.inventoryPanelX) ? inventoryUiLayout.inventoryPanelX : null,
             inventoryPanelY: Number.isFinite(inventoryUiLayout?.inventoryPanelY) ? inventoryUiLayout.inventoryPanelY : null,
             equipmentPanelX: Number.isFinite(inventoryUiLayout?.equipmentPanelX) ? inventoryUiLayout.equipmentPanelX : null,
-            equipmentPanelY: Number.isFinite(inventoryUiLayout?.equipmentPanelY) ? inventoryUiLayout.equipmentPanelY : null
+            equipmentPanelY: Number.isFinite(inventoryUiLayout?.equipmentPanelY) ? inventoryUiLayout.equipmentPanelY : null,
+            skillsPanelX: Number.isFinite(inventoryUiLayout?.skillsPanelX) ? inventoryUiLayout.skillsPanelX : null,
+            skillsPanelY: Number.isFinite(inventoryUiLayout?.skillsPanelY) ? inventoryUiLayout.skillsPanelY : null
         },
         leftoversState: {
             nextId: Number.isFinite(leftoversState?.nextId) ? Math.max(1, Math.floor(leftoversState.nextId)) : 1,
@@ -198,6 +203,10 @@ export function applyGameSnapshot(snapshot, context) {
             lastUsedAt: Number.isFinite(slot?.lastUsedAt) ? slot.lastUsedAt : -Infinity
         }));
     }
+    if (Array.isArray(snapshot.player?.unlockedSkills)) {
+        player.unlockedSkills = snapshot.player.unlockedSkills
+            .filter((id) => typeof id === "string" && id.length > 0);
+    }
     player.equippedAttackId = snapshot.player?.equippedAttackId || player.equippedAttackId || "lightSlash";
 
     // Restore Game Flags
@@ -253,6 +262,8 @@ export function applyGameSnapshot(snapshot, context) {
         inventoryUiLayout.inventoryPanelY = Number.isFinite(nextLayout.inventoryPanelY) ? nextLayout.inventoryPanelY : null;
         inventoryUiLayout.equipmentPanelX = Number.isFinite(nextLayout.equipmentPanelX) ? nextLayout.equipmentPanelX : null;
         inventoryUiLayout.equipmentPanelY = Number.isFinite(nextLayout.equipmentPanelY) ? nextLayout.equipmentPanelY : null;
+        inventoryUiLayout.skillsPanelX = Number.isFinite(nextLayout.skillsPanelX) ? nextLayout.skillsPanelX : null;
+        inventoryUiLayout.skillsPanelY = Number.isFinite(nextLayout.skillsPanelY) ? nextLayout.skillsPanelY : null;
     }
 
     if (leftoversState && typeof leftoversState === "object") {

@@ -58,11 +58,68 @@ function beginEnemyWindup(enemy, now, toPlayerX, toPlayerY, onWindupStarted) {
   }
 }
 
+function resolvePreferredTarget(enemy, player, pet, tileSize) {
+  const playerCenterX = player.x + tileSize / 2;
+  const playerCenterY = player.y + tileSize / 2;
+  const enemyCenterX = enemy.x + enemy.width / 2;
+  const enemyCenterY = enemy.y + enemy.height / 2;
+  const toPlayerX = playerCenterX - enemyCenterX;
+  const toPlayerY = playerCenterY - enemyCenterY;
+  const playerDistance = Math.hypot(toPlayerX, toPlayerY);
+
+  if (!pet) {
+    enemy.targetEntityType = "player";
+    enemy.targetEntityId = "player";
+    return {
+      entity: player,
+      type: "player",
+      id: "player",
+      centerX: playerCenterX,
+      centerY: playerCenterY,
+      toTargetX: toPlayerX,
+      toTargetY: toPlayerY,
+      distanceToTarget: playerDistance
+    };
+  }
+
+  const petCenterX = pet.x + (Number.isFinite(pet.width) ? pet.width : tileSize) / 2;
+  const petCenterY = pet.y + (Number.isFinite(pet.height) ? pet.height : tileSize) / 2;
+  const toPetX = petCenterX - enemyCenterX;
+  const toPetY = petCenterY - enemyCenterY;
+  const petDistance = Math.hypot(toPetX, toPetY);
+  const targetIsPet = petDistance < playerDistance;
+  const target = targetIsPet
+    ? {
+      entity: pet,
+      type: "pet",
+      id: pet.id,
+      centerX: petCenterX,
+      centerY: petCenterY,
+      toTargetX: toPetX,
+      toTargetY: toPetY,
+      distanceToTarget: petDistance
+    }
+    : {
+      entity: player,
+      type: "player",
+      id: "player",
+      centerX: playerCenterX,
+      centerY: playerCenterY,
+      toTargetX: toPlayerX,
+      toTargetY: toPlayerY,
+      distanceToTarget: playerDistance
+    };
+  enemy.targetEntityType = target.type;
+  enemy.targetEntityId = target.id;
+  return target;
+}
+
 function createMeleeChaserBehavior({ tileSize, onWindupStarted }) {
   return function updateMeleeChaserEnemy({
     now,
     enemy,
     player,
+    pet = null,
     canFight,
     collidesAt,
     currentMap,
@@ -75,13 +132,10 @@ function createMeleeChaserBehavior({ tileSize, onWindupStarted }) {
       return;
     }
 
-    const playerCenterX = player.x + tileSize / 2;
-    const playerCenterY = player.y + tileSize / 2;
-    const enemyCenterX = enemy.x + enemy.width / 2;
-    const enemyCenterY = enemy.y + enemy.height / 2;
-    const toPlayerX = playerCenterX - enemyCenterX;
-    const toPlayerY = playerCenterY - enemyCenterY;
-    const distanceToPlayer = Math.hypot(toPlayerX, toPlayerY);
+    const target = resolvePreferredTarget(enemy, player, pet, tileSize);
+    const toPlayerX = target.toTargetX;
+    const toPlayerY = target.toTargetY;
+    const distanceToPlayer = target.distanceToTarget;
 
     if (
       distanceToPlayer <= enemy.attackRange &&
@@ -95,8 +149,8 @@ function createMeleeChaserBehavior({ tileSize, onWindupStarted }) {
       enemy.state = "chase";
       moveEnemy(
         enemy,
-        player.x,
-        player.y,
+        target.entity.x,
+        target.entity.y,
         enemy.speed * dtScale,
         collidesAt,
         currentMap,
@@ -132,6 +186,7 @@ function createOrbitStrikerBehavior({ tileSize, onWindupStarted }) {
     now,
     enemy,
     player,
+    pet = null,
     canFight,
     collidesAt,
     currentMap,
@@ -144,13 +199,10 @@ function createOrbitStrikerBehavior({ tileSize, onWindupStarted }) {
       return;
     }
 
-    const playerCenterX = player.x + tileSize / 2;
-    const playerCenterY = player.y + tileSize / 2;
-    const enemyCenterX = enemy.x + enemy.width / 2;
-    const enemyCenterY = enemy.y + enemy.height / 2;
-    const toPlayerX = playerCenterX - enemyCenterX;
-    const toPlayerY = playerCenterY - enemyCenterY;
-    const distanceToPlayer = Math.hypot(toPlayerX, toPlayerY);
+    const target = resolvePreferredTarget(enemy, player, pet, tileSize);
+    const toPlayerX = target.toTargetX;
+    const toPlayerY = target.toTargetY;
+    const distanceToPlayer = target.distanceToTarget;
 
     if (
       distanceToPlayer <= enemy.attackRange * 0.95 &&
@@ -170,8 +222,8 @@ function createOrbitStrikerBehavior({ tileSize, onWindupStarted }) {
       const tangentY = normX * orbitDir;
       const desiredDistance = Math.max(enemy.attackRange * 0.95, tileSize * 1.4);
 
-      const targetX = player.x - normX * desiredDistance + tangentX * tileSize * 1.05;
-      const targetY = player.y - normY * desiredDistance + tangentY * tileSize * 1.05;
+      const targetX = target.entity.x - normX * desiredDistance + tangentX * tileSize * 1.05;
+      const targetY = target.entity.y - normY * desiredDistance + tangentY * tileSize * 1.05;
 
       moveEnemy(
         enemy,
@@ -218,6 +270,7 @@ function createZoneKeeperBehavior({ tileSize, onWindupStarted }) {
     now,
     enemy,
     player,
+    pet = null,
     canFight,
     collidesAt,
     currentMap,
@@ -230,13 +283,10 @@ function createZoneKeeperBehavior({ tileSize, onWindupStarted }) {
       return;
     }
 
-    const playerCenterX = player.x + tileSize / 2;
-    const playerCenterY = player.y + tileSize / 2;
-    const enemyCenterX = enemy.x + enemy.width / 2;
-    const enemyCenterY = enemy.y + enemy.height / 2;
-    const toPlayerX = playerCenterX - enemyCenterX;
-    const toPlayerY = playerCenterY - enemyCenterY;
-    const distanceToPlayer = Math.hypot(toPlayerX, toPlayerY);
+    const target = resolvePreferredTarget(enemy, player, pet, tileSize);
+    const toPlayerX = target.toTargetX;
+    const toPlayerY = target.toTargetY;
+    const distanceToPlayer = target.distanceToTarget;
 
     if (
       distanceToPlayer <= enemy.attackRange &&
@@ -270,8 +320,8 @@ function createZoneKeeperBehavior({ tileSize, onWindupStarted }) {
     if (distanceToPlayer <= enemy.aggroRange * 1.15 && distanceToPlayer > preferredMax) {
       enemy.state = "zone";
       const len = Math.max(0.001, distanceToPlayer);
-      const approachTargetX = player.x - (toPlayerX / len) * preferredMax;
-      const approachTargetY = player.y - (toPlayerY / len) * preferredMax;
+      const approachTargetX = target.entity.x - (toPlayerX / len) * preferredMax;
+      const approachTargetY = target.entity.y - (toPlayerY / len) * preferredMax;
       moveEnemy(
         enemy,
         approachTargetX,
@@ -405,6 +455,7 @@ export function createEnemyAISystem({
     choiceActive = false,
     enemies,
     player,
+    npcs = null,
     currentAreaId,
     currentMap,
     currentMapW,
@@ -422,6 +473,14 @@ export function createEnemyAISystem({
     for (const enemy of enemies) {
       if (!enemy || enemy.world !== currentAreaId) continue;
       if (!updateEnemyLifecycle(enemy, now)) continue;
+      const pet = Array.isArray(npcs)
+        ? npcs.find((npc) => {
+          if (!npc || !npc.isPlayerPet || npc.world !== currentAreaId) return false;
+          const maxHp = Number.isFinite(npc.maxHp) ? Math.max(1, npc.maxHp) : 1;
+          const hp = Number.isFinite(npc.hp) ? Math.max(0, Math.min(maxHp, npc.hp)) : maxHp;
+          return hp > 0;
+        }) || null
+        : null;
 
       const behaviorType = enemy.behaviorType || "meleeChaser";
       const behaviorFn = behaviorRegistry[behaviorType] || behaviorRegistry.meleeChaser;
@@ -431,6 +490,7 @@ export function createEnemyAISystem({
         now,
         enemy,
         player,
+        pet,
         canFight,
         collidesAt,
         currentMap,

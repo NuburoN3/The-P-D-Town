@@ -26,6 +26,7 @@ const FALLBACK_RUMOR_CLUE_GROUPS = Object.freeze([
     ]
   }
 ]);
+const SKILL_SLOT_COUNT = 9;
 
 function getRumorCluesFound(tp) {
   return Number(tp.rumorCluePiazza) + Number(tp.rumorClueChapel) + Number(tp.rumorClueBar);
@@ -39,6 +40,10 @@ function getBogQuestTarget(tp, trainingContent) {
     return Math.max(1, Math.round(trainingContent.bogQuest.targetKills));
   }
   return 3;
+}
+
+function getBogQuestRewardItemName(trainingContent) {
+  return String(trainingContent?.bogQuest?.rewardItemName || "Kendo Stick");
 }
 
 function formatBogProgressText(tp, trainingContent) {
@@ -75,10 +80,77 @@ function getRumorLeadLabel(clueKey) {
   return "next witness";
 }
 
+function ensurePlayerUnlockedSkill(player, skillId) {
+  if (!player || typeof player !== "object") return false;
+  const normalized = String(skillId || "").trim().toLowerCase();
+  if (!normalized) return false;
+  if (!Array.isArray(player.unlockedSkills)) {
+    player.unlockedSkills = [];
+  }
+  if (player.unlockedSkills.includes(normalized)) return false;
+  player.unlockedSkills.push(normalized);
+  return true;
+}
+
+function getSkillDefaults(skillId) {
+  const normalized = String(skillId || "").trim().toLowerCase();
+  if (normalized === "obey") return { manaCost: 5, cooldownMs: 0 };
+  if (normalized === "bonk") return { manaCost: 2, cooldownMs: 8000 };
+  return { manaCost: 0, cooldownMs: 0 };
+}
+
+function getSkillDisplayName(skillId) {
+  const normalized = String(skillId || "").trim().toLowerCase();
+  if (normalized === "obey") return "Obey";
+  if (normalized === "bonk") return "Bonk";
+  return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : "";
+}
+
+function grantSkillToFirstEmptySlot(player, skillId) {
+  if (!player || typeof player !== "object") return -1;
+  const normalized = String(skillId || "").trim().toLowerCase();
+  if (!normalized) return -1;
+  ensurePlayerUnlockedSkill(player, normalized);
+  if (!Array.isArray(player.skillSlots)) {
+    player.skillSlots = [];
+  }
+  const requiredLength = Math.max(SKILL_SLOT_COUNT, player.skillSlots.length);
+  while (player.skillSlots.length < requiredLength) {
+    player.skillSlots.push({
+      slot: player.skillSlots.length + 1,
+      id: null,
+      name: "",
+      manaCost: 0,
+      cooldownMs: 0,
+      lastUsedAt: -Infinity
+    });
+  }
+  const existingIndex = player.skillSlots.findIndex((slot) => String(slot?.id || "").trim().toLowerCase() === normalized);
+  if (existingIndex >= 0) return existingIndex;
+  for (let i = 0; i < player.skillSlots.length; i++) {
+    const slot = player.skillSlots[i] && typeof player.skillSlots[i] === "object"
+      ? player.skillSlots[i]
+      : {};
+    if (slot.id) continue;
+    const defaults = getSkillDefaults(normalized);
+    player.skillSlots[i] = {
+      slot: Number.isFinite(slot.slot) ? slot.slot : (i + 1),
+      id: normalized,
+      name: String(slot.name || getSkillDisplayName(normalized)),
+      manaCost: defaults.manaCost,
+      cooldownMs: defaults.cooldownMs,
+      lastUsedAt: Number.isFinite(slot.lastUsedAt) ? slot.lastUsedAt : -Infinity
+    };
+    return i;
+  }
+  return -1;
+}
+
 export function createNPCInteractionHandler({
   tileSize,
   gameFlags,
   playerInventory,
+  playerEquipment,
   playerStats,
   itemAlert,
   inventoryHint,
@@ -92,7 +164,8 @@ export function createNPCInteractionHandler({
   spawnVisualEffect,
   getTownProgress,
   handleFeatureNPCInteraction,
-  syncObjectiveState = () => { }
+  syncObjectiveState = () => { },
+  openQuestCompletionPanel = () => false
 }) {
   const ITEM_DIALOGUE_PAUSE_MS = 2000;
   const queueItemDialogueAutoContinue = () => {
@@ -126,6 +199,13 @@ export function createNPCInteractionHandler({
       if (gameFlags.completedTraining && tp.rumorQuestOffered && !tp.rumorQuestCompleted && !tp.rumorQuestActive) {
         tp.rumorQuestActive = true;
       }
+      const rewardItemName = getBogQuestRewardItemName(trainingContent);
+      const rewardCount = Number(playerInventory?.[rewardItemName] || 0);
+      const equippedWeaponName = String(playerEquipment?.weapon || "").trim();
+      const hasRewardEquipped = equippedWeaponName.length > 0 && equippedWeaponName === rewardItemName;
+      if (!tp.bogQuestRewardAwarded && ((Number.isFinite(rewardCount) && rewardCount > 0) || hasRewardEquipped)) {
+        tp.bogQuestRewardAwarded = true;
+      }
       return tp;
     }
     ensureTrainingCompletionConsistency(normalized);
@@ -140,6 +220,13 @@ export function createNPCInteractionHandler({
     }
     if (gameFlags.completedTraining && normalized.rumorQuestOffered && !normalized.rumorQuestCompleted && !normalized.rumorQuestActive) {
       normalized.rumorQuestActive = true;
+    }
+    const rewardItemName = getBogQuestRewardItemName(trainingContent);
+    const rewardCount = Number(playerInventory?.[rewardItemName] || 0);
+    const equippedWeaponName = String(playerEquipment?.weapon || "").trim();
+    const hasRewardEquipped = equippedWeaponName.length > 0 && equippedWeaponName === rewardItemName;
+    if (!normalized.bogQuestRewardAwarded && ((Number.isFinite(rewardCount) && rewardCount > 0) || hasRewardEquipped)) {
+      normalized.bogQuestRewardAwarded = true;
     }
     return normalized;
   }
@@ -341,7 +428,7 @@ export function createNPCInteractionHandler({
 
   function awardBogQuestReward(tp) {
     if (tp.bogQuestRewardAwarded) return;
-    const rewardItemName = String(trainingContent?.bogQuest?.rewardItemName || "Kendo Stick");
+    const rewardItemName = getBogQuestRewardItemName(trainingContent);
     if (!playerInventory[rewardItemName]) {
       playerInventory[rewardItemName] = 1;
     } else {
@@ -520,29 +607,6 @@ export function createNPCInteractionHandler({
     );
   }
 
-  function grantObeySkillToFirstEmptySlot() {
-    if (!Array.isArray(player.skillSlots) || player.skillSlots.length === 0) return -1;
-    const existingIndex = player.skillSlots.findIndex((slot) => slot && slot.id === "obey");
-    if (existingIndex >= 0) return existingIndex;
-
-    for (let i = 0; i < player.skillSlots.length; i++) {
-      const slot = player.skillSlots[i] && typeof player.skillSlots[i] === "object"
-        ? player.skillSlots[i]
-        : {};
-      if (slot.id) continue;
-      player.skillSlots[i] = {
-        slot: Number.isFinite(slot.slot) ? slot.slot : (i + 1),
-        id: "obey",
-        name: "Obey",
-        manaCost: 5,
-        cooldownMs: 1400,
-        lastUsedAt: Number.isFinite(slot.lastUsedAt) ? slot.lastUsedAt : -Infinity
-      };
-      return i;
-    }
-    return -1;
-  }
-
   function handleFarmerEliasInteraction(npc, tp) {
     if (tp.obeySkillAwarded) {
       showDialogue(npc.name, [
@@ -565,18 +629,13 @@ export function createNPCInteractionHandler({
           return;
         }
 
-        const slotIndex = grantObeySkillToFirstEmptySlot();
-        if (slotIndex < 0) {
-          showDialogue(npc.name, [
-            "Fantastic! You might find this useful then.",
-            "But your skill slots are full. Free one up and speak to me again."
-          ]);
-          return;
-        }
+        const slotIndex = grantSkillToFirstEmptySlot(player, "obey");
 
         tp.obeySkillAwarded = true;
         itemAlert.active = true;
-        itemAlert.text = `Learned skill: Obey (slot ${slotIndex + 1}).`;
+        itemAlert.text = slotIndex >= 0
+          ? `Learned skill: Obey (slot ${slotIndex + 1}).`
+          : "Learned skill: Obey (all skill slots are currently full).";
         itemAlert.startedAt = performance.now();
         spawnVisualEffect("pickupGlow", {
           x: player.x + tileSize / 2,
@@ -607,6 +666,18 @@ export function createNPCInteractionHandler({
     if (handleFeatureNPCInteraction(npc)) return;
 
     const tp = normalizeProgressState(getTownProgress());
+
+    if (
+      (npc.id === "mrHanami" || npc.id === "mrHanamiBogland") &&
+      tp.bogQuestRewardAwarded &&
+      !tp.basicTrainingQuestClaimed
+    ) {
+      const opened = openQuestCompletionPanel("basic-training", npc.name);
+      if (!opened) {
+        showDialogue(npc.name, ["Speak with me when you are ready to formally complete your Basic Training."]);
+      }
+      return;
+    }
 
     if (npc.id === "mrHanamiBogland") {
       handleBoglandHanamiInteraction(npc, tp);

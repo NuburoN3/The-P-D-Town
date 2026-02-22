@@ -98,6 +98,11 @@ const getSimulationGameState = (stateToEvaluate = gameState) => {
   const currentAreaKind = worldService.getAreaKind(currentTownId, currentAreaId);
   return currentAreaKind === AREA_KINDS.OVERWORLD ? GAME_STATES.OVERWORLD : GAME_STATES.INTERIOR;
 };
+const resolveReturnWorldState = () => {
+  if (isFreeExploreState(previousWorldState)) return previousWorldState;
+  const currentAreaKind = worldService.getAreaKind(currentTownId, currentAreaId);
+  return currentAreaKind === AREA_KINDS.OVERWORLD ? GAME_STATES.OVERWORLD : GAME_STATES.INTERIOR;
+};
 const closeInventoryToWorld = () => {
   if (gameState !== GAME_STATES.INVENTORY) return;
   setInventoryOpenedFromPauseMenu(false);
@@ -110,6 +115,24 @@ const closeInventoryToWorld = () => {
 const openInventoryFromPauseMenu = () => {
   setInventoryOpenedFromPauseMenu(true);
   gameState = GAME_STATES.INVENTORY;
+};
+const openQuestTracker = () => {
+  if (!isFreeExploreState(gameState)) return;
+  setInventoryOpenedFromPauseMenu(false);
+  gameFlags.questTrackerHintDismissed = true;
+  setPreviousWorldState(gameState);
+  gameState = GAME_STATES.QUEST_TRACKER;
+};
+const closeQuestTracker = () => {
+  if (gameState !== GAME_STATES.QUEST_TRACKER) return;
+  gameState = resolveReturnWorldState();
+};
+const toggleQuestTracker = () => {
+  if (gameState === GAME_STATES.QUEST_TRACKER) {
+    closeQuestTracker();
+    return;
+  }
+  openQuestTracker();
 };
 const mouseUiState = {
   x: 0,
@@ -135,7 +158,21 @@ const mouseUiState = {
   inventorySlotOrder: [],
   inventoryPanelDragTarget: "",
   inventoryPanelDragOffsetX: 0,
-  inventoryPanelDragOffsetY: 0
+  inventoryPanelDragOffsetY: 0,
+  inventorySuppressNextClick: false,
+  inventorySkillsScrollDelta: 0,
+  inventorySkillsScrollRow: 0,
+  inventorySkillsScrollDragging: false,
+  inventorySkillsScrollDragOffsetY: 0,
+  inventorySkillsScrollSuppressClick: false,
+  inventorySkillsPreviewSkillId: "",
+  inventorySkillsPreviewName: "",
+  inventorySkillsPreviewDescription: "",
+  inventorySkillsPreviewManaCost: 0,
+  inventorySkillsPreviewUseSeconds: 0,
+  inventorySkillsPreviewAlpha: 0,
+  questTrackerClickRequest: false,
+  questCompletionClickRequest: false
 };
 let menuStateController = null;
 let interactionInputLockedUntil = 0;
@@ -187,6 +224,8 @@ const input = new InputManager({
     gameState === GAME_STATES.TITLE_SCREEN ||
     gameState === GAME_STATES.PAUSE_MENU ||
     gameState === GAME_STATES.INVENTORY ||
+    gameState === GAME_STATES.QUEST_TRACKER ||
+    gameState === GAME_STATES.QUEST_COMPLETION ||
     gameState === GAME_STATES.ATTRIBUTES ||
     gameState === GAME_STATES.SETTINGS ||
     gameState === GAME_STATES.PLAYER_DEFEATED
@@ -250,8 +289,28 @@ const objectiveState = {
   marker: null,
   markerArea: null
 };
+const questTrackerState = {
+  quests: [],
+  collapsedById: Object.create(null),
+  updatedAt: 0
+};
+const questCompletionState = {
+  active: false,
+  questId: "",
+  questName: "",
+  summary: "",
+  rewards: [],
+  requestComplete: false,
+  sourceNpcName: ""
+};
 
 const OBEY_SKILL_ID = "obey";
+const BONK_SKILL_ID = "bonk";
+const BONK_ATTACK_ID = "bonkStrike";
+const BONK_SKILL_MANA_COST = 2;
+const BONK_SKILL_COOLDOWN_MS = 8000;
+const BONK_SKILL_WINDUP_MS = 1000;
+const BONK_SKILL_DAMAGE = 20;
 const OBEY_CAST_RADIUS_TILES = 4;
 const OBEY_CHANNEL_DURATION_MS = 10000;
 const OBEY_PET_FOLLOW_DISTANCE_TILES = 1;
@@ -263,6 +322,7 @@ const OBEY_PET_ASSIST_ATTACK_COOLDOWN_MS = 700;
 
 const obeyState = {
   active: false,
+  channelMode: "",
   startedAt: 0,
   durationMs: OBEY_CHANNEL_DURATION_MS,
   startedPlayerX: 0,
@@ -280,11 +340,16 @@ const obeyState = {
   petTypeName: "",
   petSpriteName: "",
   petLevel: 1,
+  petXp: 0,
+  petXpNeeded: 150,
   petMaxHp: 15,
   petHp: 15,
+  petPassedOut: false,
+  petPassedOutAt: 0,
   petWidth: 25,
   petHeight: 16,
-  lastFollowUpdateAt: 0
+  lastFollowUpdateAt: 0,
+  pendingWildRespawns: []
 };
 
 const uiMotionState = {
@@ -295,7 +360,9 @@ const inventoryUiLayout = {
   inventoryPanelX: null,
   inventoryPanelY: null,
   equipmentPanelX: null,
-  equipmentPanelY: null
+  equipmentPanelY: null,
+  skillsPanelX: null,
+  skillsPanelY: null
 };
 const leftoversUiState = {
   active: false,
@@ -326,6 +393,105 @@ const combatRewardPanel = {
 };
 const SKILL_SLOT_COUNT = 9;
 const HUD_FEEDBACK_DURATION_MS = 420;
+
+function getSkillDefaults(skillId) {
+  const normalized = String(skillId || "").trim().toLowerCase();
+  if (normalized === OBEY_SKILL_ID) {
+    return { manaCost: 5, cooldownMs: 0 };
+  }
+  if (normalized === BONK_SKILL_ID) {
+    return { manaCost: BONK_SKILL_MANA_COST, cooldownMs: BONK_SKILL_COOLDOWN_MS };
+  }
+  return { manaCost: 0, cooldownMs: 0 };
+}
+
+function hasWeaponEquipped() {
+  const weaponName = String(playerEquipment?.weapon || "").trim();
+  return weaponName.length > 0;
+}
+
+function getSkillDisplayName(skillId) {
+  const normalized = String(skillId || "").trim().toLowerCase();
+  if (normalized === OBEY_SKILL_ID) return "Obey";
+  if (normalized === BONK_SKILL_ID) return "Bonk";
+  return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : "";
+}
+
+function findSkillSlotIndex(targetPlayer, skillId) {
+  if (!targetPlayer || !Array.isArray(targetPlayer.skillSlots)) return -1;
+  const normalized = String(skillId || "").trim().toLowerCase();
+  if (!normalized) return -1;
+  return targetPlayer.skillSlots.findIndex((slot) => String(slot?.id || "").trim().toLowerCase() === normalized);
+}
+
+function assignSkillToFirstEmptySlot(targetPlayer, skillId) {
+  if (!targetPlayer || !Array.isArray(targetPlayer.skillSlots)) return -1;
+  const normalized = String(skillId || "").trim().toLowerCase();
+  if (!normalized) return -1;
+  for (let i = 0; i < targetPlayer.skillSlots.length; i++) {
+    const slot = targetPlayer.skillSlots[i] && typeof targetPlayer.skillSlots[i] === "object"
+      ? targetPlayer.skillSlots[i]
+      : {};
+    if (slot.id) continue;
+    const defaults = getSkillDefaults(normalized);
+    targetPlayer.skillSlots[i] = {
+      slot: Number.isFinite(slot.slot) ? slot.slot : (i + 1),
+      id: normalized,
+      name: String(slot.name || getSkillDisplayName(normalized)),
+      manaCost: defaults.manaCost,
+      cooldownMs: defaults.cooldownMs,
+      lastUsedAt: Number.isFinite(slot.lastUsedAt) ? slot.lastUsedAt : -Infinity
+    };
+    return i;
+  }
+  return -1;
+}
+
+function unlockPlayerSkill(skillId) {
+  const normalized = String(skillId || "").trim().toLowerCase();
+  if (!normalized) return false;
+  ensurePlayerSkillState(player);
+  if (!Array.isArray(player.unlockedSkills)) {
+    player.unlockedSkills = [];
+  }
+  const alreadyUnlocked = player.unlockedSkills.includes(normalized);
+  if (!alreadyUnlocked) {
+    player.unlockedSkills.push(normalized);
+  }
+  if (findSkillSlotIndex(player, normalized) < 0) {
+    assignSkillToFirstEmptySlot(player, normalized);
+  }
+  return !alreadyUnlocked;
+}
+
+function openBasicTrainingQuestCompletionPanel(sourceNpcName = "Mr. Hanami") {
+  const tp = getTownProgressForCurrentTown();
+  ensureBogQuestRewardProgress(tp);
+  if (!tp.bogQuestRewardAwarded || tp.basicTrainingQuestClaimed) return false;
+  if (!isFreeExploreState(gameState)) return false;
+  setPreviousWorldState(gameState);
+  questCompletionState.active = true;
+  questCompletionState.questId = "basic-training";
+  questCompletionState.questName = "Basic Training";
+  questCompletionState.summary = "You trained under Mr. Hanami, cleared dojo trials, gathered witness rumors, proved your endurance, and survived Bogland's ogres to earn your kendo stick. Your foundational training is complete.";
+  questCompletionState.rewards = [
+    { id: "silver", label: "150 Silver", sprite: "silverCoins" },
+    { id: "xp", label: "100 XP", sprite: "" },
+    { id: "bonk", label: "Bonk Skill", sprite: "bonk" }
+  ];
+  questCompletionState.requestComplete = false;
+  questCompletionState.sourceNpcName = String(sourceNpcName || "Mr. Hanami");
+  gameState = GAME_STATES.QUEST_COMPLETION;
+  return true;
+}
+
+function closeQuestCompletionPanel() {
+  if (gameState !== GAME_STATES.QUEST_COMPLETION) return;
+  questCompletionState.active = false;
+  questCompletionState.requestComplete = false;
+  mouseUiState.questCompletionClickRequest = false;
+  gameState = resolveReturnWorldState();
+}
 
 const PAT_INN_TOWN_ID = "hanamiTown";
 const PAT_INN_AREA_ID = "patBnBDownstairs";
@@ -380,6 +546,20 @@ function getCombatXpNeededForLevel(level) {
   return xpNeeded;
 }
 
+function ensurePetProgressionState(pet) {
+  if (!pet || typeof pet !== "object") return;
+  pet.level = Number.isFinite(pet.level) ? Math.max(1, Math.floor(pet.level)) : 1;
+  pet.xpNeeded = Number.isFinite(pet.xpNeeded) && pet.xpNeeded > 0
+    ? Math.max(1, Math.floor(pet.xpNeeded))
+    : getCombatXpNeededForLevel(pet.level);
+  pet.xp = Number.isFinite(pet.xp) ? Math.max(0, pet.xp) : 0;
+  while (pet.xp >= pet.xpNeeded) {
+    pet.xp -= pet.xpNeeded;
+    pet.level += 1;
+    pet.xpNeeded = Math.ceil(pet.xpNeeded * COMBAT_XP_GROWTH_MULTIPLIER);
+  }
+}
+
 function ensurePlayerSkillState(targetPlayer) {
   if (!targetPlayer || typeof targetPlayer !== "object") return;
 
@@ -396,17 +576,33 @@ function ensurePlayerSkillState(targetPlayer) {
   for (let i = 0; i < SKILL_SLOT_COUNT; i++) {
     const source = currentSlots[i] && typeof currentSlots[i] === "object" ? currentSlots[i] : {};
     const normalizedSkillId = source.id || null;
-    const normalizedManaCost = Number.isFinite(source.manaCost) ? Math.max(0, source.manaCost) : 0;
+    const defaults = getSkillDefaults(normalizedSkillId);
+    const hasSkillDefaults = defaults.manaCost > 0 || defaults.cooldownMs > 0;
+    const normalizedManaCost = hasSkillDefaults
+      ? defaults.manaCost
+      : (Number.isFinite(source.manaCost) ? Math.max(0, source.manaCost) : 0);
+    const normalizedCooldownMs = hasSkillDefaults
+      ? defaults.cooldownMs
+      : (Number.isFinite(source.cooldownMs) ? Math.max(0, source.cooldownMs) : 0);
     normalizedSlots.push({
       slot: i + 1,
       id: normalizedSkillId,
       name: String(source.name || ""),
-      manaCost: normalizedSkillId === "obey" ? 5 : normalizedManaCost,
-      cooldownMs: Number.isFinite(source.cooldownMs) ? Math.max(0, source.cooldownMs) : 0,
+      manaCost: normalizedManaCost,
+      cooldownMs: normalizedCooldownMs,
       lastUsedAt: Number.isFinite(source.lastUsedAt) ? source.lastUsedAt : -Infinity
     });
   }
   targetPlayer.skillSlots = normalizedSlots;
+  const unlocked = Array.isArray(targetPlayer.unlockedSkills)
+    ? targetPlayer.unlockedSkills.filter((id) => typeof id === "string" && id.length > 0)
+    : [];
+  const unlockedSet = new Set(unlocked);
+  for (const slot of normalizedSlots) {
+    if (!slot?.id) continue;
+    unlockedSet.add(slot.id);
+  }
+  targetPlayer.unlockedSkills = Array.from(unlockedSet);
   targetPlayer.lastSkillUsedAt = Number.isFinite(targetPlayer.lastSkillUsedAt) ? targetPlayer.lastSkillUsedAt : -Infinity;
   targetPlayer.skillHudFeedback = targetPlayer.skillHudFeedback && typeof targetPlayer.skillHudFeedback === "object"
     ? targetPlayer.skillHudFeedback
@@ -456,6 +652,7 @@ function clearObeyHostileState() {
 
 function resetObeyChannelState() {
   obeyState.active = false;
+  obeyState.channelMode = "";
   obeyState.startedAt = 0;
   obeyState.startedPlayerX = 0;
   obeyState.startedPlayerY = 0;
@@ -476,6 +673,138 @@ function removeEnemyById(enemyId) {
     if (!enemy || enemy.id !== enemyId) continue;
     enemies.splice(i, 1);
   }
+}
+
+function buildGeneratedWildAnimalId(baseName = "animal") {
+  const safe = String(baseName || "animal")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `wild:${safe || "animal"}:${Math.floor(performance.now())}:${Math.floor(Math.random() * 10000)}`;
+}
+
+function createWildNpcFromAnimalTemplate(templateNpc, overrides = {}) {
+  if (!templateNpc || typeof templateNpc !== "object") return null;
+  const sourceName = String(templateNpc.name || "Animal");
+  const sourceWorld = String(overrides.world || templateNpc.world || currentAreaId);
+  const spriteName = templateNpc.spriteName || "";
+  const maxHp = Number.isFinite(templateNpc.maxHp) ? Math.max(1, templateNpc.maxHp) : 15;
+  const hp = Number.isFinite(templateNpc.hp) ? Math.max(0, Math.min(maxHp, templateNpc.hp)) : maxHp;
+  const level = Number.isFinite(templateNpc.level) ? Math.max(1, Math.floor(templateNpc.level)) : 1;
+  const wildNpc = {
+    ...templateNpc,
+    id: buildGeneratedWildAnimalId(sourceName),
+    name: sourceName,
+    world: sourceWorld,
+    x: Number.isFinite(overrides.x) ? overrides.x : (Number.isFinite(templateNpc.x) ? templateNpc.x : player.x),
+    y: Number.isFinite(overrides.y) ? overrides.y : (Number.isFinite(templateNpc.y) ? templateNpc.y : player.y),
+    dir: overrides.dir || templateNpc.dir || "down",
+    obeyAnimal: true,
+    isPlayerPet: false,
+    petOwner: "",
+    canRoam: templateNpc.canRoam !== false,
+    blocking: templateNpc.blocking !== false,
+    maxHp,
+    hp: hp > 0 ? hp : maxHp,
+    level
+  };
+  if ((!wildNpc.sprite || !wildNpc.sprite.width) && spriteName) {
+    wildNpc.sprite = assets.getSprite(spriteName);
+  }
+  return wildNpc;
+}
+
+function queueWildAnimalRespawnFromDefeat(enemy, sourceNpc = null) {
+  const template = sourceNpc && typeof sourceNpc === "object"
+    ? sourceNpc
+    : {
+      id: enemy?.obeySourceNpcId || "",
+      name: enemy?.name || "Animal",
+      obeyAnimal: true,
+      world: enemy?.world || currentAreaId,
+      x: Number.isFinite(enemy?.spawnX) ? enemy.spawnX : enemy?.x,
+      y: Number.isFinite(enemy?.spawnY) ? enemy.spawnY : enemy?.y,
+      dir: enemy?.dir || "down",
+      spriteName: enemy?.spriteName || "",
+      sprite: enemy?.sprite || null,
+      spriteWidth: enemy?.spriteWidth,
+      spriteHeight: enemy?.spriteHeight,
+      desiredHeightTiles: enemy?.desiredHeightTiles,
+      width: enemy?.width,
+      height: enemy?.height,
+      canRoam: true,
+      blocking: true,
+      maxHp: enemy?.maxHp,
+      hp: enemy?.maxHp,
+      level: enemy?.level
+    };
+  const queued = createWildNpcFromAnimalTemplate(template, {
+    world: enemy?.world || template.world || currentAreaId,
+    x: Number.isFinite(enemy?.spawnX) ? enemy.spawnX : template.x,
+    y: Number.isFinite(enemy?.spawnY) ? enemy.spawnY : template.y,
+    dir: template.dir || "down"
+  });
+  if (!queued) return;
+  queued.respawnTownId = currentTownId;
+  if (!Array.isArray(obeyState.pendingWildRespawns)) {
+    obeyState.pendingWildRespawns = [];
+  }
+  obeyState.pendingWildRespawns.push(queued);
+}
+
+function spawnImmediateWildReplacementForCapturedAnimal(sourceNpc, fallbackEnemy = null) {
+  const template = sourceNpc && typeof sourceNpc === "object"
+    ? sourceNpc
+    : {
+      name: fallbackEnemy?.name || "Animal",
+      obeyAnimal: true,
+      world: fallbackEnemy?.world || currentAreaId,
+      x: Number.isFinite(fallbackEnemy?.spawnX) ? fallbackEnemy.spawnX : fallbackEnemy?.x,
+      y: Number.isFinite(fallbackEnemy?.spawnY) ? fallbackEnemy.spawnY : fallbackEnemy?.y,
+      dir: fallbackEnemy?.dir || "down",
+      spriteName: fallbackEnemy?.spriteName || "",
+      sprite: fallbackEnemy?.sprite || null,
+      spriteWidth: fallbackEnemy?.spriteWidth,
+      spriteHeight: fallbackEnemy?.spriteHeight,
+      desiredHeightTiles: fallbackEnemy?.desiredHeightTiles,
+      width: fallbackEnemy?.width,
+      height: fallbackEnemy?.height,
+      canRoam: true,
+      blocking: true,
+      maxHp: fallbackEnemy?.maxHp,
+      hp: fallbackEnemy?.maxHp,
+      level: fallbackEnemy?.level
+    };
+  const replacement = createWildNpcFromAnimalTemplate(template, {
+    world: template.world || currentAreaId,
+    x: Number.isFinite(template.x) ? template.x : player.x,
+    y: Number.isFinite(template.y) ? template.y : player.y,
+    dir: template.dir || "down"
+  });
+  if (!replacement) return;
+  npcs.push(replacement);
+}
+
+function processPendingWildRespawnsOnAreaChange(previousTownId, previousAreaId, nextTownId, nextAreaId) {
+  if (!Array.isArray(obeyState.pendingWildRespawns) || obeyState.pendingWildRespawns.length === 0) return;
+  if (previousTownId === nextTownId && previousAreaId === nextAreaId) return;
+  const remaining = [];
+  for (const queuedNpc of obeyState.pendingWildRespawns) {
+    if (!queuedNpc || typeof queuedNpc !== "object") continue;
+    const queuedTown = String(queuedNpc.respawnTownId || "");
+    if (queuedTown && queuedTown !== nextTownId) {
+      remaining.push(queuedNpc);
+      continue;
+    }
+    const queuedWorld = String(queuedNpc.world || "");
+    const movedAwayFromQueuedWorld = previousTownId !== nextTownId || queuedWorld !== nextAreaId;
+    if (!movedAwayFromQueuedWorld) {
+      remaining.push(queuedNpc);
+      continue;
+    }
+    npcs.push({ ...queuedNpc });
+  }
+  obeyState.pendingWildRespawns = remaining;
 }
 
 function restoreObeyHostileAnimalToNpc() {
@@ -628,6 +957,7 @@ function beginObeyChannel(targetNpc) {
   const hostileEnemy = createObeyHostileEnemyFromNpc(targetNpc);
   if (!hostileEnemy) return false;
   obeyState.active = true;
+  obeyState.channelMode = "capture";
   obeyState.startedAt = performance.now();
   obeyState.durationMs = OBEY_CHANNEL_DURATION_MS;
   obeyState.startedPlayerX = Number.isFinite(player.x) ? player.x : 0;
@@ -635,6 +965,21 @@ function beginObeyChannel(targetNpc) {
   obeyState.targetNpcId = targetNpc.id || "";
   obeyState.targetTownId = currentTownId;
   obeyState.targetAreaId = currentAreaId;
+  return true;
+}
+
+function beginObeyReleaseChannel() {
+  if (!obeyState.petId) return false;
+  obeyState.active = true;
+  obeyState.channelMode = "release";
+  obeyState.startedAt = performance.now();
+  obeyState.durationMs = OBEY_CHANNEL_DURATION_MS;
+  obeyState.startedPlayerX = Number.isFinite(player.x) ? player.x : 0;
+  obeyState.startedPlayerY = Number.isFinite(player.y) ? player.y : 0;
+  obeyState.targetNpcId = "";
+  obeyState.targetTownId = currentTownId;
+  obeyState.targetAreaId = currentAreaId;
+  clearObeyHostileState();
   return true;
 }
 
@@ -651,6 +996,12 @@ function completeObeyChannelIfReady(now) {
   if (!obeyState.active || !Number.isFinite(obeyState.startedAt)) return;
   const elapsed = Math.max(0, now - obeyState.startedAt);
   if (elapsed < obeyState.durationMs) return;
+  if (obeyState.channelMode === "release") {
+    dismissObeyPet(now);
+    resetObeyChannelState();
+    clearObeyHostileState();
+    return;
+  }
 
   const hostileEnemy = findObeyHostileEnemy();
   const sourceNpc = obeyState.hostileSourceNpc && typeof obeyState.hostileSourceNpc === "object"
@@ -678,14 +1029,18 @@ function completeObeyChannelIfReady(now) {
   obeyState.petTypeName = resolvedTypeName;
   obeyState.petSpriteName = resolvedSpriteName;
   obeyState.petLevel = resolvedLevel;
+  obeyState.petXp = 0;
+  obeyState.petXpNeeded = getCombatXpNeededForLevel(resolvedLevel);
   obeyState.petMaxHp = resolvedMaxHp;
   obeyState.petHp = resolvedLivingHp;
+  obeyState.petPassedOut = false;
   obeyState.petWidth = Number.isFinite(sourceNpc?.spriteWidth)
     ? sourceNpc.spriteWidth
     : (Number.isFinite(hostileEnemy?.spriteWidth) ? hostileEnemy.spriteWidth : 25);
   obeyState.petHeight = Number.isFinite(sourceNpc?.spriteHeight)
     ? sourceNpc.spriteHeight
     : (Number.isFinite(hostileEnemy?.spriteHeight) ? hostileEnemy.spriteHeight : 16);
+  spawnImmediateWildReplacementForCapturedAnimal(sourceNpc, hostileEnemy);
   if (obeyState.hostileEnemyId) {
     removeEnemyById(obeyState.hostileEnemyId);
   }
@@ -770,17 +1125,44 @@ function engagePetAssistMode() {
 
 function applyPetAssistDamageToEnemy(enemy, now) {
   if (!enemy || enemy.dead) return;
+  const pet = ensurePetExistsInCurrentArea();
+  if (!pet) return;
+  const petIsPossum = String(pet.name || "").toLowerCase().includes("possum")
+    || String(pet.spriteName || "").toLowerCase().includes("possum");
+  if (petIsPossum) {
+    musicManager.playSfx("possumAttack");
+  }
   const petDamage = 2;
   enemy.hp = Math.max(0, (Number.isFinite(enemy.hp) ? enemy.hp : enemy.maxHp) - petDamage);
   enemy.invulnerableUntil = now + 120;
   enemy.hitStunUntil = now + 160;
   enemy.state = "hitStun";
   enemy.pendingStrike = false;
+  const enemyCenterX = enemy.x + (Number(enemy.width) || TILE) * 0.5;
+  const enemyCenterY = enemy.y + (Number(enemy.height) || TILE) * 0.5;
+  const petCenterX = pet.x + (Number(pet.width) || TILE) * 0.5;
+  const petCenterY = pet.y + (Number(pet.height) || TILE) * 0.5;
+  const fromPetX = enemyCenterX - petCenterX;
+  const fromPetY = enemyCenterY - petCenterY;
+  const fromPetLen = Math.max(0.001, Math.hypot(fromPetX, fromPetY));
+  const fromPetDirX = fromPetX / fromPetLen;
+  const fromPetDirY = fromPetY / fromPetLen;
+  const damageTextOffset = TILE * 0.62;
+  const damageTextX = enemyCenterX + fromPetDirX * damageTextOffset;
+  const damageTextY = enemyCenterY + fromPetDirY * (damageTextOffset * 0.45) - TILE * 0.18;
   vfxSystem.spawn("hitSpark", {
-    x: enemy.x + (Number(enemy.width) || TILE) * 0.5,
+    x: enemyCenterX,
     y: enemy.y + (Number(enemy.height) || TILE) * 0.45,
     size: 16,
     durationMs: 180
+  });
+  vfxSystem.spawn("damageText", {
+    x: damageTextX,
+    y: damageTextY,
+    text: `${petDamage}`,
+    color: "#ffffff",
+    size: 24,
+    durationMs: 560
   });
   if (enemy.hp <= 0) {
     enemy.dead = true;
@@ -794,6 +1176,10 @@ function applyPetAssistDamageToEnemy(enemy, now) {
 function updatePetAssistCombat(now) {
   const pet = ensurePetExistsInCurrentArea();
   if (!pet) {
+    clearPetAssistState();
+    return;
+  }
+  if (pet.hp <= 0 || pet.passedOut) {
     clearPetAssistState();
     return;
   }
@@ -879,11 +1265,16 @@ function ensurePetExistsInCurrentArea() {
     spriteWidth: obeyState.petWidth,
     spriteHeight: obeyState.petHeight,
     level: Number.isFinite(obeyState.petLevel) ? Math.max(1, Math.floor(obeyState.petLevel)) : 1,
+    xp: Number.isFinite(obeyState.petXp) ? Math.max(0, obeyState.petXp) : 0,
+    xpNeeded: Number.isFinite(obeyState.petXpNeeded) ? Math.max(1, obeyState.petXpNeeded) : getCombatXpNeededForLevel(obeyState.petLevel),
     maxHp: Number.isFinite(obeyState.petMaxHp) ? Math.max(1, obeyState.petMaxHp) : 15,
     hp: Number.isFinite(obeyState.petHp) ? Math.max(0, obeyState.petHp) : 15,
+    passedOut: Boolean(obeyState.petPassedOut),
+    passedOutAt: Number.isFinite(obeyState.petPassedOutAt) ? obeyState.petPassedOutAt : 0,
     dialogue: ["*Your possum companion watches you closely.*"],
     hasTrainingChoice: false
   };
+  ensurePetProgressionState(pet);
   if (pet.hp > pet.maxHp) pet.hp = pet.maxHp;
   npcs.push(pet);
   return pet;
@@ -897,12 +1288,27 @@ function updatePetFollow(now) {
   pet.blocking = false;
   pet.isPlayerPet = true;
   pet.level = Number.isFinite(pet.level) ? Math.max(1, Math.floor(pet.level)) : 1;
+  ensurePetProgressionState(pet);
   pet.maxHp = Number.isFinite(pet.maxHp) ? Math.max(1, pet.maxHp) : 15;
   pet.hp = Number.isFinite(pet.hp) ? Math.max(0, Math.min(pet.maxHp, pet.hp)) : pet.maxHp;
+  pet.passedOut = Boolean(pet.passedOut) || pet.hp <= 0;
+  if (!pet.passedOut) {
+    pet.passedOutAt = 0;
+  } else if (!Number.isFinite(pet.passedOutAt) || pet.passedOutAt <= 0) {
+    pet.passedOutAt = performance.now();
+  }
   obeyState.petTypeName = String(pet.name || obeyState.petTypeName || "Companion");
   obeyState.petLevel = pet.level;
+  obeyState.petXp = pet.xp;
+  obeyState.petXpNeeded = pet.xpNeeded;
   obeyState.petMaxHp = pet.maxHp;
   obeyState.petHp = pet.hp;
+  obeyState.petPassedOut = Boolean(pet.passedOut);
+  obeyState.petPassedOutAt = Number.isFinite(pet.passedOutAt) ? pet.passedOutAt : 0;
+  if (pet.passedOut || pet.hp <= 0) {
+    clearPetAssistState();
+    return;
+  }
 
   const last = Number.isFinite(obeyState.lastFollowUpdateAt) ? obeyState.lastFollowUpdateAt : now;
   const dtScale = Math.max(0, Math.min(3, (now - last) / 16.667));
@@ -994,8 +1400,12 @@ function dismissObeyPet(now = performance.now()) {
   obeyState.petTypeName = "";
   obeyState.petSpriteName = "";
   obeyState.petLevel = 1;
+  obeyState.petXp = 0;
+  obeyState.petXpNeeded = BASE_COMBAT_XP_NEEDED;
   obeyState.petMaxHp = 15;
   obeyState.petHp = 15;
+  obeyState.petPassedOut = false;
+  obeyState.petPassedOutAt = 0;
   obeyState.petWidth = 25;
   obeyState.petHeight = 16;
   obeyState.lastFollowUpdateAt = 0;
@@ -1018,8 +1428,24 @@ function tryActivateSkillSlot(slotIndex) {
     setSkillHudFeedback(slotIndex, "empty");
     return false;
   }
+  const skillId = String(slot.id || "").trim().toLowerCase();
+  const defaults = getSkillDefaults(skillId);
+  slot.manaCost = defaults.manaCost;
+  slot.cooldownMs = defaults.cooldownMs;
 
-  if (slot.id === OBEY_SKILL_ID) {
+  const cooldownMs = Number.isFinite(slot.cooldownMs) ? Math.max(0, slot.cooldownMs) : 0;
+  const lastUsedAt = Number.isFinite(slot.lastUsedAt) ? slot.lastUsedAt : -Infinity;
+  if (cooldownMs > 0 && now - lastUsedAt < cooldownMs) {
+    setSkillHudFeedback(slotIndex, "cooldown");
+    return false;
+  }
+
+  if (skillId === BONK_SKILL_ID && !hasWeaponEquipped()) {
+    setSkillHudFeedback(slotIndex, "blocked");
+    return false;
+  }
+
+  if (skillId === OBEY_SKILL_ID) {
     if (obeyState.active) {
       setSkillHudFeedback(slotIndex, "used");
       return false;
@@ -1040,10 +1466,10 @@ function tryActivateSkillSlot(slotIndex) {
     return false;
   }
 
-  if (slot.id === OBEY_SKILL_ID) {
+  if (skillId === OBEY_SKILL_ID) {
     const hasPet = Boolean(obeyState.petId);
     if (hasPet) {
-      if (!dismissObeyPet(now)) {
+      if (!beginObeyReleaseChannel()) {
         setSkillHudFeedback(slotIndex, "empty");
         return false;
       }
@@ -1054,6 +1480,10 @@ function tryActivateSkillSlot(slotIndex) {
         return false;
       }
     }
+  }
+  if (skillId === BONK_SKILL_ID) {
+    player.requestedAttackId = BONK_ATTACK_ID;
+    input.triggerAttackPressed();
   }
 
   player.mana = Math.max(0, player.mana - manaCost);
@@ -1177,12 +1607,32 @@ function getTownProgressForCurrentTown() {
   if (gameFlags.completedTraining && normalized.rumorQuestOffered && !normalized.rumorQuestCompleted && !normalized.rumorQuestActive) {
     normalized.rumorQuestActive = true;
   }
+  ensureBogQuestRewardProgress(normalized);
   gameFlags.townProgress[townId] = normalized;
   return normalized;
 }
 
 function getRumorCluesFound(tp) {
   return Number(tp.rumorCluePiazza) + Number(tp.rumorClueChapel) + Number(tp.rumorClueBar);
+}
+
+function getBogQuestRewardItemName() {
+  return String(trainingContent?.bogQuest?.rewardItemName || "Kendo Stick");
+}
+
+function hasBogQuestRewardItem() {
+  const rewardItemName = getBogQuestRewardItemName();
+  const quantity = Number(playerInventory?.[rewardItemName] || 0);
+  if (Number.isFinite(quantity) && quantity > 0) return true;
+  const equippedWeaponName = String(playerEquipment?.weapon || "").trim();
+  return equippedWeaponName.length > 0 && equippedWeaponName === rewardItemName;
+}
+
+function ensureBogQuestRewardProgress(tp) {
+  if (!tp || typeof tp !== "object") return;
+  if (!tp.bogQuestRewardAwarded && hasBogQuestRewardItem()) {
+    tp.bogQuestRewardAwarded = true;
+  }
 }
 
 function getBogQuestTarget(tp) {
@@ -1318,6 +1768,13 @@ function deriveObjective() {
     };
   }
 
+  if (tp.bogQuestRewardAwarded && !tp.basicTrainingQuestClaimed) {
+    return {
+      id: "basic-training-claim-reward",
+      text: "Objective: Speak to Mr. Hanami to complete Basic Training and claim rewards."
+    };
+  }
+
   if (tp.bogQuestReported) {
     return {
       id: "taiko-preparation",
@@ -1329,6 +1786,97 @@ function deriveObjective() {
     id: "town-discipline",
     text: "Objective: Continue building your discipline and speak with Mr. Hanami for guidance."
   };
+}
+
+function buildBasicTrainingQuest() {
+  const tp = getTownProgressForCurrentTown();
+  const rumorClues = getRumorCluesFound(tp);
+  const bogTarget = getBogQuestTarget(tp);
+  const bogKills = Number.isFinite(tp.bogQuestKills) ? tp.bogQuestKills : 0;
+  const challengeKills = Number.isFinite(tp.challengeKills) ? tp.challengeKills : 0;
+  const challengeTarget = Number.isFinite(tp.challengeTarget) ? tp.challengeTarget : 3;
+  const activeBogProgress = tp.bogQuestActive || tp.bogQuestCompleted || tp.bogQuestReported || tp.bogQuestRewardAwarded;
+  const steps = [
+    {
+      id: "basic-training-pat-intro",
+      text: "Speak with Pat.",
+      done: Boolean(gameFlags.patInnIntroSeen)
+    },
+    {
+      id: "basic-training-hanami-intro",
+      text: "Speak with Mr. Hanami and accept training.",
+      done: Boolean(gameFlags.acceptedTraining)
+    },
+    {
+      id: "basic-training-dojo-challenge",
+      text: `Defeat upstairs opponents (${Math.min(challengeKills, challengeTarget)}/${challengeTarget}).`,
+      done: challengeKills >= challengeTarget
+    },
+    {
+      id: "basic-training-rumor-accept",
+      text: "Accept the rumor investigation.",
+      done: Boolean(tp.rumorQuestOffered)
+    },
+    {
+      id: "basic-training-rumor-clues",
+      text: `Gather all rumor clues (${Math.min(rumorClues, 3)}/3).`,
+      done: rumorClues >= 3
+    },
+    {
+      id: "basic-training-rumor-report",
+      text: "Report your rumor findings to Mr. Hanami.",
+      done: Boolean(tp.rumorQuestReported)
+    },
+    {
+      id: "basic-training-endurance",
+      text: `Reach discipline Lv.2 (${Math.max(1, playerStats.disciplineLevel)}/2).`,
+      done: Boolean(tp.enduranceUnlocked) && playerStats.disciplineLevel >= 2
+    },
+    {
+      id: "basic-training-membership",
+      text: "Receive your dojo membership card.",
+      done: Boolean(tp.membershipAwarded)
+    },
+    {
+      id: "basic-training-bog-accept",
+      text: "Accept the bog trial from Mr. Hanami.",
+      done: Boolean(activeBogProgress)
+    },
+    {
+      id: "basic-training-bog-complete",
+      text: `Clear the bog trial (${Math.min(bogKills, bogTarget)}/${bogTarget} ogres).`,
+      done: Boolean(tp.bogQuestCompleted)
+    },
+    {
+      id: "basic-training-kendo-reward",
+      text: "Report back and receive the kendo stick.",
+      done: Boolean(tp.bogQuestRewardAwarded)
+    },
+    {
+      id: "basic-training-claim-reward",
+      text: "Speak to Mr. Hanami and complete the quest reward claim.",
+      done: Boolean(tp.basicTrainingQuestClaimed)
+    }
+  ];
+  let currentStepIndex = steps.findIndex((step) => !step.done);
+  if (currentStepIndex < 0) currentStepIndex = steps.length - 1;
+  return {
+    id: "basic-training",
+    name: "Basic Training",
+    steps,
+    currentStepIndex,
+    completed: steps.every((step) => step.done)
+  };
+}
+
+function syncQuestTrackerState(now = performance.now()) {
+  const basicTraining = buildBasicTrainingQuest();
+  const collapsed = Boolean(questTrackerState.collapsedById[basicTraining.id]);
+  questTrackerState.quests = [{
+    ...basicTraining,
+    collapsed
+  }];
+  questTrackerState.updatedAt = now;
 }
 
 function resolveObjectiveMarker(objectiveId) {
@@ -1379,6 +1927,10 @@ function resolveObjectiveMarker(objectiveId) {
     ],
     "bogland-report-hanami": [
       { townId: "hanamiTown", areaId: "bogland", tileX: 28, tileY: 6, label: "Mr. Hanami" }
+    ],
+    "basic-training-claim-reward": [
+      { townId: "hanamiTown", areaId: "bogland", tileX: 28, tileY: 6, label: "Mr. Hanami" },
+      { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
     ],
     "taiko-preparation": [
       { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
@@ -1465,12 +2017,14 @@ function syncObjectiveState(now = performance.now()) {
       objectiveState.markerArea.tileH === nextMarkerArea.tileH
     )
   );
-  if (objectiveState.id === next.id && objectiveState.text === next.text && markerUnchanged && markerAreaUnchanged) return;
-  objectiveState.id = next.id;
-  objectiveState.text = next.text;
-  objectiveState.updatedAt = now;
-  objectiveState.marker = nextMarker;
-  objectiveState.markerArea = nextMarkerArea;
+  if (!(objectiveState.id === next.id && objectiveState.text === next.text && markerUnchanged && markerAreaUnchanged)) {
+    objectiveState.id = next.id;
+    objectiveState.text = next.text;
+    objectiveState.updatedAt = now;
+    objectiveState.marker = nextMarker;
+    objectiveState.markerArea = nextMarkerArea;
+  }
+  syncQuestTrackerState(now);
 }
 
 function showNextCombatReward(now = performance.now()) {
@@ -1691,9 +2245,19 @@ function grantCombatXpAndCollectSummary(enemy, now) {
   const enemyName = typeof enemy?.name === "string" ? enemy.name.toLowerCase() : "";
   const isOgre = enemyId.includes("ogre") || enemyName.includes("ogre");
   const xpGained = isOgre ? 9 : (enemy?.countsForChallenge ? 3 : 2);
-  let levelsGained = 0;
+  const levelsGained = applyCombatXpGain(xpGained, now);
 
-  playerStats.combatXP += xpGained;
+  return {
+    xpGained,
+    completedLevelUp: levelsGained > 0
+  };
+}
+
+function applyCombatXpGain(xpGained, now = performance.now()) {
+  const safeXp = Number.isFinite(xpGained) ? Math.max(0, Math.floor(xpGained)) : 0;
+  if (safeXp <= 0) return 0;
+  let levelsGained = 0;
+  playerStats.combatXP += safeXp;
   while (playerStats.combatXP >= playerStats.combatXPNeeded) {
     playerStats.combatXP -= playerStats.combatXPNeeded;
     playerStats.combatLevel += 1;
@@ -1713,20 +2277,90 @@ function grantCombatXpAndCollectSummary(enemy, now) {
     musicManager.playSfx("celebrationChime");
     musicManager.playSfx("fireworkBurst");
   }
+  return levelsGained;
+}
 
-  return {
-    xpGained,
-    completedLevelUp: levelsGained > 0
-  };
+function completeBasicTrainingQuestRewards(now = performance.now()) {
+  const tp = getTownProgressForCurrentTown();
+  if (tp.basicTrainingQuestClaimed) {
+    closeQuestCompletionPanel();
+    return;
+  }
+  tp.basicTrainingQuestClaimed = true;
+  playerCurrency.silver = (Number.isFinite(playerCurrency.silver) ? playerCurrency.silver : 0) + 150;
+  applyCombatXpGain(100, now);
+  unlockPlayerSkill(BONK_SKILL_ID);
+  itemAlert.active = true;
+  itemAlert.text = "Quest complete: Basic Training. Rewards claimed.";
+  itemAlert.startedAt = now;
+  questCompletionState.active = false;
+  questCompletionState.requestComplete = false;
+  mouseUiState.questCompletionClickRequest = false;
+  gameState = resolveReturnWorldState();
+  syncObjectiveState(now);
+}
+
+function grantPetCombatXpFromEnemyDefeat(playerXpGained) {
+  if (!Number.isFinite(playerXpGained) || playerXpGained <= 0) return;
+  const pet = ensurePetExistsInCurrentArea();
+  if (!pet) return;
+  if (pet.hp <= 0 || pet.passedOut) return;
+  ensurePetProgressionState(pet);
+  const petXpGained = playerXpGained * 0.5;
+  if (petXpGained <= 0) return;
+  pet.xp += petXpGained;
+  while (pet.xp >= pet.xpNeeded) {
+    pet.xp -= pet.xpNeeded;
+    pet.level += 1;
+    pet.xpNeeded = Math.ceil(pet.xpNeeded * COMBAT_XP_GROWTH_MULTIPLIER);
+  }
+  obeyState.petLevel = pet.level;
+  obeyState.petXp = pet.xp;
+  obeyState.petXpNeeded = pet.xpNeeded;
+}
+
+function revivePetOnOverworldEntry(now = performance.now()) {
+  if (!obeyState.petId) return;
+  const areaKind = worldService.getAreaKind(currentTownId, currentAreaId);
+  if (areaKind !== AREA_KINDS.OVERWORLD) return;
+  const pet = ensurePetExistsInCurrentArea();
+  if (!pet) return;
+  const isPassedOut = Boolean(pet.passedOut) || pet.hp <= 0 || obeyState.petPassedOut;
+  if (!isPassedOut) return;
+  pet.maxHp = Number.isFinite(pet.maxHp) ? Math.max(1, pet.maxHp) : 15;
+  pet.hp = pet.maxHp;
+  pet.passedOut = false;
+  pet.passedOutAt = 0;
+  pet.world = currentAreaId;
+  pet.x = player.x - TILE;
+  pet.y = player.y;
+  pet.dir = "left";
+  obeyState.petMaxHp = pet.maxHp;
+  obeyState.petHp = pet.hp;
+  obeyState.petPassedOut = false;
+  obeyState.petPassedOutAt = 0;
+  itemAlert.active = true;
+  itemAlert.text = `${String(pet.name || "Pet")} recovered.`;
+  itemAlert.startedAt = now;
 }
 
 function handleEnemyDefeatRewards(enemy, now) {
   if (enemy?.obeyHostile) {
+    if (enemy.id === obeyState.hostileEnemyId) {
+      if (obeyState.active) {
+        resetObeyChannelState();
+      }
+      queueWildAnimalRespawnFromDefeat(enemy, obeyState.hostileSourceNpc);
+      clearObeyHostileState();
+    } else {
+      queueWildAnimalRespawnFromDefeat(enemy, null);
+    }
     syncObjectiveState(now);
     return;
   }
   handleChallengeEnemyDefeat(enemy, now);
   const reward = grantCombatXpAndCollectSummary(enemy, now);
+  grantPetCombatXpFromEnemyDefeat(reward.xpGained);
   spawnEnemyLeftovers(enemy, now);
   const ex = Number.isFinite(enemy?.x) ? enemy.x + (Number(enemy?.width) || TILE) * 0.5 : player.x + TILE * 0.5;
   const ey = Number.isFinite(enemy?.y) ? enemy.y + (Number(enemy?.height) || TILE) * 0.25 : player.y;
@@ -2374,6 +3008,14 @@ function updateRuntimeUi(now) {
     saveNoticeState.active = false;
   }
 
+  if (gameState === GAME_STATES.QUEST_COMPLETION) {
+    if (questCompletionState.requestComplete) {
+      questCompletionState.requestComplete = false;
+      completeBasicTrainingQuestRewards(now);
+    }
+    return;
+  }
+
   const celebrationStartedAt = Number.isFinite(playerStats.combatLevelCelebrationStartedAt)
     ? playerStats.combatLevelCelebrationStartedAt
     : 0;
@@ -2455,6 +3097,8 @@ const {
   onAfterRestore: () => {
     ensurePlayerSkillState(player);
     player.lastManaRegenTickAt = performance.now();
+    questCompletionState.active = false;
+    questCompletionState.requestComplete = false;
     leftoversUiState.active = false;
     leftoversUiState.leftoverId = "";
     leftoversUiState.openedFromInteraction = false;
@@ -2551,7 +3195,8 @@ const combatSystem = createCombatSystem({
   tileSize: TILE,
   eventHandlers: {
     onRequestVfx: (type, options) => vfxSystem.spawn(type, options),
-    onPlayerAttackStarted: () => {
+    onPlayerAttackStarted: ({ profile }) => {
+      player.requestedAttackId = null;
       musicManager.playSfx("attackSwing");
       engagePetAssistMode();
     },
@@ -2577,8 +3222,12 @@ const enemyAiSystem = createEnemyAISystem({
       const enemyId = typeof enemy?.id === "string" ? enemy.id.toLowerCase() : "";
       const enemyName = typeof enemy?.name === "string" ? enemy.name.toLowerCase() : "";
       const isOgre = enemyId.includes("ogre") || enemyName.includes("ogre");
+      const isPossum = enemyId.includes("possum") || enemyName.includes("possum");
       if (isOgre) {
         musicManager.playSfx("ogreAttack");
+      }
+      if (isPossum) {
+        musicManager.playSfx("possumAttack");
       }
       if (now - combatFeedback.lastEnemyTelegraphAt > 120) {
         musicManager.playSfx("enemyTelegraph");
@@ -2799,6 +3448,10 @@ interactionSystem = createInteractionSystem({
   getInteractPressed: () => input.getInteractPressed(),
   clearInteractPressed: () => input.clearInteractPressed(),
   syncObjectiveState: () => syncObjectiveState(performance.now()),
+  openQuestCompletionPanel: (questId, npcName) => {
+    if (questId !== "basic-training") return false;
+    return openBasicTrainingQuestCompletionPanel(npcName);
+  },
   spawnVisualEffect: (type, options) => vfxSystem.spawn(type, options),
   canEnterDoor: ({ doorTile, destination, townId, areaId, playerEquipment: equipment }) => {
     const isDojoUpstairsDoor =
@@ -2946,6 +3599,8 @@ gameController = createGameController({
       if (previousTownId === townId) {
         updateTownReentryEnemyRespawnsOnAreaChange({ previousAreaId, areaId });
       }
+      processPendingWildRespawnsOnAreaChange(previousTownId, previousAreaId, townId, areaId);
+      revivePetOnOverworldEntry(performance.now());
       applyStoryNpcVisibility();
       if (
         !gameFlags.patInnIntroSeen &&
@@ -2957,6 +3612,42 @@ gameController = createGameController({
       }
       syncObjectiveState(performance.now());
     }
+  }
+});
+combatSystem.registerAttackProfile(BONK_ATTACK_ID, {
+  id: BONK_ATTACK_ID,
+  cooldownMs: 0,
+  windupMs: BONK_SKILL_WINDUP_MS,
+  activeMs: 120,
+  recoveryMs: 220,
+  range: TILE * 0.95,
+  hitRadius: TILE * 0.78,
+  damage: 0,
+  damageBonusFlat: BONK_SKILL_DAMAGE,
+  useProfileDamageOnly: false,
+  ignoreWeaponBonus: false,
+  vfx: {
+    type: "attackSlash",
+    durationMs: 260,
+    sizeOffset: 16
+  },
+  getAttackCenter(attacker) {
+    const dir = attacker?.dir;
+    const facingX = dir === "left" ? -1 : (dir === "right" ? 1 : 0);
+    const facingY = dir === "up" ? -1 : (dir === "down" ? 1 : 0);
+    return {
+      x: attacker.x + TILE / 2 + facingX * this.range,
+      y: attacker.y + TILE / 2 + facingY * this.range
+    };
+  },
+  getVfxOrigin(attacker) {
+    const dir = attacker?.dir;
+    const facingX = dir === "left" ? -1 : (dir === "right" ? 1 : 0);
+    const facingY = dir === "up" ? -1 : (dir === "down" ? 1 : 0);
+    return {
+      x: attacker.x + TILE / 2 + facingX * (this.range * 0.6),
+      y: attacker.y + TILE / 2 + facingY * (this.range * 0.6)
+    };
   }
 });
 
@@ -3016,6 +3707,9 @@ const { syncPointerLockWithState, register: registerInputBindings } = createInpu
   performLoadGame,
   resumeFromPauseMenu,
   openInventoryFromPauseMenu,
+  toggleQuestTracker,
+  closeQuestTracker,
+  closeQuestCompletionPanel,
   closeInventory: closeInventoryToWorld,
   isInventoryOpenedFromPauseMenu,
   isLeftoversInventoryOpen: () => Boolean(leftoversUiState.active && gameState === GAME_STATES.INVENTORY),
@@ -3099,6 +3793,8 @@ const { render } = createGameRenderer({
   inventoryUiLayout,
   leftoversUiState,
   objectiveState,
+  questTrackerState,
+  questCompletionState,
   uiMotionState,
   minimapDiscoveryState,
   itemAlert,

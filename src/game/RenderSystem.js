@@ -551,27 +551,37 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom, getItemSprite =
   if (!state.player || !Number.isFinite(state.player.maxHp)) return;
 
   const slotCount = 9;
-  const slotSize = 36;
-  const slotGap = 4;
+  const slotGap = 6;
+  const desiredSlotSize = 54;
+  const minSlotSize = 40;
+  const maxSlotsWidth = Math.max(120, ctx.canvas.width - 24);
+  const slotSize = Math.max(
+    minSlotSize,
+    Math.min(desiredSlotSize, Math.floor((maxSlotsWidth - (slotCount - 1) * slotGap) / slotCount))
+  );
   const slotsW = slotCount * slotSize + (slotCount - 1) * slotGap;
   const slotsX = Math.round((ctx.canvas.width - slotsW) / 2);
-  const slotsY = ctx.canvas.height - slotSize - 12;
+  const bottomMargin = 12;
+  const slotToBarsGap = 10;
 
-  const barW = Math.min(Math.max(250, slotsW), ctx.canvas.width - 34);
+  const legacySlotsWidth = (9 * 36) + (8 * 4);
+  const barW = Math.min(Math.max(250, legacySlotsWidth), ctx.canvas.width - 34);
   const barH = 12;
   const barX = Math.round((ctx.canvas.width - barW) / 2);
-  const hpBarY = slotsY - 64;
-  const manaBarY = slotsY - 38;
-  const barsPanelY = hpBarY - 24;
-  const barsPanelH = (manaBarY + barH) - barsPanelY + 12;
+  const barsPanelH = 74;
+  const barsPanelY = ctx.canvas.height - barsPanelH - bottomMargin;
+  const hpBarY = barsPanelY + 24;
+  const manaBarY = barsPanelY + 50;
   const barsPanelX = barX - 12;
   const barsPanelW = barW + 24;
+  const slotsY = barsPanelY - slotSize - slotToBarsGap;
 
   const hpRatio = Math.max(0, Math.min(1, state.player.hp / Math.max(1, state.player.maxHp)));
   const maxMana = Number.isFinite(state.player.maxMana) ? Math.max(1, state.player.maxMana) : 10;
   const mana = Number.isFinite(state.player.mana) ? state.player.mana : maxMana;
   const manaRatio = Math.max(0, Math.min(1, mana / maxMana));
   const skillSlots = Array.isArray(state.player.skillSlots) ? state.player.skillSlots : [];
+  const hasWeaponEquipped = Boolean(String(state.playerEquipment?.weapon || "").trim());
   const feedback = state.player.skillHudFeedback && typeof state.player.skillHudFeedback === "object"
     ? state.player.skillHudFeedback
     : null;
@@ -589,13 +599,21 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom, getItemSprite =
   const playerBottom = playerTop + playerScreenH;
   const panelRight = barsPanelX + barsPanelW;
   const panelBottom = barsPanelY + barsPanelH;
+  const slotsRight = slotsX + slotsW;
+  const slotsBottom = slotsY + slotSize;
   const playerBehindBarsPanel = !(
     playerRight < barsPanelX ||
     playerLeft > panelRight ||
     playerBottom < barsPanelY ||
     playerTop > panelBottom
   );
-  const targetBarsAlpha = playerBehindBarsPanel ? 0.35 : 1;
+  const playerBehindSkillSlots = !(
+    playerRight < slotsX ||
+    playerLeft > slotsRight ||
+    playerBottom < slotsY ||
+    playerTop > slotsBottom
+  );
+  const targetBarsAlpha = (playerBehindBarsPanel || playerBehindSkillSlots) ? 0.35 : 1;
   const uiMotionState = state.uiMotionState && typeof state.uiMotionState === "object"
     ? state.uiMotionState
     : null;
@@ -632,38 +650,116 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom, getItemSprite =
   ctx.strokeRect(barX + 0.5, manaBarY + 0.5, barW - 1, barH - 1);
   ctx.restore();
 
+  ctx.save();
+  ctx.globalAlpha = barsAlpha;
   for (let i = 0; i < slotCount; i++) {
     const slotX = slotsX + i * (slotSize + slotGap);
     const slot = skillSlots[i];
     const isAssigned = Boolean(slot?.id);
+    const skillId = String(slot?.id || "").trim().toLowerCase();
     const manaCost = Number.isFinite(slot?.manaCost) ? Math.max(0, slot.manaCost) : 0;
     const hasMana = mana >= manaCost;
+    const cooldownMs = Number.isFinite(slot?.cooldownMs) ? Math.max(0, slot.cooldownMs) : 0;
+    const lastUsedAt = Number.isFinite(slot?.lastUsedAt) ? slot.lastUsedAt : -Infinity;
+    const cooldownElapsed = now - lastUsedAt;
+    const cooldownRatio = cooldownMs > 0
+      ? Math.max(0, Math.min(1, cooldownElapsed / cooldownMs))
+      : 1;
+    const isRecharging = isAssigned && cooldownMs > 0 && cooldownElapsed < cooldownMs;
+    const blockedByWeapon = isAssigned && skillId === "bonk" && !hasWeaponEquipped;
     const isFeedbackSlot = feedback && feedback.slotIndex === i && feedback.until > now;
+    const slotInset = Math.max(6, Math.round(slotSize * 0.16));
+    const slotInnerSize = slotSize - slotInset * 2;
 
     drawSkinnedPanel(ctx, slotX, slotsY, slotSize, slotSize, colors);
 
     ctx.fillStyle = isAssigned ? "rgba(230, 210, 178, 0.2)" : "rgba(8, 10, 14, 0.55)";
-    ctx.fillRect(slotX + 6, slotsY + 6, slotSize - 12, slotSize - 12);
+    ctx.fillRect(slotX + slotInset, slotsY + slotInset, slotInnerSize, slotInnerSize);
 
     if (!isAssigned) {
       ctx.strokeStyle = "rgba(255,255,255,0.2)";
       ctx.lineWidth = 1;
-      ctx.strokeRect(slotX + 6.5, slotsY + 6.5, slotSize - 13, slotSize - 13);
+      ctx.strokeRect(slotX + slotInset + 0.5, slotsY + slotInset + 0.5, slotInnerSize - 1, slotInnerSize - 1);
     } else if (typeof getItemSprite === "function") {
-      const skillSpriteName = slot.id === "obey" ? "obey" : null;
+      const skillSpriteName = skillId || null;
       const skillSprite = skillSpriteName ? getItemSprite(skillSpriteName) : null;
       if (skillSprite && skillSprite.width && skillSprite.height) {
-        const iconSize = slotSize - 12;
-        ctx.drawImage(skillSprite, slotX + 6, slotsY + 6, iconSize, iconSize);
+        const iconPadding = 1;
+        const iconSize = Math.max(1, slotSize - iconPadding * 2);
+        ctx.drawImage(skillSprite, slotX + iconPadding, slotsY + iconPadding, iconSize, iconSize);
       }
     } else if (!hasMana) {
       ctx.fillStyle = "rgba(0,0,0,0.45)";
-      ctx.fillRect(slotX + 6, slotsY + 6, slotSize - 12, slotSize - 12);
+      ctx.fillRect(slotX + slotInset, slotsY + slotInset, slotInnerSize, slotInnerSize);
     }
 
     if (isAssigned && !hasMana) {
       ctx.fillStyle = "rgba(0,0,0,0.45)";
-      ctx.fillRect(slotX + 6, slotsY + 6, slotSize - 12, slotSize - 12);
+      ctx.fillRect(slotX + slotInset, slotsY + slotInset, slotInnerSize, slotInnerSize);
+    }
+    if (isRecharging) {
+      const meterX = slotX + 1;
+      const meterY = slotsY + 1;
+      const meterW = Math.max(1, slotSize - 2);
+      const meterH = Math.max(1, slotSize - 2);
+      const filledH = Math.max(0, Math.min(meterH, Math.round(meterH * cooldownRatio)));
+      const remainingMs = Math.max(0, cooldownMs - cooldownElapsed);
+      const remainingSeconds = remainingMs / 1000;
+      const cooldownLabel = remainingSeconds >= 10
+        ? String(Math.ceil(remainingSeconds))
+        : remainingSeconds.toFixed(1);
+      ctx.fillStyle = "rgba(4, 8, 16, 0.54)";
+      ctx.fillRect(meterX, meterY, meterW, meterH);
+      if (filledH > 0) {
+        const fillY = meterY + meterH - filledH;
+        ctx.fillStyle = "rgba(124, 186, 255, 0.3)";
+        ctx.fillRect(meterX, fillY, meterW, filledH);
+        ctx.strokeStyle = "rgba(176, 219, 255, 0.62)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(meterX, fillY + 0.5);
+        ctx.lineTo(meterX + meterW, fillY + 0.5);
+        ctx.stroke();
+      }
+
+      const pulse = 0.78 + Math.sin(now * 0.012) * 0.12;
+      const labelCx = slotX + slotSize * 0.5;
+      const labelCy = slotsY + slotSize * 0.53;
+      const chipW = Math.max(22, Math.round(slotSize * 0.54));
+      const chipH = Math.max(14, Math.round(slotSize * 0.29));
+      const chipX = Math.round(labelCx - chipW * 0.5);
+      const chipY = Math.round(labelCy - chipH * 0.58);
+      const chipGradient = ctx.createLinearGradient(0, chipY, 0, chipY + chipH);
+      chipGradient.addColorStop(0, `rgba(16, 26, 46, ${(0.86 * pulse).toFixed(3)})`);
+      chipGradient.addColorStop(1, `rgba(8, 14, 26, ${(0.92 * pulse).toFixed(3)})`);
+      ctx.fillStyle = chipGradient;
+      ctx.fillRect(chipX, chipY, chipW, chipH);
+      ctx.strokeStyle = `rgba(173, 221, 255, ${(0.68 * pulse).toFixed(3)})`;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(chipX + 0.5, chipY + 0.5, chipW - 1, chipH - 1);
+
+      ctx.save();
+      ctx.font = `700 ${Math.max(11, Math.round(slotSize * 0.3))}px 'Trebuchet MS', 'Verdana', sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.strokeStyle = "rgba(4, 8, 14, 0.95)";
+      ctx.lineWidth = 3;
+      ctx.strokeText(cooldownLabel, labelCx, labelCy);
+      ctx.fillStyle = "rgba(202, 235, 255, 0.98)";
+      ctx.fillText(cooldownLabel, labelCx, labelCy);
+      ctx.restore();
+    }
+    if (blockedByWeapon) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255, 88, 88, 0.95)";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(slotX + 8, slotsY + 8);
+      ctx.lineTo(slotX + slotSize - 8, slotsY + slotSize - 8);
+      ctx.moveTo(slotX + slotSize - 8, slotsY + 8);
+      ctx.lineTo(slotX + 8, slotsY + slotSize - 8);
+      ctx.stroke();
+      ctx.restore();
     }
 
     if (isFeedbackSlot) {
@@ -672,23 +768,67 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom, getItemSprite =
         ? "rgba(138, 224, 152, 0.95)"
         : status === "noMana"
           ? "rgba(116, 176, 255, 0.95)"
-          : "rgba(255, 220, 128, 0.95)";
+          : status === "cooldown"
+            ? "rgba(255, 188, 96, 0.95)"
+            : status === "blocked"
+              ? "rgba(255, 108, 108, 0.95)"
+              : "rgba(255, 220, 128, 0.95)";
       ctx.lineWidth = 2;
       ctx.strokeRect(slotX + 2, slotsY + 2, slotSize - 4, slotSize - 4);
     }
 
+    const slotNumberText = String(i + 1);
+    const slotNumberX = slotX + slotSize / 2;
+    const slotNumberY = slotsY + slotSize - Math.max(4, Math.round(slotSize * 0.11));
+    ctx.save();
     ctx.font = FONT_12;
     ctx.textAlign = "center";
-    ctx.fillStyle = "rgba(238, 238, 238, 0.95)";
-    ctx.fillText(String(i + 1), slotX + slotSize / 2, slotsY + slotSize - 4);
+    ctx.textBaseline = "alphabetic";
+    const slotNumberW = Math.ceil(ctx.measureText(slotNumberText).width);
+    const slotChipW = Math.max(12, slotNumberW + 8);
+    const slotChipH = 11;
+    const slotChipX = Math.round(slotNumberX - slotChipW / 2);
+    const slotChipY = Math.round(slotNumberY - slotChipH + 2);
+    ctx.fillStyle = "rgba(9, 14, 20, 0.78)";
+    ctx.fillRect(slotChipX, slotChipY, slotChipW, slotChipH);
+    ctx.strokeStyle = "rgba(228, 212, 182, 0.5)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(slotChipX + 0.5, slotChipY + 0.5, slotChipW - 1, slotChipH - 1);
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
+    ctx.lineWidth = 2;
+    ctx.strokeText(slotNumberText, slotNumberX, slotNumberY);
+    ctx.fillStyle = "rgba(244, 244, 244, 0.98)";
+    ctx.fillText(slotNumberText, slotNumberX, slotNumberY);
+    ctx.restore();
     ctx.textAlign = "start";
 
     if (isAssigned && manaCost > 0) {
+      const manaText = String(manaCost);
+      const manaTextX = slotX + slotSize - Math.max(12, Math.round(slotSize * 0.22));
+      const manaTextY = slotsY + Math.max(12, Math.round(slotSize * 0.22));
+      ctx.save();
       ctx.font = FONT_12;
-      ctx.fillStyle = "rgba(142, 198, 255, 0.95)";
-      ctx.fillText(String(manaCost), slotX + slotSize - 12, slotsY + 12);
+      ctx.textAlign = "start";
+      ctx.textBaseline = "alphabetic";
+      const manaTextW = Math.ceil(ctx.measureText(manaText).width);
+      const manaChipW = Math.max(12, manaTextW + 8);
+      const manaChipH = 11;
+      const manaChipX = Math.round(manaTextX - 4);
+      const manaChipY = Math.round(manaTextY - manaChipH + 1);
+      ctx.fillStyle = "rgba(8, 14, 24, 0.8)";
+      ctx.fillRect(manaChipX, manaChipY, manaChipW, manaChipH);
+      ctx.strokeStyle = "rgba(132, 194, 255, 0.55)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(manaChipX + 0.5, manaChipY + 0.5, manaChipW - 1, manaChipH - 1);
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.82)";
+      ctx.lineWidth = 2;
+      ctx.strokeText(manaText, manaTextX, manaTextY);
+      ctx.fillStyle = "rgba(132, 202, 255, 0.98)";
+      ctx.fillText(manaText, manaTextX, manaTextY);
+      ctx.restore();
     }
   }
+  ctx.restore();
 
   const showChallenge = state.objectiveState?.id === "dojo-upstairs-challenge";
   if (showChallenge) {
@@ -888,12 +1028,23 @@ function drawFriendliesHud(ctx, state, colors) {
 
   const petType = String(pet.name || obeyState.petTypeName || "Companion").trim() || "Companion";
   const petName = `Pet ${petType}`;
+  const petLevel = Number.isFinite(pet.level)
+    ? Math.max(1, Math.floor(pet.level))
+    : (Number.isFinite(obeyState.petLevel) ? Math.max(1, Math.floor(obeyState.petLevel)) : 1);
+  const petXp = Number.isFinite(pet.xp)
+    ? Math.max(0, pet.xp)
+    : (Number.isFinite(obeyState.petXp) ? Math.max(0, obeyState.petXp) : 0);
+  const petXpNeeded = Number.isFinite(pet.xpNeeded)
+    ? Math.max(1, pet.xpNeeded)
+    : (Number.isFinite(obeyState.petXpNeeded) ? Math.max(1, obeyState.petXpNeeded) : 1);
+  const petXpRemaining = Math.max(0, petXpNeeded - petXp);
   const petMaxHp = Number.isFinite(pet.maxHp) ? Math.max(1, pet.maxHp) : 15;
   const petHp = Number.isFinite(pet.hp) ? Math.max(0, Math.min(petMaxHp, pet.hp)) : petMaxHp;
+  const petPassedOut = Boolean(pet.passedOut) || petHp <= 0;
   const hpRatio = Math.max(0, Math.min(1, petHp / petMaxHp));
 
   const panelW = Math.min(232, ctx.canvas.width - 28);
-  const panelH = 66;
+  const panelH = 82;
   const panelX = ctx.canvas.width - panelW - 14;
   const panelY = 148;
   const barX = panelX + 12;
@@ -914,10 +1065,23 @@ function drawFriendliesHud(ctx, state, colors) {
   ctx.strokeStyle = "rgba(255,255,255,0.45)";
   ctx.lineWidth = 1;
   ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
+  if (petPassedOut) {
+    const previousAlign = ctx.textAlign;
+    const previousBaseline = ctx.textBaseline;
+    ctx.font = FONT_12;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(255, 232, 232, 0.95)";
+    ctx.fillText("passed out", barX + barW * 0.5, barY + barH * 0.5 + 0.5);
+    ctx.textAlign = previousAlign;
+    ctx.textBaseline = previousBaseline;
+  }
 
   ctx.font = FONT_12;
   ctx.textAlign = "right";
-  drawUiText(ctx, `${Math.round(petHp)} / ${Math.round(petMaxHp)}`, panelX + panelW - 10, panelY + panelH - 8, colors);
+  drawUiText(ctx, `${Math.round(petHp)} / ${Math.round(petMaxHp)}`, panelX + panelW - 10, panelY + 61, colors);
+  ctx.textAlign = "start";
+  drawUiText(ctx, `Lvl ${petLevel} - ${Math.ceil(petXpRemaining)} xp to next`, panelX + 10, panelY + panelH - 8, colors);
   ctx.textAlign = "start";
 }
 
@@ -1166,6 +1330,313 @@ function drawObjectiveTracker(ctx, state, colors) {
   if (markerLabel) {
     ctx.font = FONT_12;
     drawUiText(ctx, `Target: ${markerLabel}`, panelX + 10, panelY + panelH - 8, colors);
+  }
+  ctx.restore();
+}
+
+function drawQuestTrackerHint(ctx, state, colors) {
+  if (!isFreeExploreState(state.gameState)) return;
+  const flags = state.gameFlags && typeof state.gameFlags === "object" ? state.gameFlags : null;
+  if (!flags?.patInnIntroSeen || flags.questTrackerHintDismissed) return;
+
+  const hintText = "Press 'G' to track quests";
+  const panelW = Math.max(220, Math.ceil(ctx.measureText(hintText).width) + 28);
+  const panelH = 26;
+  const panelX = Math.round((ctx.canvas.width - panelW) * 0.5);
+  const panelY = 10;
+
+  ctx.save();
+  ctx.globalAlpha = 0.72;
+  const hintGradient = ctx.createLinearGradient(0, panelY, 0, panelY + panelH);
+  hintGradient.addColorStop(0, "rgba(10, 15, 24, 0.74)");
+  hintGradient.addColorStop(1, "rgba(8, 10, 16, 0.6)");
+  ctx.fillStyle = hintGradient;
+  ctx.fillRect(panelX, panelY, panelW, panelH);
+  ctx.strokeStyle = "rgba(186, 207, 236, 0.36)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1);
+  drawUiText(ctx, hintText, panelX + 14, panelY + 17, {
+    ...colors,
+    TEXT: "rgba(222, 232, 248, 0.88)",
+    TEXT_SHADOW: "rgba(0, 0, 0, 0.46)"
+  });
+  ctx.restore();
+}
+
+function wrapTextLines(ctx, text, maxWidth) {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width <= maxWidth || line.length === 0) {
+      line = next;
+    } else {
+      lines.push(line);
+      line = word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function drawQuestTrackerOverlay(ctx, state, canvas, ui, colors) {
+  if (state.gameState !== GAME_STATES.QUEST_TRACKER) return;
+  const quests = Array.isArray(state.questTrackerState?.quests) ? state.questTrackerState.quests : [];
+  const mouseUiState = state.mouseUiState;
+  const mouseX = Number.isFinite(mouseUiState?.x) ? mouseUiState.x : -1;
+  const mouseY = Number.isFinite(mouseUiState?.y) ? mouseUiState.y : -1;
+  let clickRequested = Boolean(mouseUiState?.questTrackerClickRequest);
+  const wasInsideCanvas = Boolean(mouseUiState?.insideCanvas);
+
+  ctx.save();
+  ctx.fillStyle = "rgba(6, 7, 12, 0.62)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const panelW = Math.min(canvas.width - 56, 740);
+  const panelH = Math.min(canvas.height - 56, 520);
+  const panelX = Math.round((canvas.width - panelW) * 0.5);
+  const panelY = Math.round((canvas.height - panelH) * 0.5);
+  drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors, { titleBand: true });
+
+  ctx.font = FONT_28;
+  drawUiText(ctx, "Quest Tracker", panelX + 18, panelY + 40, colors);
+  ctx.font = FONT_12;
+  drawUiText(ctx, "Press G or Esc to close", panelX + panelW - 190, panelY + 24, colors);
+
+  const questListX = panelX + 14;
+  const questListY = panelY + 58;
+  const questListW = panelW - 28;
+  const questListH = panelH - 76;
+  ctx.fillStyle = "rgba(16, 19, 26, 0.45)";
+  ctx.fillRect(questListX, questListY, questListW, questListH);
+  ctx.strokeStyle = colors.PANEL_BORDER_DARK || colors.DIALOGUE_BORDER;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(questListX + 0.5, questListY + 0.5, questListW - 1, questListH - 1);
+
+  let cursorY = questListY + 10;
+  for (const quest of quests) {
+    const rowX = questListX + 8;
+    const rowW = questListW - 16;
+    const rowH = 32;
+    const isHeaderHovered = wasInsideCanvas &&
+      mouseX >= rowX && mouseX <= rowX + rowW &&
+      mouseY >= cursorY && mouseY <= cursorY + rowH;
+    if (isHeaderHovered) {
+      ctx.fillStyle = "rgba(255, 238, 190, 0.12)";
+      ctx.fillRect(rowX, cursorY, rowW, rowH);
+    }
+    if (clickRequested && isHeaderHovered) {
+      const id = String(quest?.id || "");
+      if (id && state.questTrackerState?.collapsedById) {
+        state.questTrackerState.collapsedById[id] = !state.questTrackerState.collapsedById[id];
+      }
+      clickRequested = false;
+    }
+
+    ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+    const collapsed = Boolean(quest?.collapsed);
+    const questCompleted = Boolean(quest?.completed);
+    const caret = collapsed ? "+" : "-";
+    const questName = String(quest?.name || "Quest");
+    const questTitleColors = questCompleted
+      ? {
+        ...colors,
+        TEXT: "rgba(222, 228, 236, 0.76)",
+        TEXT_SHADOW: "rgba(0, 0, 0, 0.55)"
+      }
+      : colors;
+    ctx.font = FONT_20;
+    drawUiText(ctx, caret, rowX + 4, cursorY + 20, colors);
+    drawUiText(ctx, questName, rowX + 26, cursorY + 20, questTitleColors);
+    if (questCompleted) {
+      const questNameWidth = Math.ceil(ctx.measureText(questName).width);
+      const strikeY = cursorY + 13;
+      const strikeStartX = rowX + 26;
+      const strikeEndX = strikeStartX + questNameWidth;
+      ctx.save();
+      ctx.strokeStyle = "rgba(6, 6, 8, 0.94)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(strikeStartX, strikeY);
+      ctx.lineTo(strikeEndX, strikeY);
+      ctx.stroke();
+
+      const tickBaseX = Math.min(rowX + rowW - 18, strikeEndX + 12);
+      const tickBaseY = cursorY + 12;
+      ctx.strokeStyle = "rgba(102, 226, 124, 0.98)";
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(tickBaseX - 6, tickBaseY + 2);
+      ctx.lineTo(tickBaseX - 2, tickBaseY + 6);
+      ctx.lineTo(tickBaseX + 7, tickBaseY - 3);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const steps = Array.isArray(quest?.steps) ? quest.steps : [];
+    const currentStepIndex = Number.isFinite(quest?.currentStepIndex)
+      ? Math.max(0, Math.min(steps.length - 1, Math.floor(quest.currentStepIndex)))
+      : 0;
+    if (!collapsed) {
+      const visibleSteps = quest?.completed ? steps : steps.slice(0, currentStepIndex + 1);
+      const currentStep = visibleSteps.length > 0 ? visibleSteps[Math.min(currentStepIndex, visibleSteps.length - 1)] : null;
+      const currentText = quest?.completed
+        ? "Current Part: Complete"
+        : `Current Part: ${currentStep?.text || "In progress"}`;
+      ctx.font = FONT_12;
+      drawUiText(ctx, currentText, rowX + 26, cursorY + 34, colors);
+
+      let stepY = cursorY + 56;
+      for (let i = 0; i < visibleSteps.length; i++) {
+        const step = visibleSteps[i];
+        const isCurrent = !quest?.completed && i === currentStepIndex;
+        const mark = step?.done ? "[x]" : "[ ]";
+        const stepColors = step?.done
+          ? {
+            ...colors,
+            TEXT: "rgba(224, 230, 236, 0.58)",
+            TEXT_SHADOW: "rgba(0, 0, 0, 0.36)"
+          }
+          : colors;
+        ctx.font = FONT_12;
+        drawUiText(ctx, mark, rowX + 28, stepY, stepColors);
+        const wrapped = wrapTextLines(ctx, String(step?.text || ""), rowW - 72);
+        for (let w = 0; w < wrapped.length; w++) {
+          const textY = stepY + w * 14;
+          if (isCurrent) {
+            ctx.fillStyle = "rgba(255, 236, 179, 0.26)";
+            ctx.fillRect(rowX + 44, textY - 11, rowW - 52, 14);
+          }
+          drawUiText(ctx, wrapped[w], rowX + 48, textY, stepColors);
+        }
+        stepY += Math.max(18, wrapped.length * 14 + 4);
+      }
+      cursorY = stepY + 8;
+    } else {
+      cursorY += rowH + 8;
+    }
+  }
+
+  ctx.restore();
+  if (mouseUiState) {
+    mouseUiState.questTrackerClickRequest = false;
+  }
+}
+
+function drawQuestCompletionOverlay(ctx, state, canvas, ui, colors, getItemSprite = () => null) {
+  if (state.gameState !== GAME_STATES.QUEST_COMPLETION) return;
+  const completion = state.questCompletionState && typeof state.questCompletionState === "object"
+    ? state.questCompletionState
+    : null;
+  if (!completion?.active) return;
+  const mouseUiState = state.mouseUiState;
+  const mouseInside = Boolean(mouseUiState?.insideCanvas);
+  const mouseX = Number.isFinite(mouseUiState?.x) ? mouseUiState.x : -1;
+  const mouseY = Number.isFinite(mouseUiState?.y) ? mouseUiState.y : -1;
+  const clickRequested = Boolean(mouseUiState?.questCompletionClickRequest);
+
+  ctx.save();
+  ctx.fillStyle = "rgba(5, 8, 12, 0.68)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const panelW = Math.min(canvas.width - 90, 640);
+  const panelH = Math.min(canvas.height - 90, 430);
+  const panelX = Math.round((canvas.width - panelW) * 0.5);
+  const panelY = Math.round((canvas.height - panelH) * 0.5);
+  drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors, { titleBand: true });
+
+  ctx.font = FONT_28;
+  drawUiText(ctx, String(completion.questName || "Quest Complete"), panelX + 18, panelY + 40, colors);
+
+  const summary = String(completion.summary || "");
+  ctx.font = FONT_12;
+  const summaryLines = wrapTextLines(ctx, summary, panelW - 36, 4);
+  let summaryY = panelY + 66;
+  for (const line of summaryLines) {
+    drawUiText(ctx, line, panelX + 18, summaryY, colors);
+    summaryY += 14;
+  }
+
+  ctx.font = FONT_16;
+  drawUiText(ctx, "Completion Rewards", panelX + 18, summaryY + 16, colors);
+
+  const rewards = Array.isArray(completion.rewards) ? completion.rewards : [];
+  const rewardCardW = 112;
+  const rewardCardH = 122;
+  const rewardGap = 14;
+  const totalRewardsW = rewards.length * rewardCardW + Math.max(0, rewards.length - 1) * rewardGap;
+  let rewardX = panelX + Math.max(18, Math.round((panelW - totalRewardsW) * 0.5));
+  const rewardY = summaryY + 30;
+  for (const reward of rewards) {
+    ctx.fillStyle = "rgba(10, 14, 22, 0.72)";
+    ctx.fillRect(rewardX, rewardY, rewardCardW, rewardCardH);
+    ctx.strokeStyle = "rgba(255, 229, 170, 0.52)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(rewardX + 0.5, rewardY + 0.5, rewardCardW - 1, rewardCardH - 1);
+
+    const iconBoxSize = 56;
+    const iconX = rewardX + Math.round((rewardCardW - iconBoxSize) * 0.5);
+    const iconY = rewardY + 12;
+    ctx.fillStyle = "rgba(22, 28, 37, 0.82)";
+    ctx.fillRect(iconX, iconY, iconBoxSize, iconBoxSize);
+    ctx.strokeStyle = "rgba(255,255,255,0.26)";
+    ctx.strokeRect(iconX + 0.5, iconY + 0.5, iconBoxSize - 1, iconBoxSize - 1);
+
+    const spriteKey = String(reward?.sprite || "");
+    const sprite = spriteKey ? getItemSprite(spriteKey) : null;
+    if (sprite && (sprite.width > 0 || sprite.naturalWidth > 0)) {
+      ctx.drawImage(sprite, iconX + 2, iconY + 2, iconBoxSize - 4, iconBoxSize - 4);
+    } else {
+      // Fallback XP-style icon.
+      ctx.fillStyle = "rgba(250, 214, 110, 0.92)";
+      ctx.beginPath();
+      ctx.arc(iconX + iconBoxSize * 0.5, iconY + iconBoxSize * 0.5, 16, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = FONT_12;
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(40, 22, 8, 0.95)";
+      ctx.fillText("XP", iconX + iconBoxSize * 0.5, iconY + iconBoxSize * 0.5 + 4);
+      ctx.textAlign = "start";
+    }
+
+    ctx.font = FONT_12;
+    const label = String(reward?.label || "");
+    const labelLines = wrapTextLines(ctx, label, rewardCardW - 12, 2);
+    let labelY = rewardY + 84;
+    for (const line of labelLines) {
+      const lineW = ctx.measureText(line).width;
+      drawUiText(ctx, line, rewardX + (rewardCardW - lineW) * 0.5, labelY, colors);
+      labelY += 14;
+    }
+
+    rewardX += rewardCardW + rewardGap;
+  }
+
+  const buttonW = panelW - 48;
+  const buttonH = 38;
+  const buttonX = panelX + 24;
+  const buttonY = panelY + panelH - buttonH - 20;
+  const buttonHovered = mouseInside &&
+    mouseX >= buttonX && mouseX <= buttonX + buttonW &&
+    mouseY >= buttonY && mouseY <= buttonY + buttonH;
+  ctx.fillStyle = buttonHovered ? "rgba(119, 169, 107, 0.92)" : "rgba(94, 146, 84, 0.9)";
+  ctx.fillRect(buttonX, buttonY, buttonW, buttonH);
+  ctx.strokeStyle = "rgba(14, 28, 12, 0.86)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(buttonX + 0.5, buttonY + 0.5, buttonW - 1, buttonH - 1);
+  ctx.font = FONT_16;
+  const buttonText = "Complete Quest";
+  const buttonTextW = ctx.measureText(buttonText).width;
+  drawUiText(ctx, buttonText, buttonX + (buttonW - buttonTextW) * 0.5, buttonY + 24, colors);
+
+  if (clickRequested && buttonHovered) {
+    completion.requestComplete = true;
+  }
+  if (mouseUiState) {
+    mouseUiState.questCompletionClickRequest = false;
   }
   ctx.restore();
 }
@@ -2321,6 +2792,7 @@ export function renderGameFrame({
     drawCombatHud(ctx, state, uiColors, tileSize, cameraZoom, getItemSprite);
     drawCombatLevelHud(ctx, state, uiColors);
     drawObjectiveTracker(ctx, state, uiColors);
+    drawQuestTrackerHint(ctx, state, uiColors);
     drawMinimap(ctx, state, uiColors);
     drawFriendliesHud(ctx, state, uiColors);
     drawDoorHint(ctx, state, uiColors, dialogue, cameraZoom);
@@ -2332,6 +2804,8 @@ export function renderGameFrame({
     drawPauseMenuOverlay(ctx, state, canvas, ui, uiColors);
     drawAttributesOverlay(ctx, state, canvas, ui, uiColors);
     drawSettingsOverlay(ctx, state, canvas, ui, uiColors);
+    drawQuestTrackerOverlay(ctx, state, canvas, ui, uiColors);
+    drawQuestCompletionOverlay(ctx, state, canvas, ui, uiColors, getItemSprite);
     ctx.restore();
   }
   drawCombatLevelCelebrationOverlay(ctx, state);
