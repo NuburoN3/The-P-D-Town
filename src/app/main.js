@@ -306,7 +306,7 @@ const objectiveState = {
 };
 const questUpdateNoticeState = {
   active: false,
-  text: "Quest updated (G to view)",
+  text: "Quest updated",
   startedAt: 0,
   holdMs: 4000,
   introMs: 320,
@@ -2205,7 +2205,7 @@ function syncObjectiveState(now = performance.now()) {
         questUpdateNoticeState.startedAt = now;
       } else if (hasObjective && previousObjectiveId !== next.id) {
         questUpdateNoticeState.active = true;
-        questUpdateNoticeState.text = "Quest updated (G to view)";
+        questUpdateNoticeState.text = "Quest updated";
         questUpdateNoticeState.startedAt = now;
       }
     }

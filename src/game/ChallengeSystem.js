@@ -33,7 +33,7 @@ export function createChallengeSystem({ tileSize, vfxSystem }) {
     return kills >= target;
   }
 
-  function handleDojoChallengeDefeat({ gameFlags, player, itemAlert }, tp, enemy, now, outcome) {
+  function handleDojoChallengeDefeat({ gameFlags, player }, tp, enemy, now, outcome) {
     if (!enemy?.countsForChallenge) return;
     if (!gameFlags.acceptedTraining) {
       resetEnemyToSpawn(enemy, now);
@@ -49,18 +49,12 @@ export function createChallengeSystem({ tileSize, vfxSystem }) {
 
     enemy.challengeDefeatedCounted = true;
     tp.challengeKills = Math.min(tp.challengeTarget, tp.challengeKills + 1);
-    itemAlert.active = true;
-    itemAlert.text = `Challenge progress: ${tp.challengeKills}/${tp.challengeTarget}`;
-    itemAlert.startedAt = now;
     outcome.challengeProgressText = `${tp.challengeKills}/${tp.challengeTarget}`;
 
     if (tp.challengeKills >= tp.challengeTarget) {
       gameFlags.completedTraining = true;
       if (!tp.challengeCompleteAnnounced) {
         tp.challengeCompleteAnnounced = true;
-        itemAlert.active = true;
-        itemAlert.text = "Challenge complete! Return to Mr. Hanami for your next challenge.";
-        itemAlert.startedAt = now;
         vfxSystem.spawn("trainingBurst", {
           x: player.x + tileSize / 2,
           y: player.y + tileSize * 0.35,
@@ -72,7 +66,7 @@ export function createChallengeSystem({ tileSize, vfxSystem }) {
     }
   }
 
-  function handleBogTrialDefeat({ player, itemAlert }, tp, enemy, now, outcome) {
+  function handleBogTrialDefeat({ player }, tp, enemy, now, outcome) {
     const enemyId = typeof enemy?.id === "string" ? enemy.id.toLowerCase() : "";
     const enemyName = typeof enemy?.name === "string" ? enemy.name.toLowerCase() : "";
     const enemyWorld = typeof enemy?.world === "string" ? enemy.world : "";
@@ -90,16 +84,9 @@ export function createChallengeSystem({ tileSize, vfxSystem }) {
     tp.bogQuestKills = Math.min(tp.bogQuestTarget, tp.bogQuestKills + 1);
     outcome.bogProgressText = `${tp.bogQuestKills}/${tp.bogQuestTarget}`;
 
-    itemAlert.active = true;
-    itemAlert.text = `Bog trial progress: ${tp.bogQuestKills}/${tp.bogQuestTarget}`;
-    itemAlert.startedAt = now;
-
     if (tp.bogQuestKills >= tp.bogQuestTarget) {
       tp.bogQuestCompleted = true;
       tp.bogQuestActive = true;
-      itemAlert.active = true;
-      itemAlert.text = "Bog trial complete! Report to Mr. Hanami in Bogland.";
-      itemAlert.startedAt = now;
       vfxSystem.spawn("trainingBurst", {
         x: player.x + tileSize / 2,
         y: player.y + tileSize * 0.35,
@@ -110,7 +97,7 @@ export function createChallengeSystem({ tileSize, vfxSystem }) {
     }
   }
 
-  function handleEnemyDefeat({ gameFlags, currentTownId, player, itemAlert }, enemy, now) {
+  function handleEnemyDefeat({ gameFlags, currentTownId, player }, enemy, now) {
     const tp = gameFlags.townProgress?.[currentTownId];
     if (!tp || !enemy) return null;
     normalizeTownProgressForChallenges(tp);
@@ -122,8 +109,8 @@ export function createChallengeSystem({ tileSize, vfxSystem }) {
       bogCompletedNow: false
     };
 
-    handleDojoChallengeDefeat({ gameFlags, player, itemAlert }, tp, enemy, now, outcome);
-    handleBogTrialDefeat({ player, itemAlert }, tp, enemy, now, outcome);
+    handleDojoChallengeDefeat({ gameFlags, player }, tp, enemy, now, outcome);
+    handleBogTrialDefeat({ player }, tp, enemy, now, outcome);
 
     const changed = outcome.challengeProgressText ||
       outcome.completedNow ||

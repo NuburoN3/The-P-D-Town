@@ -2430,7 +2430,7 @@ function drawQuestUpdateNotice(ctx, state, cameraZoom, tileSize, colors) {
 
   const text = typeof notice.text === "string" && notice.text.trim().length > 0
     ? notice.text
-    : "Quest updated (G to view)";
+    : "Quest updated";
   const screenX = Math.round(ctx.canvas.width * 0.5);
   const screenY = Math.round(ctx.canvas.height * 0.42);
 
