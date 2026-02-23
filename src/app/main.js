@@ -2186,6 +2186,7 @@ function syncObjectiveState(now = performance.now()) {
     )
   );
   if (!(objectiveState.id === next.id && objectiveState.text === next.text && markerUnchanged && markerAreaUnchanged)) {
+    const previousObjectiveId = objectiveState.id;
     const hadObjective = Boolean(objectiveState.id && objectiveState.text);
     const hasObjective = Boolean(next.id && next.text);
     objectiveState.id = next.id;
@@ -2202,7 +2203,7 @@ function syncObjectiveState(now = performance.now()) {
         questUpdateNoticeState.active = true;
         questUpdateNoticeState.text = "Quest complete";
         questUpdateNoticeState.startedAt = now;
-      } else if (hasObjective) {
+      } else if (hasObjective && previousObjectiveId !== next.id) {
         questUpdateNoticeState.active = true;
         questUpdateNoticeState.text = "Quest updated (G to view)";
         questUpdateNoticeState.startedAt = now;
