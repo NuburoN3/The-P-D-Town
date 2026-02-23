@@ -35,7 +35,7 @@ const SKILL_METADATA = Object.freeze({
   },
   bonk: {
     displayName: "Bonk",
-    description: "A weapon-only heavy bonk. Wind up for 1 second, then strike for normal damage plus 20 bonus damage.",
+    description: "A weapon-only heavy bonk. Wind up for 1 second, then strike in the hit state for normal damage plus 20 bonus damage.",
     manaCost: 2,
     useSeconds: 1
   }

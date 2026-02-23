@@ -34,6 +34,26 @@ export function createCombatSystem({
     onHitConfirmed: eventHandlers.onHitConfirmed || (() => { })
   };
 
+  function canApplyHitForProfile(player, profile, now) {
+    if (!profile?.damageOnlyOnHitCue) return true;
+    const hitWindowUntil = Number.isFinite(player?.attackHitWindowUntil) ? player.attackHitWindowUntil : 0;
+    return now <= hitWindowUntil;
+  }
+
+  function emitPlayerAttackHitCue(player, profile, now, cueDetails = {}) {
+    if (playerAttackHitFrameCuePlayed) return;
+    playerAttackHitFrameCuePlayed = true;
+    if (profile?.damageOnlyOnHitCue) {
+      const hitWindowMs = Number.isFinite(profile.hitWindowMs) ? Math.max(1, profile.hitWindowMs) : 80;
+      player.attackHitWindowUntil = now + hitWindowMs;
+    }
+    handlers.onPlayerAttackHitFrame({
+      attacker: player,
+      now,
+      ...cueDetails
+    });
+  }
+
   function resolveWeightedDamage(table, fallbackDamage = 0) {
     const safeFallback = Number.isFinite(fallbackDamage) ? Math.max(0, Math.floor(fallbackDamage)) : 0;
     if (!Array.isArray(table) || table.length === 0) return safeFallback;
@@ -90,16 +110,22 @@ export function createCombatSystem({
     const profile = resolveAttackProfile(catalog, resolvedAttackId, defaultAttackId);
     if (!profile) return null;
 
+    const pickNumber = (preferred, fallback) => {
+      if (Number.isFinite(preferred)) return preferred;
+      if (Number.isFinite(fallback)) return fallback;
+      return undefined;
+    };
+
     // Preserve compatibility with legacy player fields while enabling catalog-driven attacks.
     const merged = {
       ...profile,
-      cooldownMs: Number.isFinite(entity.attackCooldownMs) ? entity.attackCooldownMs : profile.cooldownMs,
-      windupMs: Number.isFinite(entity.attackWindupMs) ? entity.attackWindupMs : profile.windupMs,
-      activeMs: Number.isFinite(entity.attackActiveMs) ? entity.attackActiveMs : profile.activeMs,
-      recoveryMs: Number.isFinite(entity.attackRecoveryMs) ? entity.attackRecoveryMs : profile.recoveryMs,
-      range: Number.isFinite(entity.attackRange) ? entity.attackRange : profile.range,
-      hitRadius: Number.isFinite(entity.attackHitRadius) ? entity.attackHitRadius : profile.hitRadius,
-      damage: Number.isFinite(entity.attackDamage) ? entity.attackDamage : profile.damage
+      cooldownMs: pickNumber(profile.cooldownMs, entity.attackCooldownMs),
+      windupMs: pickNumber(profile.windupMs, entity.attackWindupMs),
+      activeMs: pickNumber(profile.activeMs, entity.attackActiveMs),
+      recoveryMs: pickNumber(profile.recoveryMs, entity.attackRecoveryMs),
+      range: pickNumber(profile.range, entity.attackRange),
+      hitRadius: pickNumber(profile.hitRadius, entity.attackHitRadius),
+      damage: pickNumber(profile.damage, entity.attackDamage)
     };
 
     return merged;
@@ -114,6 +140,7 @@ export function createCombatSystem({
     player.attackRecoveryUntil = player.attackActiveUntil + profile.recoveryMs;
     player.lastAttackAt = now;
     player.activeAttackId = profile.id;
+    player.attackHitWindowUntil = 0;
     playerAttackHitFrameCuePlayed = false;
     hitIdsInCurrentSwing.clear();
 
@@ -137,6 +164,12 @@ export function createCombatSystem({
     if (player.attackState === "windup" && now >= player.attackActiveAt) {
       player.attackState = "active";
       const profile = getAttackProfileForEntity(player, player.activeAttackId);
+      if (profile?.hitCueAtActiveStart) {
+        emitPlayerAttackHitCue(player, profile, now, {
+          frame: 0,
+          hitFrame: 0
+        });
+      }
       handlers.onPlayerAttackActive({
         attacker: player,
         profile,
@@ -152,6 +185,7 @@ export function createCombatSystem({
 
     if (player.attackState === "recovery" && now >= player.attackRecoveryUntil) {
       player.attackState = "idle";
+      player.attackHitWindowUntil = 0;
       playerAttackHitFrameCuePlayed = false;
       hitIdsInCurrentSwing.clear();
       npcHitIdsInCurrentSwing.clear();
@@ -183,12 +217,10 @@ export function createCombatSystem({
     const maxReachableFrame = resolvePlayerAttackFrameIndex(1, availableFrames);
     const effectiveHitFrame = Math.min(hitFrame, maxReachableFrame);
     if (frame >= effectiveHitFrame) {
-      playerAttackHitFrameCuePlayed = true;
-      handlers.onPlayerAttackHitFrame({
-        attacker: player,
+      const profile = getAttackProfileForEntity(player, player.activeAttackId);
+      emitPlayerAttackHitCue(player, profile, now, {
         frame,
-        hitFrame: effectiveHitFrame,
-        now
+        hitFrame: effectiveHitFrame
       });
     }
   }
@@ -282,6 +314,7 @@ export function createCombatSystem({
   function processPlayerHits({ now, player, enemies, currentAreaId, profile, playerEquipment = null }) {
     if (player.attackState !== "active") return;
     if (!profile) return;
+    if (!canApplyHitForProfile(player, profile, now)) return;
 
     const attackCenter = profile.getAttackCenter
       ? profile.getAttackCenter(player)
@@ -306,6 +339,7 @@ export function createCombatSystem({
   function processPlayerNpcHits({ now, player, npcs, currentAreaId, profile }) {
     if (player.attackState !== "active") return;
     if (!profile || !Array.isArray(npcs) || npcs.length === 0) return;
+    if (!canApplyHitForProfile(player, profile, now)) return;
 
     const attackCenter = profile.getAttackCenter
       ? profile.getAttackCenter(player)
@@ -477,6 +511,7 @@ export function createCombatSystem({
     ) {
       player.attackState = "idle";
       player.activeAttackId = null;
+      player.attackHitWindowUntil = 0;
       hitIdsInCurrentSwing.clear();
       npcHitIdsInCurrentSwing.clear();
       return;

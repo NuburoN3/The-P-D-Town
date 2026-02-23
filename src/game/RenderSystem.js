@@ -153,6 +153,127 @@ function getDialogueUiAlpha(dialogueActive) {
   return easeOutCubic(raw);
 }
 
+function drawSoundControlPanel(ctx, {
+  boxX,
+  boxY,
+  boxW = 340,
+  boxH = 108,
+  highContrast = false,
+  soundControls
+}) {
+  const sliderX = boxX + 118;
+  const sliderW = boxW - 184;
+  const musicSliderY = boxY + 44;
+  const sfxSliderY = boxY + 78;
+  const musicVolume = clamp01(soundControls?.musicVolume);
+  const sfxVolume = clamp01(soundControls?.sfxVolume);
+  const hoveredSlider = soundControls?.hoveredSlider || "";
+  const draggingSlider = soundControls?.draggingSlider || "";
+
+  const soundAura = ctx.createRadialGradient(
+    boxX + boxW * 0.45,
+    boxY + boxH * 0.35,
+    22,
+    boxX + boxW * 0.5,
+    boxY + boxH * 0.7,
+    boxW * 0.9
+  );
+  soundAura.addColorStop(0, highContrast ? "rgba(96, 182, 234, 0.18)" : "rgba(247, 214, 145, 0.16)");
+  soundAura.addColorStop(1, "rgba(247, 214, 145, 0)");
+  ctx.fillStyle = soundAura;
+  ctx.fillRect(boxX - 14, boxY - 14, boxW + 28, boxH + 28);
+
+  const soundParchment = ctx.createLinearGradient(boxX, boxY, boxX, boxY + boxH);
+  soundParchment.addColorStop(0, highContrast ? "#212833" : "#efe0b8");
+  soundParchment.addColorStop(1, highContrast ? "#101722" : "#d3b57a");
+  ctx.fillStyle = soundParchment;
+  ctx.fillRect(boxX, boxY, boxW, boxH);
+
+  const soundInner = ctx.createLinearGradient(boxX + 5, boxY + 5, boxX + 5, boxY + boxH - 5);
+  soundInner.addColorStop(0, highContrast ? "rgba(48,58,74,0.86)" : "rgba(255,248,222,0.75)");
+  soundInner.addColorStop(1, highContrast ? "rgba(26,35,49,0.82)" : "rgba(230,205,146,0.62)");
+  ctx.fillStyle = soundInner;
+  ctx.fillRect(boxX + 5, boxY + 5, boxW - 10, boxH - 10);
+
+  ctx.strokeStyle = highContrast ? "#a6dfff" : "#6c4b1d";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(boxX + 1.5, boxY + 1.5, boxW - 3, boxH - 3);
+
+  ctx.strokeStyle = highContrast ? "#eef8ff" : "#f7e1ab";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(boxX + 6.5, boxY + 6.5, boxW - 13, boxH - 13);
+
+  const soundHeaderGradient = ctx.createLinearGradient(boxX + 8, boxY + 10, boxX + boxW - 8, boxY + 32);
+  if (highContrast) {
+    soundHeaderGradient.addColorStop(0, "rgba(41, 86, 118, 0.82)");
+    soundHeaderGradient.addColorStop(0.5, "rgba(67, 132, 179, 0.74)");
+    soundHeaderGradient.addColorStop(1, "rgba(41, 86, 118, 0.82)");
+  } else {
+    soundHeaderGradient.addColorStop(0, "rgba(116, 74, 32, 0.75)");
+    soundHeaderGradient.addColorStop(0.5, "rgba(151, 105, 49, 0.65)");
+    soundHeaderGradient.addColorStop(1, "rgba(116, 74, 32, 0.75)");
+  }
+  ctx.fillStyle = soundHeaderGradient;
+  ctx.fillRect(boxX + 8, boxY + 10, boxW - 16, 22);
+
+  ctx.font = FONT_16;
+  ctx.fillStyle = highContrast ? "rgba(14, 28, 42, 0.5)" : "rgba(45, 24, 7, 0.45)";
+  ctx.fillText("Sound Control", boxX + 20, boxY + 28);
+  ctx.fillStyle = highContrast ? "#f7fdff" : "#fff2ca";
+  ctx.fillText("Sound Control", boxX + 19, boxY + 27);
+
+  const drawPauseSlider = (label, value, centerY, isActive) => {
+    const trackH = 6;
+    const knobRadius = isActive ? 8 : 7;
+    const fillW = Math.max(0, Math.min(sliderW, sliderW * value));
+    const trackGradient = ctx.createLinearGradient(sliderX, centerY - 1, sliderX + sliderW, centerY + 1);
+    if (highContrast) {
+      trackGradient.addColorStop(0, "rgba(95, 138, 171, 0.85)");
+      trackGradient.addColorStop(1, "rgba(56, 95, 129, 0.82)");
+    } else {
+      trackGradient.addColorStop(0, "rgba(142, 102, 58, 0.84)");
+      trackGradient.addColorStop(1, "rgba(110, 74, 37, 0.82)");
+    }
+    ctx.fillStyle = trackGradient;
+    ctx.fillRect(sliderX, centerY - trackH / 2, sliderW, trackH);
+
+    const fillGradient = ctx.createLinearGradient(sliderX, centerY - 1, sliderX + fillW, centerY + 1);
+    if (highContrast) {
+      fillGradient.addColorStop(0, "rgba(171, 236, 255, 0.95)");
+      fillGradient.addColorStop(1, "rgba(118, 205, 236, 0.95)");
+    } else {
+      fillGradient.addColorStop(0, "rgba(255, 229, 165, 0.95)");
+      fillGradient.addColorStop(1, "rgba(227, 176, 95, 0.95)");
+    }
+    ctx.fillStyle = fillGradient;
+    ctx.fillRect(sliderX, centerY - trackH / 2, fillW, trackH);
+
+    const knobX = sliderX + fillW;
+    ctx.beginPath();
+    ctx.arc(knobX, centerY, knobRadius, 0, Math.PI * 2);
+    ctx.fillStyle = highContrast ? "#e5f8ff" : "#fff2cf";
+    ctx.fill();
+    ctx.strokeStyle = highContrast ? "#73b9de" : "#8f5e2c";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.font = FONT_16;
+    ctx.fillStyle = highContrast ? "#e8f8ff" : "#4b2d12";
+    ctx.fillText(label, boxX + 20, centerY + 5);
+    ctx.font = FONT_12;
+    const pct = `${Math.round(value * 100)}%`;
+    ctx.fillStyle = highContrast ? "rgba(211,238,251,0.95)" : "rgba(88, 56, 26, 0.9)";
+    const prevAlign = ctx.textAlign;
+    const pctX = boxX + boxW - 20;
+    ctx.textAlign = "right";
+    ctx.fillText(pct, pctX, centerY + 4);
+    ctx.textAlign = prevAlign;
+  };
+
+  drawPauseSlider("Music", musicVolume, musicSliderY, hoveredSlider === "music" || draggingSlider === "music");
+  drawPauseSlider("SFX", sfxVolume, sfxSliderY, hoveredSlider === "sfx" || draggingSlider === "sfx");
+}
+
 function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
   const { gameState, pauseMenuState } = state;
   const isPauseActive = gameState === GAME_STATES.PAUSE_MENU;
@@ -188,6 +309,11 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
   const slideOffset = (1 - visibility) * 34;
   const menuX = canvas.width - menuW - 24 + slideOffset;
   const menuY = (canvas.height - menuH) / 2;
+  const soundBoxW = menuW;
+  const soundBoxH = 108;
+  const soundBoxX = menuX;
+  const soundBoxY = Math.max(14, menuY - soundBoxH - 14);
+  const soundControls = pauseMenuState?.soundControls || {};
 
   const aura = ctx.createRadialGradient(
     menuX + menuW * 0.5,
@@ -201,6 +327,15 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
   aura.addColorStop(1, "rgba(247, 214, 145, 0)");
   ctx.fillStyle = aura;
   ctx.fillRect(menuX - 20, menuY - 20, menuW + 40, menuH + 40);
+
+  drawSoundControlPanel(ctx, {
+    boxX: soundBoxX,
+    boxY: soundBoxY,
+    boxW: soundBoxW,
+    boxH: soundBoxH,
+    highContrast,
+    soundControls
+  });
 
   const parchment = ctx.createLinearGradient(menuX, menuY, menuX, menuY + menuH);
   parchment.addColorStop(0, highContrast ? "#212833" : "#f2e1b4");
@@ -833,15 +968,6 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom, getItemSprite =
   }
   ctx.restore();
 
-  const showChallenge = state.objectiveState?.id === "dojo-upstairs-challenge";
-  if (showChallenge) {
-    const tp = state.gameFlags.townProgress?.[state.currentTownId];
-    const kills = Number.isFinite(tp?.challengeKills) ? tp.challengeKills : 0;
-    const target = Number.isFinite(tp?.challengeTarget) ? tp.challengeTarget : 3;
-    ctx.font = FONT_12;
-    const challengeText = `Challenge: ${kills}/${target}`;
-    drawUiText(ctx, challengeText, barX + 2, barsPanelY - 5, colors);
-  }
 }
 
 function drawCombatLevelHud(ctx, state, colors) {
@@ -1105,16 +1231,39 @@ function drawFriendliesHud(ctx, state, colors) {
 
 function drawPlayerSkillChannelBar(ctx, state, tileSize, getItemSprite = null) {
   if (!state?.player || !state?.cam) return;
+  const player = state.player;
+  const now = performance.now();
   const obeyState = state.obeyState && typeof state.obeyState === "object" ? state.obeyState : null;
-  if (!obeyState?.active || !Number.isFinite(obeyState.startedAt) || !Number.isFinite(obeyState.durationMs) || obeyState.durationMs <= 0) {
+  let ratio = 0;
+  let label = "";
+  let barFillColor = "#7ecf9a";
+  let iconId = "";
+
+  if (obeyState?.active && Number.isFinite(obeyState.startedAt) && Number.isFinite(obeyState.durationMs) && obeyState.durationMs > 0) {
+    const elapsed = Math.max(0, now - obeyState.startedAt);
+    ratio = Math.max(0, Math.min(1, elapsed / obeyState.durationMs));
+    label = "Obey";
+    barFillColor = "#7ecf9a";
+    iconId = "obey";
+  } else if (
+    String(player?.activeAttackId || "").toLowerCase() === "bonkstrike" &&
+    player?.attackState === "windup" &&
+    Number.isFinite(player.attackStartedAt) &&
+    Number.isFinite(player.attackActiveAt) &&
+    player.attackActiveAt > player.attackStartedAt
+  ) {
+    const elapsed = Math.max(0, now - player.attackStartedAt);
+    const durationMs = Math.max(1, player.attackActiveAt - player.attackStartedAt);
+    ratio = Math.max(0, Math.min(1, elapsed / durationMs));
+    label = "Bonk";
+    barFillColor = "#f0c266";
+    iconId = "bonk";
+  } else {
     return;
   }
 
-  const now = performance.now();
-  const elapsed = Math.max(0, now - obeyState.startedAt);
-  const ratio = Math.max(0, Math.min(1, elapsed / obeyState.durationMs));
-  const playerX = Number.isFinite(state.player.x) ? state.player.x : 0;
-  const playerY = Number.isFinite(state.player.y) ? state.player.y : 0;
+  const playerX = Number.isFinite(player.x) ? player.x : 0;
+  const playerY = Number.isFinite(player.y) ? player.y : 0;
   const camX = Number.isFinite(state.cam.x) ? state.cam.x : 0;
   const camY = Number.isFinite(state.cam.y) ? state.cam.y : 0;
   const barW = Math.max(18, tileSize * 1.18);
@@ -1123,26 +1272,26 @@ function drawPlayerSkillChannelBar(ctx, state, tileSize, getItemSprite = null) {
   const barY = Math.round(playerY - camY + tileSize + Math.max(2, Math.round(tileSize * 0.05)));
   ctx.fillStyle = "rgba(8, 12, 16, 0.86)";
   ctx.fillRect(barX, barY, barW, barH);
-  ctx.fillStyle = "#7ecf9a";
+  ctx.fillStyle = barFillColor;
   ctx.fillRect(barX, barY, Math.round(barW * ratio), barH);
   ctx.strokeStyle = "rgba(245, 250, 236, 0.68)";
   ctx.lineWidth = 1;
   ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
 
-  const obeyIcon = typeof getItemSprite === "function" ? getItemSprite("obey") : null;
+  const skillIcon = typeof getItemSprite === "function" ? getItemSprite(iconId) : null;
   const iconSize = Math.max(18, Math.round(tileSize * 0.92));
   const iconX = Math.round(barX + (barW - iconSize) * 0.5);
   const iconY = Math.round(barY + barH + 4);
-  if (obeyIcon && obeyIcon.width && obeyIcon.height) {
+  if (skillIcon && skillIcon.width && skillIcon.height) {
     ctx.fillStyle = "rgba(10, 14, 18, 0.72)";
     ctx.fillRect(iconX - 2, iconY - 2, iconSize + 4, iconSize + 4);
-    ctx.drawImage(obeyIcon, iconX, iconY, iconSize, iconSize);
+    ctx.drawImage(skillIcon, iconX, iconY, iconSize, iconSize);
   }
 
   ctx.font = FONT_12;
   ctx.textAlign = "center";
   ctx.fillStyle = "rgba(245, 250, 236, 0.95)";
-  ctx.fillText("Obey", Math.round(barX + barW * 0.5), iconY + iconSize + 10);
+  ctx.fillText(label, Math.round(barX + barW * 0.5), iconY + iconSize + 10);
   ctx.textAlign = "start";
 }
 
@@ -2262,6 +2411,79 @@ function drawAtmosphere(ctx, canvas, colors, state, cameraZoom = 1) {
   }
 }
 
+function drawQuestUpdateNotice(ctx, state, cameraZoom, tileSize, colors) {
+  const notice = state.questUpdateNoticeState;
+  if (!notice?.active) return;
+  if (!isFreeExploreState(state.gameState)) return;
+
+  const now = performance.now();
+  const introMs = Number.isFinite(notice.introMs) ? Math.max(120, notice.introMs) : 320;
+  const holdMs = Number.isFinite(notice.holdMs) ? Math.max(400, notice.holdMs) : 4000;
+  const outroMs = Number.isFinite(notice.outroMs) ? Math.max(120, notice.outroMs) : 320;
+  const elapsed = now - (Number.isFinite(notice.startedAt) ? notice.startedAt : 0);
+  const totalMs = introMs + holdMs + outroMs;
+
+  if (elapsed >= totalMs) {
+    notice.active = false;
+    return;
+  }
+
+  const text = typeof notice.text === "string" && notice.text.trim().length > 0
+    ? notice.text
+    : "Quest updated (G to view)";
+  const screenX = Math.round(ctx.canvas.width * 0.5);
+  const screenY = Math.round(ctx.canvas.height * 0.42);
+
+  ctx.save();
+  ctx.font = FONT_20;
+  const textW = Math.ceil(ctx.measureText(text).width);
+  const textX = Math.round(screenX - textW / 2);
+  const textY = Math.round(screenY);
+
+  let alpha = 1;
+  let clipX = textX;
+  let clipW = textW;
+  if (elapsed < introMs) {
+    const t = easeOutCubic(elapsed / introMs);
+    alpha = t;
+    clipW = Math.max(1, Math.round(textW * t));
+  } else if (elapsed > introMs + holdMs) {
+    const t = easeInCubic((elapsed - introMs - holdMs) / outroMs);
+    const keep = 1 - t;
+    alpha = keep;
+    clipW = Math.max(1, Math.round(textW * keep));
+    clipX = Math.round(textX + (textW - clipW));
+  }
+
+  // Additional slow opacity envelope on top of wipe animation.
+  const slowFadeMs = 2000;
+  const fadeInAlpha = Math.max(0, Math.min(1, elapsed / slowFadeMs));
+  const remainingMs = Math.max(0, totalMs - elapsed);
+  const fadeOutAlpha = Math.max(0, Math.min(1, remainingMs / slowFadeMs));
+  alpha *= Math.min(fadeInAlpha, fadeOutAlpha);
+
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.beginPath();
+  ctx.rect(clipX, textY - 24, clipW, 36);
+  ctx.clip();
+
+  // Soft halo + shadowed text for readability with no panel box.
+  const glow = ctx.createRadialGradient(screenX, textY - 10, 8, screenX, textY - 8, Math.max(80, textW));
+  glow.addColorStop(0, "rgba(137, 209, 255, 0.16)");
+  glow.addColorStop(1, "rgba(137, 209, 255, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(textX - 20, textY - 32, textW + 40, 44);
+
+  ctx.textBaseline = "alphabetic";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.92)";
+  ctx.strokeText(text, textX, textY);
+  ctx.fillStyle = "rgba(245, 228, 176, 0.98)";
+  ctx.fillText(text, textX, textY);
+  ctx.restore();
+}
+
 function drawWorldVfx(ctx, state) {
   const effects = Array.isArray(state.vfxEffects) ? state.vfxEffects : null;
   if (!effects || effects.length === 0) return;
@@ -2427,6 +2649,7 @@ function drawMoodGrading(ctx, canvas, state) {
 function drawTitleScreenOverlay(ctx, canvas, state, colors) {
   const titleState = state.titleState;
   if (!titleState || state.gameState !== GAME_STATES.TITLE_SCREEN) return;
+  const highContrast = Boolean(state.pauseMenuState?.highContrast);
 
   const now = performance.now();
   const elapsed = (now - titleState.startedAt) / 1000;
@@ -2460,6 +2683,15 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
   ctx.font = FONT_20;
   ctx.fillStyle = "rgba(243, 227, 198, 0.92)";
   ctx.fillText(BRANDING.STUDIO, 84, 148);
+
+  drawSoundControlPanel(ctx, {
+    boxX: canvas.width - 340 - 24,
+    boxY: 14,
+    boxW: 340,
+    boxH: 108,
+    highContrast,
+    soundControls: state.pauseMenuState?.soundControls || {}
+  });
 
   const panelX = 72;
   const optionCount = Array.isArray(titleState.options) ? titleState.options.length : 0;
@@ -2665,8 +2897,13 @@ function drawIntroCutsceneOverlay(ctx, canvas, state) {
   const blurPx = (1 - wakeProgress) * 3.2;
 
   const clampedAlpha = clamp01(imageAlpha);
+  const frameTopH = Math.max(0, Math.floor(drawY));
+  const frameBottomY = Math.min(canvas.height, Math.ceil(drawY + drawH));
 
   ctx.save();
+  ctx.beginPath();
+  ctx.rect(drawX, drawY, drawW, drawH);
+  ctx.clip();
   // Cream backdrop that blends with the image's transparent/soft background.
   ctx.globalAlpha = clampedAlpha;
   ctx.fillStyle = "#efe3d2";
@@ -2715,6 +2952,15 @@ function drawIntroCutsceneOverlay(ctx, canvas, state) {
     }
   }
   ctx.restore();
+
+  // Cinematic letterbox framing above and below the scene image.
+  ctx.fillStyle = "#000";
+  if (frameTopH > 0) {
+    ctx.fillRect(0, 0, canvas.width, frameTopH);
+  }
+  if (frameBottomY < canvas.height) {
+    ctx.fillRect(0, frameBottomY, canvas.width, canvas.height - frameBottomY);
+  }
 }
 
 function drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoom, drawTile) {
@@ -2870,6 +3116,7 @@ export function renderGameFrame({
   const nonDialogueUiAlpha = getDialogueUiAlpha(dialogueActive);
 
   drawItemNotifications(ctx, state, cameraZoom, tileSize, uiColors, getItemSprite);
+  drawQuestUpdateNotice(ctx, state, cameraZoom, tileSize, uiColors);
 
   if (nonDialogueUiAlpha > 0.01) {
     ctx.save();

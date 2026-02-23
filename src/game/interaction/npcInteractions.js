@@ -332,12 +332,6 @@ export function createNPCInteractionHandler({
       tp.rumorQuestCompleted = true;
     }
 
-    itemAlert.active = true;
-    itemAlert.text = found >= 3
-      ? "All rumor leads gathered. Report back to Mr. Hanami."
-      : `Rumor lead gathered (${found}/3).`;
-    itemAlert.startedAt = performance.now();
-
     spawnVisualEffect("interactionPulse", {
       x: player.x + tileSize / 2,
       y: player.y + tileSize * 0.25,
@@ -414,9 +408,6 @@ export function createNPCInteractionHandler({
     nextTp.rumorQuestCompleted = false;
     nextTp.rumorQuestReported = false;
     gameFlags.taikoHouseUnlocked = true;
-    itemAlert.active = true;
-    itemAlert.text = "Investigation started. Follow leads: piazza -> chapel -> bar.";
-    itemAlert.startedAt = performance.now();
 
     showDialogue(npcName, [
       "Before your next lesson, gather three witness accounts for me.",
@@ -514,9 +505,6 @@ export function createNPCInteractionHandler({
         bogQuestReported: true,
         bogQuestActive: false
       });
-      itemAlert.active = true;
-      itemAlert.text = trainingContent?.bogQuest?.completeNotice || "Bog trial complete. Report accepted.";
-      itemAlert.startedAt = performance.now();
       let reportLines = Array.isArray(trainingContent?.bogQuest?.reportLines)
         ? trainingContent.bogQuest.reportLines
         : [
@@ -690,6 +678,10 @@ export function createNPCInteractionHandler({
     }
 
     if (!npc.hasTrainingChoice) {
+      if (npc.id === "innkeeperPat" && !gameFlags.basicTrainingStarted) {
+        gameFlags.basicTrainingStarted = true;
+        syncObjectiveState();
+      }
       const clueDialogue = tryCollectRumorClue(npc, tp);
       if (clueDialogue) {
         showDialogue(npc.name, clueDialogue);
@@ -754,9 +746,6 @@ export function createNPCInteractionHandler({
         tp.rumorQuestActive = false;
         gameFlags.townRumorResolved = true;
         tp.enduranceUnlocked = true;
-        itemAlert.active = true;
-        itemAlert.text = "Rumor report complete. Town watch updated.";
-        itemAlert.startedAt = performance.now();
         showDialogue(npc.name, [
           "Your report is clear and disciplined.",
           "You confirmed timing, witnesses, and pattern without panic.",
@@ -800,9 +789,6 @@ export function createNPCInteractionHandler({
 
           if (!playerInventory[trainingContent.itemName]) {
             playerInventory[trainingContent.itemName] = 1;
-            itemAlert.active = true;
-            itemAlert.text = trainingContent.itemUnlockMessage;
-            itemAlert.startedAt = performance.now();
             inventoryHint.active = true;
             inventoryHint.startedAt = performance.now();
             inventoryHint.durationMs = 5000;

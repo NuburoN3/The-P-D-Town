@@ -45,7 +45,7 @@ export const ASSET_PATHS = Object.freeze({
 });
 
 export const AUDIO_TRACKS = Object.freeze({
-  TITLE_SCREEN: "assets/sprites/StartScreen_Audio.wav",
+  TITLE_SCREEN: "assets/audio/2025 3.wav",
   HANAMI: "assets/audio/Hanami_Game_Audio_BG.wav",
   ANTICIPATION: "assets/audio/Anticipation_Game_Audio_BG.wav"
 });

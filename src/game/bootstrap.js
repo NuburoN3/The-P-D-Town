@@ -42,6 +42,9 @@ export function createGameRuntime() {
 
   const musicManager = new AudioManager({
     areaTracks: worldService.areaTracks,
+    areaTrackFallbacks: {
+      "hanamiTown:bogland": ["assets/audio/Hanami_Game_Audio_BG.wav"]
+    },
     sfxTracks: {
       enterDoor: "assets/audio/EnterDoor_Sound.wav",
       itemUnlock: "assets/audio/Item_Unlock.wav",
@@ -52,6 +55,8 @@ export function createGameRuntime() {
       menuConfirm: "assets/audio/EnterDoor_Sound.wav",
       menuSelect: "assets/audio/MenuSelect_Sound.wav",
       attackSwing: "assets/audio/MenuSelect_Sound.wav",
+      playerAccurateHit1: "assets/audio/Player_Accurate_Hit.ogg",
+      playerAccurateHit2: "assets/audio/Player_Accurate_Hit2.ogg",
       enemyTelegraph: "assets/audio/collision_sound.wav",
       ogreAttack: "assets/audio/Ogre_Attack_1.ogg",
       ogreHurt: "assets/audio/Ogre_Hurt_1.ogg",
@@ -76,6 +81,7 @@ export function createGameRuntime() {
   musicManager.attachUnlockHandlers();
 
   const gameFlags = {
+    basicTrainingStarted: false,
     acceptedTraining: false,
     completedTraining: false,
     patInnIntroSeen: false,

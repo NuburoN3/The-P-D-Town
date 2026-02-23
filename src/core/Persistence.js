@@ -6,6 +6,8 @@ export const DEFAULT_USER_SETTINGS = Object.freeze({
   screenShake: true,
   reducedFlashes: false,
   textSpeedMultiplier: 1,
+  musicVolume: 0.6,
+  sfxVolume: 0.8,
   keybindings: null
 });
 
@@ -52,6 +54,11 @@ function clampTextSpeed(value) {
   return Math.max(0.5, Math.min(2, value));
 }
 
+function clampUnit(value, fallback) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.min(1, value));
+}
+
 export function sanitizeUserSettings(settings) {
   const source = settings && typeof settings === "object" ? settings : {};
   return {
@@ -59,6 +66,8 @@ export function sanitizeUserSettings(settings) {
     screenShake: source.screenShake !== false,
     reducedFlashes: Boolean(source.reducedFlashes),
     textSpeedMultiplier: clampTextSpeed(source.textSpeedMultiplier),
+    musicVolume: clampUnit(source.musicVolume, DEFAULT_USER_SETTINGS.musicVolume),
+    sfxVolume: clampUnit(source.sfxVolume, DEFAULT_USER_SETTINGS.sfxVolume),
     keybindings: source.keybindings && typeof source.keybindings === "object"
       ? { ...source.keybindings }
       : null

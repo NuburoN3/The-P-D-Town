@@ -442,7 +442,7 @@ export const hanamiTown = {
             mood: "inkQuiet",
             width: 56,
             height: 44,
-            musicSrc: AUDIO_TRACKS.TITLE_SCREEN,
+            musicSrc: "assets/audio/Fadeaway.wav",
             generateBaseMap: generateBoglandBase,
             signposts: [
                 { x: 28, y: 5, text: "Bogland Training Ground" },

@@ -10,6 +10,8 @@ const ATTACK_HEADGEAR_OFFSETS = [
   { x: -1, y: 1 },
   { x: 0, y: 0 }
 ];
+const BONK_ATTACK_ID = "bonkStrike";
+const BONK_IMPACT_FRAME_INDEX = 4; // 5th frame across (0-based)
 
 function drawPlayer(
   ctx,
@@ -104,19 +106,56 @@ function drawPlayer(
   let frame = player.walking ? player.animFrame : 1;
   let attackAnimFrame = frame;
   if (useAttackSprite) {
-    const totalAttackDuration = Math.max(
-      1,
-      (Number.isFinite(player.attackRecoveryUntil) ? player.attackRecoveryUntil : now)
-      - (Number.isFinite(player.attackStartedAt) ? player.attackStartedAt : now)
-    );
-    const elapsed = Math.max(
-      0,
-      now - (Number.isFinite(player.attackStartedAt) ? player.attackStartedAt : now)
-    );
-    const progress = Math.max(0, Math.min(1, elapsed / totalAttackDuration));
+    const isBonkAttack = String(player.activeAttackId || "").toLowerCase() === BONK_ATTACK_ID.toLowerCase();
     const availableFrames = Math.max(1, Math.floor(characterSprite.width / spriteFrameWidth));
     player.attackAnimationFrameCount = availableFrames;
-    frame = resolvePlayerAttackFrameIndex(progress, availableFrames);
+    if (isBonkAttack) {
+      const startedAt = Number.isFinite(player.attackStartedAt) ? player.attackStartedAt : now;
+      const activeAt = Number.isFinite(player.attackActiveAt) ? player.attackActiveAt : now;
+      const recoveryUntil = Number.isFinite(player.attackRecoveryUntil) ? player.attackRecoveryUntil : now;
+      const hitFrame = Math.max(0, Math.min(availableFrames - 1, BONK_IMPACT_FRAME_INDEX));
+
+      if (player.attackState === "windup") {
+        const windupDuration = Math.max(1, activeAt - startedAt);
+        const windupElapsed = Math.max(0, now - startedAt);
+        const progress = Math.max(0, Math.min(1, windupElapsed / windupDuration));
+        const eased = progress * progress * (3 - 2 * progress); // smoothstep for heavier, slower-feeling windup
+        if (hitFrame >= 4) {
+          // Hold early swing-back frames longer; flash frame 4 just before impact frame 5.
+          if (eased < 0.30) {
+            frame = 0;
+          } else if (eased < 0.60) {
+            frame = 1;
+          } else if (eased < 0.88) {
+            frame = 2;
+          } else if (eased < 0.97) {
+            frame = 3;
+          } else {
+            frame = hitFrame;
+          }
+        } else {
+          frame = Math.min(hitFrame, Math.floor(eased * (hitFrame + 1)));
+        }
+      } else {
+        const postDuration = Math.max(1, recoveryUntil - activeAt);
+        const postElapsed = Math.max(0, now - activeAt);
+        const postProgress = Math.max(0, Math.min(1, postElapsed / postDuration));
+        const postFrames = Math.max(1, availableFrames - hitFrame);
+        frame = Math.min(availableFrames - 1, hitFrame + Math.floor(postProgress * postFrames));
+      }
+    } else {
+      const totalAttackDuration = Math.max(
+        1,
+        (Number.isFinite(player.attackRecoveryUntil) ? player.attackRecoveryUntil : now)
+        - (Number.isFinite(player.attackStartedAt) ? player.attackStartedAt : now)
+      );
+      const elapsed = Math.max(
+        0,
+        now - (Number.isFinite(player.attackStartedAt) ? player.attackStartedAt : now)
+      );
+      const progress = Math.max(0, Math.min(1, elapsed / totalAttackDuration));
+      frame = resolvePlayerAttackFrameIndex(progress, availableFrames);
+    }
     attackAnimFrame = frame;
   }
   const sx = frame * spriteFrameWidth;

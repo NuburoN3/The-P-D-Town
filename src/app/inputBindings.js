@@ -35,11 +35,14 @@ export function createInputBindings({
   clearMenuHoverState,
   handleTitleLeftClick,
   handlePauseMenuLeftClick,
+  handlePauseMenuPointerDown = () => false,
+  handlePauseMenuPointerUp = () => false,
   handleSkillSlotPressed,
   tryOpenLeftoversFromInteract = () => false
 }) {
   const POINTER_LOCK_ENABLED = true;
   let pointerLockPrimed = false;
+  let suppressNextPauseMenuClick = false;
 
   function normalizeInputKey(key) {
     const normalized = String(key || "").toLowerCase();
@@ -133,6 +136,10 @@ export function createInputBindings({
       }
     });
     canvas.addEventListener("mouseleave", () => {
+      const gameState = getGameState();
+      if (gameState === gameStates.PAUSE_MENU || gameState === gameStates.SETTINGS || gameState === gameStates.TITLE_SCREEN) {
+        handlePauseMenuPointerUp();
+      }
       mouseUiState.insideCanvas = false;
       mouseUiState.sprintPressed = false;
       if (!mouseUiState.inventorySkillsScrollDragging) {
@@ -151,6 +158,16 @@ export function createInputBindings({
     canvas.addEventListener("mousedown", (e) => {
       pointerLockPrimed = true;
       updateMouseUiPosition(e);
+      const gameState = getGameState();
+      if (e.button === 0 && (gameState === gameStates.PAUSE_MENU || gameState === gameStates.SETTINGS || gameState === gameStates.TITLE_SCREEN)) {
+        const handled = handlePauseMenuPointerDown(mouseUiState.x, mouseUiState.y);
+        if (handled) {
+          suppressNextPauseMenuClick = true;
+          e.preventDefault();
+          syncPointerLockWithState({ fromUserGesture: true });
+          return;
+        }
+      }
       if (e.button === 0 && getGameState() === gameStates.INVENTORY) {
         mouseUiState.inventoryLeftDown = true;
         mouseUiState.inventoryDragStartRequest = true;
@@ -168,6 +185,14 @@ export function createInputBindings({
     });
     canvas.addEventListener("mouseup", (e) => {
       if (e.button === 0) {
+        const gameState = getGameState();
+        if (gameState === gameStates.PAUSE_MENU || gameState === gameStates.SETTINGS || gameState === gameStates.TITLE_SCREEN) {
+          const handled = handlePauseMenuPointerUp();
+          if (handled) {
+            suppressNextPauseMenuClick = true;
+            e.preventDefault();
+          }
+        }
         const hadPanelDrag = Boolean(mouseUiState.inventoryPanelDragTarget);
         const hadItemDrag = Boolean(mouseUiState.inventoryDragItemName);
         const wasSkillsDragging = Boolean(mouseUiState.inventorySkillsScrollDragging);
@@ -190,6 +215,10 @@ export function createInputBindings({
     });
     window.addEventListener("mouseup", (e) => {
       if (e.button === 0) {
+        const gameState = getGameState();
+        if (gameState === gameStates.PAUSE_MENU || gameState === gameStates.SETTINGS || gameState === gameStates.TITLE_SCREEN) {
+          handlePauseMenuPointerUp();
+        }
         const hadPanelDrag = Boolean(mouseUiState.inventoryPanelDragTarget);
         const hadItemDrag = Boolean(mouseUiState.inventoryDragItemName);
         const wasSkillsDragging = Boolean(mouseUiState.inventorySkillsScrollDragging);
@@ -211,6 +240,7 @@ export function createInputBindings({
       }
     });
     window.addEventListener("blur", () => {
+      handlePauseMenuPointerUp();
       mouseUiState.sprintPressed = false;
       mouseUiState.inventoryLeftDown = false;
       mouseUiState.inventoryPanelDragTarget = "";
@@ -231,6 +261,22 @@ export function createInputBindings({
         return;
       }
       const gameState = getGameState();
+      if (
+        suppressNextPauseMenuClick &&
+        gameState !== gameStates.PAUSE_MENU &&
+        gameState !== gameStates.SETTINGS &&
+        gameState !== gameStates.TITLE_SCREEN
+      ) {
+        suppressNextPauseMenuClick = false;
+      }
+      if (
+        suppressNextPauseMenuClick &&
+        (gameState === gameStates.PAUSE_MENU || gameState === gameStates.SETTINGS || gameState === gameStates.TITLE_SCREEN)
+      ) {
+        suppressNextPauseMenuClick = false;
+        e.preventDefault();
+        return;
+      }
       const dialogueActive = Boolean(
         dialogue &&
         typeof dialogue.isActive === "function" &&

@@ -51,6 +51,13 @@ export function normalizeTownProgress(progress = {}) {
 
 export function normalizeGlobalStoryFlags(gameFlags) {
   if (!gameFlags || typeof gameFlags !== "object") return;
+  if (typeof gameFlags.basicTrainingStarted !== "boolean") {
+    gameFlags.basicTrainingStarted = Boolean(
+      gameFlags.patInnIntroSeen ||
+      gameFlags.acceptedTraining ||
+      gameFlags.completedTraining
+    );
+  }
   if (typeof gameFlags.hanamiDojoExitPending !== "boolean") gameFlags.hanamiDojoExitPending = false;
   if (typeof gameFlags.hanamiLeftDojo !== "boolean") gameFlags.hanamiLeftDojo = false;
   if (typeof gameFlags.taikoHouseUnlocked !== "boolean") gameFlags.taikoHouseUnlocked = false;

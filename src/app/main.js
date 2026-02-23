@@ -190,6 +190,12 @@ const returnToPauseMenu = () => {
 };
 
 const userSettings = loadUserSettings();
+if (typeof musicManager.setBgmVolume === "function") {
+  musicManager.setBgmVolume(userSettings.musicVolume, { fadeMs: 0 });
+}
+if (typeof musicManager.setSfxVolume === "function") {
+  musicManager.setSfxVolume(userSettings.sfxVolume);
+}
 // settingsUiState moved to PauseMenuSystem
 
 const SETTINGS_ITEMS = Object.freeze([
@@ -297,6 +303,15 @@ const objectiveState = {
   updatedAt: 0,
   marker: null,
   markerArea: null
+};
+const questUpdateNoticeState = {
+  active: false,
+  text: "Quest updated (G to view)",
+  startedAt: 0,
+  holdMs: 4000,
+  introMs: 320,
+  outroMs: 320,
+  primed: false
 };
 const questTrackerState = {
   quests: [],
@@ -1320,8 +1335,53 @@ function ensurePetExistsInCurrentArea() {
   };
   ensurePetProgressionState(pet);
   if (pet.hp > pet.maxHp) pet.hp = pet.maxHp;
+  const safeSpawn = resolvePetSafePlacement(player.x - TILE, player.y);
+  pet.x = safeSpawn.x;
+  pet.y = safeSpawn.y;
   npcs.push(pet);
   return pet;
+}
+
+function resolvePetSafePlacement(preferredX, preferredY) {
+  const canStandAt = (x, y) => !collisionService.collides(x, y, currentMap, currentMapW, currentMapH);
+  if (canStandAt(preferredX, preferredY)) {
+    return { x: preferredX, y: preferredY };
+  }
+
+  const step = TILE;
+  const aroundPlayer = [
+    { x: player.x - step, y: player.y },
+    { x: player.x + step, y: player.y },
+    { x: player.x, y: player.y - step },
+    { x: player.x, y: player.y + step },
+    { x: player.x - step, y: player.y - step },
+    { x: player.x + step, y: player.y - step },
+    { x: player.x - step, y: player.y + step },
+    { x: player.x + step, y: player.y + step }
+  ];
+  for (const candidate of aroundPlayer) {
+    if (canStandAt(candidate.x, candidate.y)) return candidate;
+  }
+
+  // Spiral outward around requested point to avoid door tiles/walls on area transitions.
+  for (let ring = 1; ring <= 4; ring++) {
+    const r = ring * step;
+    const candidates = [
+      { x: preferredX - r, y: preferredY },
+      { x: preferredX + r, y: preferredY },
+      { x: preferredX, y: preferredY - r },
+      { x: preferredX, y: preferredY + r },
+      { x: preferredX - r, y: preferredY - r },
+      { x: preferredX + r, y: preferredY - r },
+      { x: preferredX - r, y: preferredY + r },
+      { x: preferredX + r, y: preferredY + r }
+    ];
+    for (const candidate of candidates) {
+      if (canStandAt(candidate.x, candidate.y)) return candidate;
+    }
+  }
+
+  return { x: preferredX, y: preferredY };
 }
 
 function updatePetFollow(now) {
@@ -1354,6 +1414,11 @@ function updatePetFollow(now) {
     clearPetAssistState();
     return;
   }
+  if (collisionService.collides(pet.x, pet.y, currentMap, currentMapW, currentMapH)) {
+    const safeSpot = resolvePetSafePlacement(player.x - TILE, player.y);
+    pet.x = safeSpot.x;
+    pet.y = safeSpot.y;
+  }
 
   const last = Number.isFinite(obeyState.lastFollowUpdateAt) ? obeyState.lastFollowUpdateAt : now;
   const dtScale = Math.max(0, Math.min(3, (now - last) / 16.667));
@@ -1377,8 +1442,9 @@ function updatePetFollow(now) {
   if (distance <= 0.001) return;
 
   if (distance > OBEY_PET_TELEPORT_DISTANCE_TILES * TILE) {
-    pet.x = targetX;
-    pet.y = targetY;
+    const safeSpot = resolvePetSafePlacement(targetX, targetY);
+    pet.x = safeSpot.x;
+    pet.y = safeSpot.y;
     return;
   }
 
@@ -1750,7 +1816,20 @@ function getNextMissingRumorClue(tp) {
 }
 
 function deriveObjective() {
+  normalizeGlobalStoryFlags(gameFlags);
+  if (!gameFlags.basicTrainingStarted) {
+    return {
+      id: "",
+      text: ""
+    };
+  }
   const tp = getTownProgressForCurrentTown();
+  if (tp.basicTrainingQuestClaimed) {
+    return {
+      id: "",
+      text: ""
+    };
+  }
   const rumorClues = getRumorCluesFound(tp);
   const bogTarget = getBogQuestTarget(tp);
   const bogKills = Number.isFinite(tp.bogQuestKills) ? tp.bogQuestKills : 0;
@@ -1871,7 +1950,10 @@ function deriveObjective() {
 }
 
 function buildBasicTrainingQuest() {
+  normalizeGlobalStoryFlags(gameFlags);
+  if (!gameFlags.basicTrainingStarted) return null;
   const tp = getTownProgressForCurrentTown();
+  if (tp.basicTrainingQuestClaimed) return null;
   const rumorClues = getRumorCluesFound(tp);
   const bogTarget = getBogQuestTarget(tp);
   const bogKills = Number.isFinite(tp.bogQuestKills) ? tp.bogQuestKills : 0;
@@ -1953,11 +2035,15 @@ function buildBasicTrainingQuest() {
 
 function syncQuestTrackerState(now = performance.now()) {
   const basicTraining = buildBasicTrainingQuest();
-  const collapsed = Boolean(questTrackerState.collapsedById[basicTraining.id]);
-  questTrackerState.quests = [{
-    ...basicTraining,
-    collapsed
-  }];
+  if (basicTraining) {
+    const collapsed = Boolean(questTrackerState.collapsedById[basicTraining.id]);
+    questTrackerState.quests = [{
+      ...basicTraining,
+      collapsed
+    }];
+  } else {
+    questTrackerState.quests = [];
+  }
   questTrackerState.updatedAt = now;
 }
 
@@ -2100,13 +2186,31 @@ function syncObjectiveState(now = performance.now()) {
     )
   );
   if (!(objectiveState.id === next.id && objectiveState.text === next.text && markerUnchanged && markerAreaUnchanged)) {
+    const hadObjective = Boolean(objectiveState.id && objectiveState.text);
+    const hasObjective = Boolean(next.id && next.text);
     objectiveState.id = next.id;
     objectiveState.text = next.text;
     objectiveState.updatedAt = now;
     objectiveState.marker = nextMarker;
     objectiveState.markerArea = nextMarkerArea;
+    if (questUpdateNoticeState.primed) {
+      if (!hadObjective && hasObjective) {
+        questUpdateNoticeState.active = true;
+        questUpdateNoticeState.text = "New quest";
+        questUpdateNoticeState.startedAt = now;
+      } else if (hadObjective && !hasObjective) {
+        questUpdateNoticeState.active = true;
+        questUpdateNoticeState.text = "Quest complete";
+        questUpdateNoticeState.startedAt = now;
+      } else if (hasObjective) {
+        questUpdateNoticeState.active = true;
+        questUpdateNoticeState.text = "Quest updated (G to view)";
+        questUpdateNoticeState.startedAt = now;
+      }
+    }
   }
   syncQuestTrackerState(now);
+  if (!questUpdateNoticeState.primed) questUpdateNoticeState.primed = true;
 }
 
 function showNextCombatReward(now = performance.now()) {
@@ -2838,6 +2942,10 @@ function updatePatInnIntroSequence(now) {
       patInnIntroState.phase = "idle";
       patInnIntroState.dialogueAutoCloseAt = 0;
       gameFlags.patInnIntroSeen = true;
+      if (!gameFlags.basicTrainingStarted) {
+        gameFlags.basicTrainingStarted = true;
+        syncObjectiveState(now);
+      }
     }
   }
 }
@@ -3320,6 +3428,10 @@ const combatSystem = createCombatSystem({
         triggerAnimalRetaliationFromNpcHit(event?.target, event?.now);
       }
       if (event?.type === "entityDamaged") {
+        const accurateHitSfx = Math.random() < 0.5
+          ? "playerAccurateHit1"
+          : "playerAccurateHit2";
+        musicManager.playSfx(accurateHitSfx);
         engagePetAssistMode();
       }
     },
@@ -3392,6 +3504,9 @@ function isInteractionLocked() {
 
 function clearMenuHoverState() {
   pauseMenuState.hovered = -1;
+  if (pauseMenuState.soundControls) {
+    pauseMenuState.soundControls.hoveredSlider = "";
+  }
   titleState.hovered = -1;
 }
 
@@ -3403,6 +3518,7 @@ function updateMenuHoverStateFromMouse(mouseX, mouseY) {
     return;
   }
   if (gameState === GAME_STATES.TITLE_SCREEN) {
+    pauseMenuSystem.handleSoundControlMouseMove(mouseX, mouseY, { layoutMode: "title" });
     titleScreenSystem.handleMouseMove(mouseX, mouseY);
   }
 }
@@ -3488,6 +3604,9 @@ function handlePauseMenuLeftClick(mouseX, mouseY) {
 
 function handleTitleLeftClick(mouseX, mouseY) {
   if (gameState !== GAME_STATES.TITLE_SCREEN) return false;
+  if (pauseMenuSystem.handleSoundControlClick(mouseX, mouseY, { layoutMode: "title" })) {
+    return true;
+  }
 
   return titleScreenSystem.handleClick(mouseX, mouseY, {
     onStartGame: () => {
@@ -3735,17 +3854,20 @@ combatSystem.registerAttackProfile(BONK_ATTACK_ID, {
   id: BONK_ATTACK_ID,
   cooldownMs: 0,
   windupMs: BONK_SKILL_WINDUP_MS,
-  activeMs: 120,
-  recoveryMs: 220,
+  activeMs: 180,
+  recoveryMs: 260,
   range: TILE * 0.95,
   hitRadius: TILE * 0.78,
   damage: 0,
   damageBonusFlat: BONK_SKILL_DAMAGE,
   useProfileDamageOnly: false,
   ignoreWeaponBonus: false,
+  hitCueAtActiveStart: true,
+  damageOnlyOnHitCue: true,
+  hitWindowMs: 90,
   vfx: {
     type: "attackSlash",
-    durationMs: 260,
+    durationMs: 360,
     sizeOffset: 16
   },
   getAttackCenter(attacker) {
@@ -3853,7 +3975,14 @@ const { syncPointerLockWithState, register: registerInputBindings } = createInpu
   updateMenuHoverStateFromMouse,
   clearMenuHoverState,
   handleTitleLeftClick,
-  handlePauseMenuLeftClick
+  handlePauseMenuLeftClick,
+  handlePauseMenuPointerDown: (mouseX, mouseY) => {
+    if (gameState === GAME_STATES.TITLE_SCREEN) {
+      return pauseMenuSystem.handleSoundControlPointerDown(mouseX, mouseY, { layoutMode: "title" });
+    }
+    return pauseMenuSystem.handlePointerDown(mouseX, mouseY);
+  },
+  handlePauseMenuPointerUp: () => pauseMenuSystem.handlePointerUp()
 });
 
 menuStateController = createMenuStateController({
@@ -3910,6 +4039,7 @@ const { render } = createGameRenderer({
   inventoryUiLayout,
   leftoversUiState,
   objectiveState,
+  questUpdateNoticeState,
   questTrackerState,
   questCompletionState,
   uiMotionState,

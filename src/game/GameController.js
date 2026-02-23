@@ -18,8 +18,8 @@ export function createGameController({
   function syncMusicForCurrentArea() {
     const isBogland = state.getCurrentAreaId() === "bogland";
     if (musicManager && typeof musicManager.setBgmVolumeMultiplier === "function") {
-      // Bogland should be 75% quieter than normal area BGM.
-      musicManager.setBgmVolumeMultiplier(isBogland ? 0.25 : 1);
+      // Keep Bogland slightly subdued, but still clearly audible.
+      musicManager.setBgmVolumeMultiplier(isBogland ? 0.55 : 1);
     }
     const musicKey = worldService.getAreaMusicKey(state.getCurrentTownId(), state.getCurrentAreaId());
     if (!musicKey) {
