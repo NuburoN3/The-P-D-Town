@@ -102,6 +102,9 @@ export function createTryTrainingAction({
       trainingPopup.levelUp = true;
       trainingPopup.pendingLevelUpDialogueAt = trainingPopup.startedAt + trainingPopup.animDurationMs;
       playerStats.disciplineLevel += 1;
+      const previousMaxMana = Number.isFinite(player.maxMana) ? Math.max(0, player.maxMana) : 0;
+      player.maxMana = previousMaxMana + 2;
+      player.mana = Number.isFinite(player.mana) ? Math.max(0, Math.min(player.maxMana, player.mana)) : 0;
       if (musicManager && typeof musicManager.playSfx === "function") {
         musicManager.playSfx("levelUp");
       }

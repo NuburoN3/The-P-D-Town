@@ -1,4 +1,4 @@
-import { AREA_KINDS, GAME_STATES } from "../core/constants.js";
+import { AREA_KINDS, GAME_STATES, TILE_TYPES } from "../core/constants.js";
 import { clamp, lerp } from "../core/mathUtils.js";
 
 export function createMovementSystem({
@@ -15,6 +15,31 @@ export function createMovementSystem({
   let lastWalkSoundTime = 0;
   let preferredWallDriftY = 1;
   let preferredWallDriftX = 1;
+  let lastMudPuddleTileKey = "";
+  const BOG_MUD_SPEED_MULTIPLIER = 0.25;
+
+  function hash2(x, y, seed = 0) {
+    const n = x * 374761393 + y * 668265263 + seed * 982451653;
+    return (n ^ (n >> 13)) >>> 0;
+  }
+
+  function getFootTileForPlayer(playerPos) {
+    const footX = Number.isFinite(playerPos?.x) ? (playerPos.x + tileSize * 0.5) : 0;
+    const footY = Number.isFinite(playerPos?.y) ? (playerPos.y + tileSize * 0.9) : 0;
+    return {
+      tx: Math.floor(footX / tileSize),
+      ty: Math.floor(footY / tileSize)
+    };
+  }
+
+  function isBogMudPuddleTile(currentMap, currentMapW, currentMapH, tx, ty) {
+    if (!Array.isArray(currentMap) || tx < 0 || ty < 0 || tx >= currentMapW || ty >= currentMapH) return false;
+    const row = currentMap[ty];
+    if (!row) return false;
+    if (row[tx] !== TILE_TYPES.GRASS) return false;
+    const poolSeed = hash2(Math.floor(tx / 4), Math.floor(ty / 4), 911);
+    return (poolSeed & 31) < 2;
+  }
 
   // clamp and lerp imported from ../core/mathUtils.js
 
@@ -46,7 +71,7 @@ export function createMovementSystem({
   }) {
     const canOccupy = (testX, testY) => (
       !collides(testX, testY, currentMap, currentMapW, currentMapH) &&
-      !collidesWithNPC(testX, testY, npcs, currentAreaId)
+      !collidesWithNPC(testX, testY, npcs, currentAreaId, player.x, player.y)
     );
 
     const isPressed = (action, legacyKeys = []) => {
@@ -58,8 +83,18 @@ export function createMovementSystem({
 
     let dx = 0;
     let dy = 0;
+    const previousFootTile = getFootTileForPlayer(player);
+    const inBogMudPuddle = currentAreaId === "bogland" && isBogMudPuddleTile(
+      currentMap,
+      currentMapW,
+      currentMapH,
+      previousFootTile.tx,
+      previousFootTile.ty
+    );
     const sprinting = typeof getSprintPressed === "function" && Boolean(getSprintPressed());
-    const movementSpeed = player.speed * (sprinting ? sprintMultiplier : 1);
+    const movementSpeed = player.speed
+      * (sprinting ? sprintMultiplier : 1)
+      * (inBogMudPuddle ? BOG_MUD_SPEED_MULTIPLIER : 1);
     const slideStep = Math.max(0.2, Math.min(0.7, movementSpeed * dtScale * 0.16));
     const driftStep = Math.max(0.12, Math.min(0.45, slideStep * 0.55));
 
@@ -186,14 +221,6 @@ export function createMovementSystem({
 
     player.walking = dx !== 0 || dy !== 0;
 
-    if (player.walking) {
-      const now = performance.now();
-      if (now - lastWalkSoundTime > walkSoundIntervalMs) {
-        musicManager.playSfx("walking");
-        lastWalkSoundTime = now;
-      }
-    }
-
     if (dx !== 0 && dy !== 0) {
       const s = Math.SQRT1_2;
       dx *= s;
@@ -238,6 +265,33 @@ export function createMovementSystem({
     }
 
     if (player.walking) {
+      const now = performance.now();
+      const currentFootTile = getFootTileForPlayer(player);
+      const tileChanged = previousFootTile.tx !== currentFootTile.tx || previousFootTile.ty !== currentFootTile.ty;
+      if (currentAreaId === "bogland" && tileChanged) {
+        const mudTile = isBogMudPuddleTile(
+          currentMap,
+          currentMapW,
+          currentMapH,
+          currentFootTile.tx,
+          currentFootTile.ty
+        );
+        const tileKey = `${currentFootTile.tx},${currentFootTile.ty}`;
+        if (mudTile && tileKey !== lastMudPuddleTileKey) {
+          const mudSfx = ["bogMud1", "bogMud2", "bogMud3"];
+          const choice = mudSfx[Math.floor(Math.random() * mudSfx.length)];
+          musicManager.playSfx(choice);
+          lastMudPuddleTileKey = tileKey;
+          lastWalkSoundTime = now;
+        } else if (!mudTile && tileKey !== lastMudPuddleTileKey) {
+          lastMudPuddleTileKey = "";
+        }
+      }
+
+      if (now - lastWalkSoundTime > walkSoundIntervalMs) {
+        musicManager.playSfx("walking");
+        lastWalkSoundTime = now;
+      }
       player.frame = (player.frame + 1) % 24;
     }
   }

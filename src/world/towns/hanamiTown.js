@@ -239,7 +239,7 @@ function generateBnBUpstairsBase(width, height) {
 }
 
 function generateBoglandBase(width, height) {
-    const map = createFilledMap(width, height, TILE_TYPES.HILL);
+    const map = createFilledMap(width, height, TILE_TYPES.GRASS);
 
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
@@ -254,22 +254,31 @@ function generateBoglandBase(width, height) {
     paintPath(map, [{ x: 28, y: 18 }, { x: 18, y: 18 }], 2);
     paintPath(map, [{ x: 28, y: 24 }, { x: 37, y: 24 }], 2);
 
-    // Firmer moss islands and ruined clearings.
-    paintRect(map, 10, 10, 10, 8, TILE_TYPES.GRASS);
-    paintRect(map, 35, 8, 12, 9, TILE_TYPES.GRASS);
-    paintRect(map, 19, 26, 17, 11, TILE_TYPES.GRASS);
-    paintRect(map, 6, 30, 8, 8, TILE_TYPES.GRASS);
-    paintRect(map, 41, 30, 8, 8, TILE_TYPES.GRASS);
+    // Raised bog mounds (small hills).
+    paintRect(map, 11, 10, 7, 6, TILE_TYPES.HILL);
+    paintRect(map, 35, 9, 8, 6, TILE_TYPES.HILL);
+    paintRect(map, 21, 27, 9, 6, TILE_TYPES.HILL);
+    paintRect(map, 8, 31, 6, 5, TILE_TYPES.HILL);
+    paintRect(map, 40, 31, 7, 5, TILE_TYPES.HILL);
+    paintRect(map, 24, 8, 3, 3, TILE_TYPES.HILL);
+    paintRect(map, 31, 13, 3, 4, TILE_TYPES.HILL);
+    paintRect(map, 15, 24, 4, 3, TILE_TYPES.HILL);
+    paintRect(map, 36, 27, 4, 3, TILE_TYPES.HILL);
 
-    // Rot pockets and deadwood belts.
-    paintRect(map, 22, 9, 4, 5, TILE_TYPES.HILL);
-    paintRect(map, 31, 12, 3, 4, TILE_TYPES.HILL);
-    paintRect(map, 14, 24, 5, 4, TILE_TYPES.HILL);
-    paintRect(map, 36, 28, 4, 4, TILE_TYPES.HILL);
-    paintRect(map, 4, 6, 5, 5, TILE_TYPES.TREE);
-    paintRect(map, 47, 6, 5, 5, TILE_TYPES.TREE);
-    paintRect(map, 7, 20, 4, 5, TILE_TYPES.TREE);
-    paintRect(map, 45, 19, 5, 6, TILE_TYPES.TREE);
+    // Shallow muddy depressions / pits.
+    paintRect(map, 18, 11, 5, 4, TILE_TYPES.PATH);
+    paintRect(map, 28, 9, 4, 4, TILE_TYPES.PATH);
+    paintRect(map, 24, 20, 6, 4, TILE_TYPES.PATH);
+    paintRect(map, 13, 28, 5, 4, TILE_TYPES.PATH);
+    paintRect(map, 34, 25, 5, 4, TILE_TYPES.PATH);
+    paintRect(map, 43, 16, 4, 3, TILE_TYPES.PATH);
+
+    // Deadwood belts and dense swamp growth.
+    paintRect(map, 4, 6, 6, 5, TILE_TYPES.TREE);
+    paintRect(map, 46, 6, 6, 5, TILE_TYPES.TREE);
+    paintRect(map, 7, 20, 4, 6, TILE_TYPES.TREE);
+    paintRect(map, 44, 19, 6, 7, TILE_TYPES.TREE);
+    paintRect(map, 22, 34, 5, 4, TILE_TYPES.TREE);
 
     // Bogland gate door.
     map[1][28] = TILE_TYPES.DOOR;

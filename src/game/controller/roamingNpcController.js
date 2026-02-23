@@ -1,4 +1,9 @@
 export function createRoamingNpcController({ state, collision }) {
+  const ANIMAL_FLEE_REACTION_RADIUS_TILES = 2;
+  const ANIMAL_FLEE_MIN_STEP_TILES = 1.1;
+  const ANIMAL_FLEE_MAX_STEP_TILES = 2.2;
+  const ANIMAL_FLEE_SPEED_MULTIPLIER = 2.2;
+
   function rectsOverlap(a, b) {
     return (
       a.x < b.x + b.width &&
@@ -31,7 +36,7 @@ export function createRoamingNpcController({ state, collision }) {
     return false;
   }
 
-  function collidesWithPlayer(nx, ny, npc) {
+  function collidesWithPlayer(nx, ny, npc, currentX = null, currentY = null) {
     const playerWidth = Number.isFinite(state.player.width) ? state.player.width : (npc.width || 32);
     const playerHeight = Number.isFinite(state.player.height) ? state.player.height : (npc.height || 32);
     const npcRect = {
@@ -46,13 +51,36 @@ export function createRoamingNpcController({ state, collision }) {
       width: Math.max(1, playerWidth - 10),
       height: Math.max(1, playerHeight - 10)
     };
-    return rectsOverlap(npcRect, playerRect);
+    if (!rectsOverlap(npcRect, playerRect)) return false;
+
+    if (Number.isFinite(currentX) && Number.isFinite(currentY)) {
+      const currentNpcRect = {
+        x: currentX + 5,
+        y: currentY + 5,
+        width: Math.max(1, npc.width - 10),
+        height: Math.max(1, npc.height - 10)
+      };
+      const overlapsCurrent = rectsOverlap(currentNpcRect, playerRect);
+      if (overlapsCurrent) {
+        const playerCenterX = playerRect.x + playerRect.width * 0.5;
+        const playerCenterY = playerRect.y + playerRect.height * 0.5;
+        const currentCenterX = currentNpcRect.x + currentNpcRect.width * 0.5;
+        const currentCenterY = currentNpcRect.y + currentNpcRect.height * 0.5;
+        const nextCenterX = npcRect.x + npcRect.width * 0.5;
+        const nextCenterY = npcRect.y + npcRect.height * 0.5;
+        const currentDistSq = (currentCenterX - playerCenterX) ** 2 + (currentCenterY - playerCenterY) ** 2;
+        const nextDistSq = (nextCenterX - playerCenterX) ** 2 + (nextCenterY - playerCenterY) ** 2;
+        // If currently overlapping player, allow movement that increases separation.
+        if (nextDistSq > currentDistSq + 0.01) return false;
+      }
+    }
+    return true;
   }
 
   function isRoamPositionBlocked(npc, nx, ny, currentAreaId, currentMap, currentMapW, currentMapH) {
     if (collision.collidesAt(nx, ny, currentMap, currentMapW, currentMapH)) return true;
     if (collidesWithBlockingNpc(nx, ny, npc, currentAreaId)) return true;
-    if (collidesWithPlayer(nx, ny, npc)) return true;
+    if (collidesWithPlayer(nx, ny, npc, npc.x, npc.y)) return true;
     return false;
   }
 
@@ -83,6 +111,52 @@ export function createRoamingNpcController({ state, collision }) {
     npc.roamIdleUntil = now + 450 + Math.random() * 700;
   }
 
+  function maybeSetAnimalFleeTarget(npc, now, currentAreaId, currentMap, currentMapW, currentMapH) {
+    if (!npc || !npc.obeyAnimal || npc.isPlayerPet) return false;
+
+    const tileSize = Math.max(1, npc.width || 32);
+    const reactionRadius = ANIMAL_FLEE_REACTION_RADIUS_TILES * tileSize;
+    const npcCenterX = npc.x + (Number.isFinite(npc.width) ? npc.width : tileSize) * 0.5;
+    const npcCenterY = npc.y + (Number.isFinite(npc.height) ? npc.height : tileSize) * 0.5;
+    const playerCenterX = state.player.x + (Number.isFinite(state.player.width) ? state.player.width : tileSize) * 0.5;
+    const playerCenterY = state.player.y + (Number.isFinite(state.player.height) ? state.player.height : tileSize) * 0.5;
+    const dx = npcCenterX - playerCenterX;
+    const dy = npcCenterY - playerCenterY;
+    const distSq = dx * dx + dy * dy;
+    if (distSq > reactionRadius * reactionRadius) return false;
+
+    const fleeCooldownUntil = Number.isFinite(npc.fleeRetargetAt) ? npc.fleeRetargetAt : 0;
+    if (now < fleeCooldownUntil && Number.isFinite(npc.roamTargetX) && Number.isFinite(npc.roamTargetY)) {
+      return true;
+    }
+
+    const baseLen = Math.max(0.001, Math.hypot(dx, dy));
+    const baseDirX = dx / baseLen;
+    const baseDirY = dy / baseLen;
+    const attempts = 10;
+    for (let i = 0; i < attempts; i++) {
+      const jitter = (Math.random() - 0.5) * (Math.PI * 0.8);
+      const cosA = Math.cos(jitter);
+      const sinA = Math.sin(jitter);
+      const dirX = baseDirX * cosA - baseDirY * sinA;
+      const dirY = baseDirX * sinA + baseDirY * cosA;
+      const stepTiles = ANIMAL_FLEE_MIN_STEP_TILES
+        + Math.random() * (ANIMAL_FLEE_MAX_STEP_TILES - ANIMAL_FLEE_MIN_STEP_TILES);
+      const tx = npc.x + dirX * tileSize * stepTiles;
+      const ty = npc.y + dirY * tileSize * stepTiles;
+      if (isRoamPositionBlocked(npc, tx, ty, currentAreaId, currentMap, currentMapW, currentMapH)) continue;
+      npc.roamTargetX = tx;
+      npc.roamTargetY = ty;
+      npc.roamRetargetAt = now + 380 + Math.random() * 280;
+      npc.roamIdleUntil = 0;
+      npc.fleeRetargetAt = now + 220 + Math.random() * 160;
+      return true;
+    }
+
+    npc.fleeRetargetAt = now + 180;
+    return true;
+  }
+
   function updateRoamingNPCs(now, dtScale = 1) {
     const currentAreaId = state.getCurrentAreaId();
     const currentMap = state.getCurrentMap();
@@ -98,14 +172,33 @@ export function createRoamingNpcController({ state, collision }) {
         npc.roamIdleUntil = now + 300 + Math.random() * 600;
       }
 
-      if (Number.isFinite(npc.roamIdleUntil) && now < npc.roamIdleUntil) continue;
+      const reactingToPlayer = maybeSetAnimalFleeTarget(
+        npc,
+        now,
+        currentAreaId,
+        currentMap,
+        currentMapW,
+        currentMapH
+      );
+      if (!reactingToPlayer && Number.isFinite(npc.roamIdleUntil) && now < npc.roamIdleUntil) continue;
 
       if (
         !Number.isFinite(npc.roamTargetX) ||
         !Number.isFinite(npc.roamTargetY) ||
         (Number.isFinite(npc.roamRetargetAt) && now >= npc.roamRetargetAt)
       ) {
-        pickRoamTarget(npc, now, currentAreaId, currentMap, currentMapW, currentMapH);
+        if (reactingToPlayer) {
+          maybeSetAnimalFleeTarget(
+            npc,
+            now,
+            currentAreaId,
+            currentMap,
+            currentMapW,
+            currentMapH
+          );
+        } else {
+          pickRoamTarget(npc, now, currentAreaId, currentMap, currentMapW, currentMapH);
+        }
       }
 
       if (!Number.isFinite(npc.roamTargetX) || !Number.isFinite(npc.roamTargetY)) continue;
@@ -122,7 +215,10 @@ export function createRoamingNpcController({ state, collision }) {
         continue;
       }
 
-      const speedPx = Number.isFinite(npc.wanderSpeed) ? Math.max(0.3, npc.wanderSpeed) : 0.9;
+      const baseSpeedPx = Number.isFinite(npc.wanderSpeed) ? Math.max(0.3, npc.wanderSpeed) : 0.9;
+      const speedPx = reactingToPlayer && npc.obeyAnimal
+        ? baseSpeedPx * ANIMAL_FLEE_SPEED_MULTIPLIER
+        : baseSpeedPx;
       const step = Math.min(distance, speedPx * dtScale);
       const vx = (dx / distance) * step;
       const vy = (dy / distance) * step;

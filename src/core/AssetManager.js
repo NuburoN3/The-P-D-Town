@@ -34,6 +34,7 @@ export const DEFAULT_SPRITE_MANIFEST = {
   mrHanamiDialogueClosed: "assets/sprites/MrHanamiDialogue_Closed.png",
   protagonistStartScene: "assets/sprites/ProtagonistStartScene.png",
   protagonist: "assets/sprites/protagonist.png",
+  protagonistBasicAttack: "assets/sprites/protagonist basic attack.png",
   protagonist_handstand: "assets/sprites/protagonist_handstand.png",
   trainingHeadband: "assets/sprites/TrainingHeadband.png",
   equipTrainingHeadband: "assets/sprites/Equip_TrainingHeadband.png",

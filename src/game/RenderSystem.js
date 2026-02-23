@@ -1,5 +1,4 @@
 import { AREA_KINDS, BRANDING, GAME_STATES, TILE_TYPES, isFreeExploreState } from "../core/constants.js";
-import { hash01 } from "../core/mathUtils.js";
 import {
   FONT_12,
   FONT_16,
@@ -25,8 +24,6 @@ import {
 import { getFountainRenderSprite } from "../world/buildings/fountainSprite.js";
 import { beginBuildingRenderFrame } from "../world/buildingRenderers.js";
 
-// hash01 imported from ../core/mathUtils.js
-
 const MOOD_PRESETS = Object.freeze({
   goldenDawn: {
     topTint: "rgba(255, 223, 159, 0.13)",
@@ -44,6 +41,7 @@ const MOOD_PRESETS = Object.freeze({
     filmTint: "rgba(255, 178, 109, 0.1)"
   }
 });
+const DAY_NIGHT_TEST_CYCLE_SECONDS = 30 * 60;
 
 const PAUSE_OPTION_SUBTITLES = Object.freeze({
   Resume: "Return to your current scene",
@@ -90,6 +88,11 @@ const DIALOGUE_UI_TRANSITION_STATE = {
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
+}
+
+function hash01(value) {
+  const x = Math.sin(value * 127.1) * 43758.5453123;
+  return x - Math.floor(x);
 }
 
 function easeOutCubic(value) {
@@ -635,7 +638,7 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom, getItemSprite =
 
   ctx.font = FONT_12;
   drawUiText(ctx, `Health ${Math.round(state.player.hp)} / ${Math.round(state.player.maxHp)}`, barX + 2, hpBarY - 3, colors);
-  drawUiText(ctx, `Mana ${Math.floor(mana * 10) / 10} / ${Math.round(maxMana)}`, barX + 2, manaBarY - 3, colors);
+  drawUiText(ctx, `Mana ${Math.floor(mana)} / ${Math.round(maxMana)}`, barX + 2, manaBarY - 3, colors);
 
   ctx.fillStyle = "rgba(10, 12, 18, 0.88)";
   ctx.fillRect(barX, hpBarY, barW, barH);
@@ -1022,25 +1025,30 @@ function drawFriendliesHud(ctx, state, colors) {
   if (!isFreeExploreState(state.gameState)) return;
   const obeyState = state.obeyState && typeof state.obeyState === "object" ? state.obeyState : null;
   if (!obeyState?.petId) return;
+  const isPetWaitingOutside = Boolean(obeyState.petWaitingOutside);
   const npcs = Array.isArray(state.npcs) ? state.npcs : [];
   const pet = npcs.find((npc) => npc && npc.id === obeyState.petId) || null;
-  if (!pet) return;
+  if (!pet && !isPetWaitingOutside) return;
 
-  const petType = String(pet.name || obeyState.petTypeName || "Companion").trim() || "Companion";
+  const petType = String((pet && pet.name) || obeyState.petTypeName || "Companion").trim() || "Companion";
   const petName = `Pet ${petType}`;
-  const petLevel = Number.isFinite(pet.level)
+  const petLevel = Number.isFinite(pet?.level)
     ? Math.max(1, Math.floor(pet.level))
     : (Number.isFinite(obeyState.petLevel) ? Math.max(1, Math.floor(obeyState.petLevel)) : 1);
-  const petXp = Number.isFinite(pet.xp)
+  const petXp = Number.isFinite(pet?.xp)
     ? Math.max(0, pet.xp)
     : (Number.isFinite(obeyState.petXp) ? Math.max(0, obeyState.petXp) : 0);
-  const petXpNeeded = Number.isFinite(pet.xpNeeded)
+  const petXpNeeded = Number.isFinite(pet?.xpNeeded)
     ? Math.max(1, pet.xpNeeded)
     : (Number.isFinite(obeyState.petXpNeeded) ? Math.max(1, obeyState.petXpNeeded) : 1);
   const petXpRemaining = Math.max(0, petXpNeeded - petXp);
-  const petMaxHp = Number.isFinite(pet.maxHp) ? Math.max(1, pet.maxHp) : 15;
-  const petHp = Number.isFinite(pet.hp) ? Math.max(0, Math.min(petMaxHp, pet.hp)) : petMaxHp;
-  const petPassedOut = Boolean(pet.passedOut) || petHp <= 0;
+  const petMaxHp = Number.isFinite(pet?.maxHp)
+    ? Math.max(1, pet.maxHp)
+    : (Number.isFinite(obeyState.petMaxHp) ? Math.max(1, obeyState.petMaxHp) : 15);
+  const petHp = Number.isFinite(pet?.hp)
+    ? Math.max(0, Math.min(petMaxHp, pet.hp))
+    : (Number.isFinite(obeyState.petHp) ? Math.max(0, Math.min(petMaxHp, obeyState.petHp)) : petMaxHp);
+  const petPassedOut = Boolean((pet && pet.passedOut) || obeyState.petPassedOut) || petHp <= 0;
   const hpRatio = Math.max(0, Math.min(1, petHp / petMaxHp));
 
   const panelW = Math.min(232, ctx.canvas.width - 28);
@@ -1065,7 +1073,17 @@ function drawFriendliesHud(ctx, state, colors) {
   ctx.strokeStyle = "rgba(255,255,255,0.45)";
   ctx.lineWidth = 1;
   ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
-  if (petPassedOut) {
+  if (isPetWaitingOutside) {
+    const previousAlign = ctx.textAlign;
+    const previousBaseline = ctx.textBaseline;
+    ctx.font = FONT_12;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(236, 241, 255, 0.96)";
+    ctx.fillText("Waiting Outside", barX + barW * 0.5, barY + barH * 0.5 + 0.5);
+    ctx.textAlign = previousAlign;
+    ctx.textBaseline = previousBaseline;
+  } else if (petPassedOut) {
     const previousAlign = ctx.textAlign;
     const previousBaseline = ctx.textBaseline;
     ctx.font = FONT_12;
@@ -2038,10 +2056,23 @@ function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors, getItem
   }
 }
 
-function drawAtmosphere(ctx, canvas, colors, state) {
+function drawAtmosphere(ctx, canvas, colors, state, cameraZoom = 1) {
   const isOverworld = state.currentAreaKind === AREA_KINDS.OVERWORLD;
+  const isBogland = state.currentAreaId === "bogland";
   const reducedFlashes = Boolean(state.userSettings?.reducedFlashes);
   const intensity = reducedFlashes ? 0.58 : 1;
+  const atmosphereCam = state?.atmosphereCam || state?.cam || { x: 0, y: 0 };
+  const nowSec = Number.isFinite(state?.atmosphereTimeSec)
+    ? state.atmosphereTimeSec
+    : performance.now() * 0.001;
+  const cycleT = ((nowSec % DAY_NIGHT_TEST_CYCLE_SECONDS) + DAY_NIGHT_TEST_CYCLE_SECONDS) % DAY_NIGHT_TEST_CYCLE_SECONDS;
+  const cycleRatio = cycleT / DAY_NIGHT_TEST_CYCLE_SECONDS;
+  const dayNightWave = 0.5 - 0.5 * Math.cos(cycleRatio * Math.PI * 2);
+  const smoothNight = dayNightWave * dayNightWave * (3 - (2 * dayNightWave));
+  const presetNightFloor = state?.moodPreset === "inkQuiet" ? 1 : 0;
+  // Keep one shared day/night cycle across overworld areas (town + bogland).
+  const nightFactor = isOverworld ? smoothNight : presetNightFloor;
+  const hasNightMood = nightFactor > 0.02;
 
   if (isOverworld) {
     const topLight = ctx.createLinearGradient(0, 0, 0, canvas.height * 0.65);
@@ -2057,109 +2088,154 @@ function drawAtmosphere(ctx, canvas, colors, state) {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
-  const now = Number.isFinite(state?.atmosphereTimeSec)
-    ? state.atmosphereTimeSec
-    : performance.now() * 0.001;
+  if (isOverworld && isBogland) {
+    const camX = Number.isFinite(atmosphereCam?.x) ? atmosphereCam.x : 0;
+    const camY = Number.isFinite(atmosphereCam?.y) ? atmosphereCam.y : 0;
+    const wrapFog = (value, size) => ((value % size) + size) % size;
+    const fogSpanX = Math.max(canvas.width * 4.5, 3600);
+    const fogSpanY = Math.max(canvas.height * 2.7, 2000);
+    const bogMistAlpha = (0.12 + (nightFactor * 0.08)) * intensity;
 
-  if (isOverworld) {
-    // Strong 4-phase cycle for readability: Day -> Dusk -> Night -> Dawn.
-    // Full loop is 20 minutes.
-    const cycleSec = 20 * 60;
-    const cycleT = ((now % cycleSec) + cycleSec) % cycleSec / cycleSec; // 0..1
-    const phasePos = cycleT * 4;
-    const phaseA = Math.floor(phasePos) % 4;
-    const phaseB = (phaseA + 1) % 4;
-    const blend = phasePos - Math.floor(phasePos);
-    const phaseWeights = [0, 0, 0, 0]; // day, dusk, night, dawn
-    phaseWeights[phaseA] = 1 - blend;
-    phaseWeights[phaseB] = blend;
-    const dayWeight = phaseWeights[0];
-    const duskWeight = phaseWeights[1];
-    const nightWeight = phaseWeights[2];
-    const dawnWeight = phaseWeights[3];
+    ctx.save();
+    for (let i = 0; i < 4; i++) {
+      const seed = i + 1;
+      const driftSpeed = 7 + (seed * 1.9);
+      const worldX = (seed * 680) + (nowSec * driftSpeed);
+      const baseWorldY = (seed * 240) + (Math.sin(nowSec * (0.12 + seed * 0.03)) * 28);
+      const x = wrapFog(worldX - (camX * cameraZoom), fogSpanX) - 520;
+      const y = wrapFog(baseWorldY - (camY * cameraZoom), fogSpanY) - 220;
+      const rx = 200 + (seed * 38);
+      const ry = 40 + (seed * 8);
+      const band = ctx.createRadialGradient(x, y, ry * 0.25, x, y, rx);
+      band.addColorStop(0, `rgba(96, 118, 103, ${bogMistAlpha * 0.48})`);
+      band.addColorStop(0.55, `rgba(74, 92, 81, ${bogMistAlpha * 0.26})`);
+      band.addColorStop(1, "rgba(74, 92, 81, 0)");
+      ctx.fillStyle = band;
+      ctx.beginPath();
+      ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
 
-    // Off-screen light source moves right->left->right across the cycle.
-    const travel = (Math.sin(cycleT * Math.PI * 2 - Math.PI * 0.5) + 1) * 0.5; // 0..1..0
-    const lightX = canvas.width * (1.18 - travel * 1.36);
-    const lightY = -canvas.height * (0.16 - Math.sin(cycleT * Math.PI * 2) * 0.03);
+  if (hasNightMood) {
+    const darkenAlpha = (isOverworld ? 0.34 : 0.22) * intensity * nightFactor;
+    const blueCastAlpha = (isOverworld ? 0.16 : 0.11) * intensity * nightFactor;
+    ctx.fillStyle = `rgba(16, 24, 42, ${blueCastAlpha})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = `rgba(0, 0, 0, ${darkenAlpha})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 
-    const warmBoost = (dayWeight * 0.18 + dawnWeight * 0.12) * intensity;
-    const duskBoost = duskWeight * 0.34 * intensity;
-    const darken = (nightWeight * 0.66 + duskWeight * 0.26 + dawnWeight * 0.2) * intensity;
-    const blueCast = (nightWeight * 0.3 + dawnWeight * 0.14) * intensity;
+  if (isOverworld && nightFactor > 0.05) {
+    const skyAlpha = intensity * nightFactor;
+    const skyHeight = canvas.height * 0.58;
+    const camX = Number.isFinite(atmosphereCam?.x) ? atmosphereCam.x : 0;
+    const camY = Number.isFinite(atmosphereCam?.y) ? atmosphereCam.y : 0;
+    const skyParallaxX = 0.22;
+    const skyParallaxY = 0.08;
+    const fract = (value) => value - Math.floor(value);
+    const wrap = (value, size) => ((value % size) + size) % size;
 
-    if (warmBoost > 0.001) {
-      ctx.save();
-      ctx.globalCompositeOperation = "screen";
-      const warmGlow = ctx.createRadialGradient(
-        lightX,
-        lightY,
-        canvas.width * 0.04,
-        lightX,
-        lightY,
-        canvas.width * 1.1
-      );
-      warmGlow.addColorStop(0, `rgba(255, 250, 226, ${0.3 * warmBoost})`);
-      warmGlow.addColorStop(0.45, `rgba(255, 233, 158, ${0.6 * warmBoost})`);
-      warmGlow.addColorStop(1, "rgba(255, 220, 130, 0)");
-      ctx.fillStyle = warmGlow;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.restore();
+    // Lightweight deterministic skybox: stars + cloud silhouettes.
+    ctx.save();
+    const starSpanX = Math.max(canvas.width * 3.2, 2600);
+    const starSpanY = Math.max(skyHeight * 1.7, 780);
+    for (let i = 0; i < 52; i++) {
+      const sx = fract(Math.sin((i + 1) * 12.9898) * 43758.5453123);
+      const sy = fract(Math.sin((i + 1) * 78.233) * 12345.6789012);
+      const worldX = (sx * starSpanX) + (nowSec * (2 + ((i % 5) * 0.25)));
+      const worldY = sy * starSpanY;
+      const x = wrap(worldX - (camX * skyParallaxX * cameraZoom), starSpanX) - 2;
+      const y = wrap(worldY - (camY * skyParallaxY * cameraZoom), starSpanY) - 2;
+      if (y > skyHeight) continue;
+      const twinkle = 0.45 + (0.55 * (0.5 + Math.sin((nowSec * 1.35) + (i * 0.91)) * 0.5));
+      const size = 1 + ((i % 3) * 0.45);
+      const alpha = (0.12 + (twinkle * 0.42)) * skyAlpha;
+      ctx.fillStyle = `rgba(225, 236, 255, ${alpha})`;
+      ctx.fillRect(Math.round(x), Math.round(y), size, size);
     }
 
-    if (duskBoost > 0.001) {
-      ctx.fillStyle = `rgba(255, 120, 28, ${duskBoost})`;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
+    const drawCloud = (x, y, scale, alpha, seed) => {
+      const lobeCount = 6 + (seed % 3);
+      const cloudW = (170 + ((seed * 31) % 80)) * scale;
+      const cloudH = (42 + ((seed * 17) % 20)) * scale;
+      const left = x - (cloudW * 0.5);
+      const right = x + (cloudW * 0.5);
+      const baseAlpha = alpha * skyAlpha;
 
-    if (blueCast > 0.001) {
-      ctx.fillStyle = `rgba(60, 98, 168, ${blueCast})`;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
+      const grad = ctx.createRadialGradient(x, y - cloudH * 0.1, cloudH * 0.2, x, y, cloudW * 0.75);
+      grad.addColorStop(0, `rgba(20, 28, 42, ${baseAlpha * 1.15})`);
+      grad.addColorStop(1, `rgba(8, 12, 19, ${baseAlpha * 0.72})`);
+      ctx.fillStyle = grad;
 
-    if (darken > 0.001) {
-      ctx.fillStyle = `rgba(0, 0, 0, ${darken})`;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
+      ctx.beginPath();
+      for (let j = 0; j < lobeCount; j++) {
+        const t = lobeCount <= 1 ? 0.5 : j / (lobeCount - 1);
+        const lobeX = left + (right - left) * t;
+        const lobeY = y + Math.sin((seed * 0.53) + (j * 0.9)) * (cloudH * 0.22);
+        const rx = (cloudW * (0.14 + (0.05 * Math.sin(seed + j * 1.2))));
+        const ry = (cloudH * (0.52 + (0.12 * Math.cos(seed * 0.7 + j))));
+        ctx.ellipse(lobeX, lobeY, Math.max(10 * scale, Math.abs(rx)), Math.max(7 * scale, Math.abs(ry)), 0, 0, Math.PI * 2);
+      }
+      ctx.fill();
 
-    const vignetteAlpha = (nightWeight * 0.6 + duskWeight * 0.24 + dawnWeight * 0.18) * intensity;
-    if (vignetteAlpha > 0.001) {
-      const nightVignette = ctx.createRadialGradient(
-        canvas.width * 0.5,
-        canvas.height * 0.52,
-        canvas.height * 0.16,
-        canvas.width * 0.5,
-        canvas.height * 0.55,
-        canvas.width * 0.7
-      );
-      nightVignette.addColorStop(0, "rgba(0,0,0,0)");
-      nightVignette.addColorStop(1, `rgba(0,0,0,${vignetteAlpha})`);
-      ctx.fillStyle = nightVignette;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
+      ctx.fillStyle = `rgba(35, 48, 66, ${baseAlpha * 0.22})`;
+      ctx.fillRect(left + cloudW * 0.08, y + cloudH * 0.12, cloudW * 0.84, cloudH * 0.12);
+    };
 
+    const cloudSpanX = Math.max(canvas.width * 4.4, 3600);
+    const cloudSpanY = Math.max(canvas.height * 3.4, 2400);
+    for (let i = 0; i < 11; i++) {
+      const seedA = fract(Math.sin((i + 1) * 15.379) * 46871.193);
+      const seedB = fract(Math.sin((i + 1) * 29.147) * 19435.731);
+      const seedC = fract(Math.sin((i + 1) * 43.951) * 95731.629);
+      const seedD = fract(Math.sin((i + 1) * 57.613) * 27381.491);
+      const seedE = fract(Math.sin((i + 1) * 71.204) * 62913.848);
+      const baseWorldX = seedA * cloudSpanX;
+      const baseWorldY = seedB * cloudSpanY;
+      const scale = 0.7 + (seedC * 0.95);
+      const alpha = 0.1 + (seedD * 0.18);
+      const driftSpeed = 5 + (seedE * 11);
+      const worldX = baseWorldX + (nowSec * driftSpeed);
+      const worldY = baseWorldY + Math.sin((nowSec * (0.1 + (seedE * 0.12))) + i) * 9;
+      const x = wrap(worldX - (camX * cameraZoom), cloudSpanX) - 380;
+      const y = wrap(worldY - (camY * cameraZoom), cloudSpanY) - 180;
+      if (y > skyHeight + 120) continue;
+      drawCloud(x, y, scale, alpha, i + 1);
+    }
+    ctx.restore();
   }
 
   const particleCount = Math.round((isOverworld ? 42 : 18) * intensity);
+  const particleSpanX = Math.max(canvas.width * 4.2, 3000);
+  const particleSpanY = Math.max(canvas.height * 3.4, 2200);
+  const camXForParticles = Number.isFinite(atmosphereCam?.x) ? atmosphereCam.x : 0;
+  const camYForParticles = Number.isFinite(atmosphereCam?.y) ? atmosphereCam.y : 0;
+  const wrap = (value, size) => ((value % size) + size) % size;
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
 
   for (let i = 0; i < particleCount; i++) {
     const seed = i * 13.17 + (isOverworld ? 0 : 97.23);
-    const speed = isOverworld ? 0.028 + hash01(seed + 0.2) * 0.048 : 0.012 + hash01(seed + 0.2) * 0.02;
-    const drift = (now * speed + hash01(seed + 0.8)) % 1;
-    const xBase = (1 - drift) * (canvas.width + 120) - 60;
-    const yBase = hash01(seed + 1.7) * canvas.height;
+    const speed = isOverworld ? 0.028 + (hash01(seed + 0.2) * 0.048) : 0.012 + (hash01(seed + 0.2) * 0.02);
+    const drift = nowSec * speed;
+    const worldXBase = hash01(seed + 0.8) * particleSpanX;
+    const worldYBase = hash01(seed + 1.7) * particleSpanY;
+    const worldX = worldXBase + (drift * particleSpanX * 0.38)
+      + Math.sin(nowSec * (0.8 + hash01(seed + 2.4)) + seed) * (isOverworld ? 20 : 10);
+    const worldY = worldYBase + Math.sin(nowSec * (0.75 + hash01(seed + 3.6)) + seed * 1.3) * (isOverworld ? 16 : 7);
+    const x = wrap(worldX - (camXForParticles * cameraZoom), particleSpanX) - 40;
+    const y = wrap(worldY - (camYForParticles * cameraZoom), particleSpanY) - 40;
+    if (x < -32 || x > canvas.width + 32 || y < -32 || y > canvas.height + 32) continue;
 
-    const x = xBase + Math.sin(now * (0.8 + hash01(seed + 2.4)) + seed) * (isOverworld ? 20 : 10);
-    const y = yBase + Math.sin(now * (0.75 + hash01(seed + 3.6)) + seed * 1.3) * (isOverworld ? 16 : 7);
-    const alphaBase = isOverworld ? 0.07 + hash01(seed + 4.1) * 0.16 : 0.04 + hash01(seed + 4.1) * 0.08;
+    const alphaBase = isOverworld ? 0.07 + (hash01(seed + 4.1) * 0.16) : 0.04 + (hash01(seed + 4.1) * 0.08);
     const alpha = alphaBase * intensity;
-    const size = isOverworld ? 1.4 + hash01(seed + 5.5) * 2.6 : 1 + hash01(seed + 5.5) * 1.6;
+    const size = isOverworld ? 1.4 + (hash01(seed + 5.5) * 2.6) : 1 + (hash01(seed + 5.5) * 1.6);
 
     ctx.save();
     ctx.translate(x, y);
-    ctx.rotate(hash01(seed + 6.8) * Math.PI + now * (isOverworld ? 0.35 : 0.12));
+    ctx.rotate(hash01(seed + 6.8) * Math.PI + nowSec * (isOverworld ? 0.35 : 0.12));
     ctx.fillStyle = isOverworld
       ? `rgba(255, 222, 239, ${alpha})`
       : `rgba(255, 238, 206, ${alpha})`;
@@ -2179,7 +2255,8 @@ function drawAtmosphere(ctx, canvas, colors, state) {
       canvas.width * 0.62
     );
     vignette.addColorStop(0, "rgba(0,0,0,0)");
-    vignette.addColorStop(1, colors.VIGNETTE);
+    const vignetteEdgeAlpha = 0.12 + (0.4 * nightFactor);
+    vignette.addColorStop(1, `rgba(0, 0, 0, ${vignetteEdgeAlpha})`);
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
@@ -2729,6 +2806,7 @@ export function renderGameFrame({
   ctx,
   canvas,
   cameraZoom,
+  atmosphereZoom = cameraZoom,
   tileSize,
   spriteFrameWidth,
   spriteFrameHeight,
@@ -2799,7 +2877,7 @@ export function renderGameFrame({
     drawSaveNotice(ctx, state, uiColors);
     ctx.restore();
   }
-  drawAtmosphere(ctx, canvas, colors, state);
+  drawAtmosphere(ctx, canvas, colors, state, atmosphereZoom);
   drawMoodGrading(ctx, canvas, state);
   drawCombatDamageFlash(ctx, state);
   if (state.gameState === GAME_STATES.INTRO_CUTSCENE) {

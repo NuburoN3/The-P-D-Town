@@ -16,6 +16,11 @@ export function createGameController({
   const { updateTransientUi } = createTransientUiUpdater({ state, dialogue, levelUpMessage });
 
   function syncMusicForCurrentArea() {
+    const isBogland = state.getCurrentAreaId() === "bogland";
+    if (musicManager && typeof musicManager.setBgmVolumeMultiplier === "function") {
+      // Bogland should be 75% quieter than normal area BGM.
+      musicManager.setBgmVolumeMultiplier(isBogland ? 0.25 : 1);
+    }
     const musicKey = worldService.getAreaMusicKey(state.getCurrentTownId(), state.getCurrentAreaId());
     if (!musicKey) {
       musicManager.stopCurrentMusic();

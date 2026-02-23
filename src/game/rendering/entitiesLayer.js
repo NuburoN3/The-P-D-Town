@@ -1,4 +1,15 @@
 import { drawEntityShadow } from "./uiPrimitives.js";
+import { resolvePlayerAttackFrameIndex } from "../combat/playerAttackAnimationTiming.js";
+
+const ATTACK_HEADGEAR_OFFSETS = [
+  { x: 0, y: 0 },
+  { x: 0, y: -1 },
+  { x: 1, y: -2 },
+  { x: 1, y: -1 },
+  { x: 0, y: 0 },
+  { x: -1, y: 1 },
+  { x: 0, y: 0 }
+];
 
 function drawPlayer(
   ctx,
@@ -76,8 +87,38 @@ function drawPlayer(
     right: 2,
     up: 3
   };
-  const row = directionToRow[player.dir] ?? 0;
-  const frame = player.walking ? player.animFrame : 1;
+  const isAttacking = player.attackState && player.attackState !== "idle";
+  const attackSprite = state?.protagonistBasicAttackSprite;
+  const useAttackSprite = Boolean(
+    isAttacking &&
+    attackSprite &&
+    attackSprite.width &&
+    attackSprite.height
+  );
+  const characterSprite = useAttackSprite ? attackSprite : player.sprite;
+
+  let row = directionToRow[player.dir] ?? 0;
+  const availableRows = Math.max(1, Math.floor(characterSprite.height / spriteFrameHeight));
+  if (row >= availableRows) row = 0;
+
+  let frame = player.walking ? player.animFrame : 1;
+  let attackAnimFrame = frame;
+  if (useAttackSprite) {
+    const totalAttackDuration = Math.max(
+      1,
+      (Number.isFinite(player.attackRecoveryUntil) ? player.attackRecoveryUntil : now)
+      - (Number.isFinite(player.attackStartedAt) ? player.attackStartedAt : now)
+    );
+    const elapsed = Math.max(
+      0,
+      now - (Number.isFinite(player.attackStartedAt) ? player.attackStartedAt : now)
+    );
+    const progress = Math.max(0, Math.min(1, elapsed / totalAttackDuration));
+    const availableFrames = Math.max(1, Math.floor(characterSprite.width / spriteFrameWidth));
+    player.attackAnimationFrameCount = availableFrames;
+    frame = resolvePlayerAttackFrameIndex(progress, availableFrames);
+    attackAnimFrame = frame;
+  }
   const sx = frame * spriteFrameWidth;
   const sy = row * spriteFrameHeight;
   const hasTrainingHeadbandEquipped = state.playerEquipment?.head === "Training Headband";
@@ -89,6 +130,23 @@ function drawPlayer(
     equippedHeadbandSprite.width &&
     equippedHeadbandSprite.height
   );
+  const equippedFramesPerRow = shouldDrawEquippedHeadband
+    ? Math.max(1, Math.floor(equippedHeadbandSprite.width / spriteFrameWidth))
+    : 1;
+  const equippedRows = shouldDrawEquippedHeadband
+    ? Math.max(1, Math.floor(equippedHeadbandSprite.height / spriteFrameHeight))
+    : 1;
+  const equippedRow = row < equippedRows ? row : 0;
+  const equippedFrame = useAttackSprite
+    ? Math.min(1, equippedFramesPerRow - 1)
+    : Math.min(frame, equippedFramesPerRow - 1);
+  const headgearOffset = useAttackSprite
+    ? (ATTACK_HEADGEAR_OFFSETS[attackAnimFrame] || ATTACK_HEADGEAR_OFFSETS[ATTACK_HEADGEAR_OFFSETS.length - 1])
+    : { x: 0, y: 0 };
+  const equippedSx = equippedFrame * spriteFrameWidth;
+  const equippedSy = equippedRow * spriteFrameHeight;
+  const equippedDrawX = drawX + headgearOffset.x;
+  const equippedDrawY = drawY + headgearOffset.y;
   const defeatFallProgress = isDefeatFallActive
     ? Math.max(0, Math.min(1, defeatSequence.fallProgress || 0))
     : 0;
@@ -104,7 +162,7 @@ function drawPlayer(
     ctx.rotate(fallAngle);
     ctx.translate(-pivotX, -pivotY);
     ctx.drawImage(
-      player.sprite,
+      characterSprite,
       sx,
       sy,
       spriteFrameWidth,
@@ -117,12 +175,12 @@ function drawPlayer(
     if (shouldDrawEquippedHeadband) {
       ctx.drawImage(
         equippedHeadbandSprite,
-        sx,
-        sy,
+        equippedSx,
+        equippedSy,
         spriteFrameWidth,
         spriteFrameHeight,
-        drawX,
-        drawY,
+        equippedDrawX,
+        equippedDrawY,
         drawWidth,
         drawHeight
       );
@@ -134,7 +192,7 @@ function drawPlayer(
   }
 
   ctx.drawImage(
-    player.sprite,
+    characterSprite,
     sx,
     sy,
     spriteFrameWidth,
@@ -147,12 +205,12 @@ function drawPlayer(
   if (shouldDrawEquippedHeadband) {
     ctx.drawImage(
       equippedHeadbandSprite,
-      sx,
-      sy,
+      equippedSx,
+      equippedSy,
       spriteFrameWidth,
       spriteFrameHeight,
-      drawX,
-      drawY,
+      equippedDrawX,
+      equippedDrawY,
       drawWidth,
       drawHeight
     );

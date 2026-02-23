@@ -75,6 +75,21 @@ export class CollisionService {
     return Boolean(this.isTileBlocked(tx, ty, px, py));
   }
 
+  getNpcCollisionRect(npc) {
+    const npcWidth = Number.isFinite(npc?.width) ? Math.max(1, npc.width) : this.tileSize;
+    const npcHeight = Number.isFinite(npc?.height) ? Math.max(1, npc.height) : this.tileSize;
+    const isAnimal = Boolean(npc?.obeyAnimal);
+    const insetRatio = isAnimal ? 0.3 : 0.18;
+    const insetX = Math.min(npcWidth * 0.45, Math.max(3, npcWidth * insetRatio));
+    const insetY = Math.min(npcHeight * 0.45, Math.max(3, npcHeight * insetRatio));
+    return {
+      x: npc.x + insetX,
+      y: npc.y + insetY,
+      width: Math.max(1, npcWidth - insetX * 2),
+      height: Math.max(1, npcHeight - insetY * 2)
+    };
+  }
+
   /**
    * Check whether placing a tile at nx,ny would collide with blocked tiles.
    */
@@ -104,7 +119,7 @@ export class CollisionService {
   /**
    * Check rectangle collision with NPCs in the same area.
    */
-  collidesWithNPC(nx, ny, npcs, currentAreaId) {
+  collidesWithNPC(nx, ny, npcs, currentAreaId, currentX = null, currentY = null) {
     const playerRect = {
       x: nx + 5,
       y: ny + 5,
@@ -116,7 +131,30 @@ export class CollisionService {
       if (npc.world !== currentAreaId) continue;
       if (npc.isPlayerPet) continue;
       if (npc.blocking === false) continue;
-      if (this.rectsOverlap(playerRect, npc)) return true;
+      const npcRect = this.getNpcCollisionRect(npc);
+      if (!this.rectsOverlap(playerRect, npcRect)) continue;
+      if (Number.isFinite(currentX) && Number.isFinite(currentY)) {
+        const currentRect = {
+          x: currentX + 5,
+          y: currentY + 5,
+          width: this.tileSize - 10,
+          height: this.tileSize - 10
+        };
+        const overlapsCurrent = this.rectsOverlap(currentRect, npcRect);
+        if (overlapsCurrent) {
+          const npcCenterX = npcRect.x + npcRect.width * 0.5;
+          const npcCenterY = npcRect.y + npcRect.height * 0.5;
+          const currentCenterX = currentRect.x + currentRect.width * 0.5;
+          const currentCenterY = currentRect.y + currentRect.height * 0.5;
+          const nextCenterX = playerRect.x + playerRect.width * 0.5;
+          const nextCenterY = playerRect.y + playerRect.height * 0.5;
+          const currentDistSq = (currentCenterX - npcCenterX) ** 2 + (currentCenterY - npcCenterY) ** 2;
+          const nextDistSq = (nextCenterX - npcCenterX) ** 2 + (nextCenterY - npcCenterY) ** 2;
+          // If already overlapping, let the player move away to avoid sticky trapping.
+          if (nextDistSq > currentDistSq + 0.01) continue;
+        }
+      }
+      return true;
     }
 
     return false;

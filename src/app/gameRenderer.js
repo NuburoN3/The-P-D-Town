@@ -257,11 +257,54 @@ export function createGameRenderer({
     return renderCam;
   }
 
+  function computeRenderZoom(now) {
+    const punchUntil = Number.isFinite(combatFeedback.playerAttackPunchUntil)
+      ? combatFeedback.playerAttackPunchUntil
+      : 0;
+    if (now >= punchUntil) return cameraZoom;
+
+    const startedAt = Number.isFinite(combatFeedback.playerAttackPunchStartedAt)
+      ? combatFeedback.playerAttackPunchStartedAt
+      : now;
+    const duration = Math.max(1, punchUntil - startedAt);
+    const t = Math.max(0, Math.min(1, (now - startedAt) / duration));
+    const magnitude = Number.isFinite(combatFeedback.playerAttackPunchMagnitude)
+      ? Math.max(0, combatFeedback.playerAttackPunchMagnitude)
+      : 0;
+    const easeInPortion = 0.18;
+    let zoomBoost = 0;
+    if (t < easeInPortion) {
+      const p = t / easeInPortion;
+      zoomBoost = magnitude * (1 - Math.pow(1 - p, 3));
+    } else {
+      const p = (t - easeInPortion) / Math.max(0.001, 1 - easeInPortion);
+      zoomBoost = magnitude * Math.pow(1 - p, 2);
+    }
+    return cameraZoom * (1 + zoomBoost);
+  }
+
+  function anchorCameraToPlayerForZoom(baseCam, resolvedZoom) {
+    if (!baseCam || !player) return baseCam;
+    const baseZoom = Number.isFinite(cameraZoom) && cameraZoom > 0 ? cameraZoom : 1;
+    const zoom = Number.isFinite(resolvedZoom) && resolvedZoom > 0 ? resolvedZoom : baseZoom;
+    if (Math.abs(zoom - baseZoom) < 0.0001) return baseCam;
+
+    const playerCenterX = player.x + tileSize * 0.5;
+    const playerCenterY = player.y + tileSize * 0.5;
+    const ratio = baseZoom / zoom;
+    return {
+      x: playerCenterX - (playerCenterX - baseCam.x) * ratio,
+      y: playerCenterY - (playerCenterY - baseCam.y) * ratio
+    };
+  }
+
   function render() {
     const now = performance.now();
     const dtSec = Math.max(0, Math.min(0.1, (now - lastAtmosphereNowMs) / 1000));
     lastAtmosphereNowMs = now;
-    const renderCam = computeRenderCamera(now);
+    const baseRenderCam = computeRenderCamera(now);
+    const renderZoom = computeRenderZoom(now);
+    const renderCam = anchorCameraToPlayerForZoom(baseRenderCam, renderZoom);
     const currentTownId = getCurrentTownId();
     const currentAreaId = getCurrentAreaId();
     const currentMap = getCurrentMap();
@@ -296,7 +339,8 @@ export function createGameRenderer({
     renderGameFrame({
       ctx,
       canvas,
-      cameraZoom,
+      cameraZoom: renderZoom,
+      atmosphereZoom: cameraZoom,
       tileSize,
       spriteFrameWidth,
       spriteFrameHeight,
@@ -334,6 +378,7 @@ export function createGameRenderer({
         introState: studioIntroState,
         titleHeroImage: assets.getSprite(ASSET_KEYS.TITLE_HERO_IMAGE),
         protagonistStartSceneImage: assets.getSprite("protagonistStartScene"),
+        protagonistBasicAttackSprite: assets.getSprite("protagonistBasicAttack"),
         doorSequence,
         playerDefeatSequence,
         player,
@@ -345,6 +390,7 @@ export function createGameRenderer({
         mrHanamiDialogueClosedSprite: assets.getSprite("mrHanamiDialogueClosed"),
         gameFlags,
         cam: renderCam,
+        atmosphereCam: cam,
         inputPromptMode: input.getInputMethod(),
         keyBindings: input.getBindings(),
         settingsUiState,

@@ -1,6 +1,11 @@
 import { isFreeExploreState } from "../core/constants.js";
 import { distance } from "../core/mathUtils.js";
 import { createDefaultAttackCatalog, resolveAttackProfile } from "./combat/attackCatalog.js";
+import {
+  PLAYER_ATTACK_FRAME_TIMINGS,
+  PLAYER_ATTACK_HIT_FRAME_INDEX,
+  resolvePlayerAttackFrameIndex
+} from "./combat/playerAttackAnimationTiming.js";
 
 // distance imported from ../core/mathUtils.js
 
@@ -8,6 +13,7 @@ export function createCombatSystem({
   tileSize,
   attackCatalog = null,
   defaultAttackId = "lightSlash",
+  basicAttackManaCost = 0,
   eventHandlers = {},
   spawnVisualEffect = () => { },
   onEnemyDefeated = () => { }
@@ -15,6 +21,7 @@ export function createCombatSystem({
   const catalog = { ...(attackCatalog || createDefaultAttackCatalog(tileSize)) };
   const hitIdsInCurrentSwing = new Set();
   const npcHitIdsInCurrentSwing = new Set();
+  let playerAttackHitFrameCuePlayed = false;
   const handlers = {
     onRequestVfx: eventHandlers.onRequestVfx || spawnVisualEffect,
     onEntityDamaged: eventHandlers.onEntityDamaged || (() => { }),
@@ -22,6 +29,8 @@ export function createCombatSystem({
     onPlayerDamaged: eventHandlers.onPlayerDamaged || (() => { }),
     onPlayerDefeated: eventHandlers.onPlayerDefeated || null,
     onPlayerAttackStarted: eventHandlers.onPlayerAttackStarted || (() => { }),
+    onPlayerAttackActive: eventHandlers.onPlayerAttackActive || (() => { }),
+    onPlayerAttackHitFrame: eventHandlers.onPlayerAttackHitFrame || (() => { }),
     onHitConfirmed: eventHandlers.onHitConfirmed || (() => { })
   };
 
@@ -105,6 +114,7 @@ export function createCombatSystem({
     player.attackRecoveryUntil = player.attackActiveUntil + profile.recoveryMs;
     player.lastAttackAt = now;
     player.activeAttackId = profile.id;
+    playerAttackHitFrameCuePlayed = false;
     hitIdsInCurrentSwing.clear();
 
     const vfxOrigin = profile.getVfxOrigin
@@ -126,6 +136,12 @@ export function createCombatSystem({
   function updatePlayerAttackState(player, now) {
     if (player.attackState === "windup" && now >= player.attackActiveAt) {
       player.attackState = "active";
+      const profile = getAttackProfileForEntity(player, player.activeAttackId);
+      handlers.onPlayerAttackActive({
+        attacker: player,
+        profile,
+        now
+      });
       return;
     }
 
@@ -136,8 +152,44 @@ export function createCombatSystem({
 
     if (player.attackState === "recovery" && now >= player.attackRecoveryUntil) {
       player.attackState = "idle";
+      playerAttackHitFrameCuePlayed = false;
       hitIdsInCurrentSwing.clear();
       npcHitIdsInCurrentSwing.clear();
+    }
+  }
+
+  function updatePlayerAttackHitFrameCue(player, now) {
+    if (playerAttackHitFrameCuePlayed) return;
+    if (!player || player.attackState === "idle") return;
+
+    const totalAttackDuration = Math.max(
+      1,
+      (Number.isFinite(player.attackRecoveryUntil) ? player.attackRecoveryUntil : now)
+      - (Number.isFinite(player.attackStartedAt) ? player.attackStartedAt : now)
+    );
+    const elapsed = Math.max(
+      0,
+      now - (Number.isFinite(player.attackStartedAt) ? player.attackStartedAt : now)
+    );
+    const progress = Math.max(0, Math.min(1, elapsed / totalAttackDuration));
+    const availableFrames = Number.isFinite(player.attackAnimationFrameCount)
+      ? Math.max(1, Math.floor(player.attackAnimationFrameCount))
+      : PLAYER_ATTACK_FRAME_TIMINGS.length;
+    const frame = resolvePlayerAttackFrameIndex(progress, availableFrames);
+    const hitFrame = Math.min(
+      Math.max(0, PLAYER_ATTACK_HIT_FRAME_INDEX),
+      Math.max(0, availableFrames - 1)
+    );
+    const maxReachableFrame = resolvePlayerAttackFrameIndex(1, availableFrames);
+    const effectiveHitFrame = Math.min(hitFrame, maxReachableFrame);
+    if (frame >= effectiveHitFrame) {
+      playerAttackHitFrameCuePlayed = true;
+      handlers.onPlayerAttackHitFrame({
+        attacker: player,
+        frame,
+        hitFrame: effectiveHitFrame,
+        now
+      });
     }
   }
 
@@ -175,7 +227,21 @@ export function createCombatSystem({
     const damageTextOffset = tileSize * 0.62;
     const damageTextX = ex + fromPlayerDirX * damageTextOffset;
     const damageTextY = ey + fromPlayerDirY * (damageTextOffset * 0.45) - tileSize * 0.22;
-    handlers.onRequestVfx("hitSpark", { x: ex, y: ey, size: 18, durationMs: 240 });
+    const enemyContactRadius = Math.max(
+      tileSize * 0.18,
+      Math.min(
+        tileSize * 0.42,
+        (Number.isFinite(enemy.width) ? enemy.width : tileSize) * 0.36
+      )
+    );
+    const hitSparkX = ex + fromPlayerDirX * enemyContactRadius;
+    const hitSparkY = ey + fromPlayerDirY * enemyContactRadius;
+    handlers.onRequestVfx("hitSpark", {
+      x: hitSparkX,
+      y: hitSparkY,
+      size: 18,
+      durationMs: 240
+    });
     handlers.onRequestVfx("damageText", {
       x: damageTextX,
       y: damageTextY,
@@ -424,10 +490,20 @@ export function createCombatSystem({
       player.attackState === "idle" &&
       now - player.lastAttackAt >= (equippedProfile?.cooldownMs || 0)
     ) {
+      const isBasicAttack = equippedProfile?.id === defaultAttackId;
+      const basicManaCost = Number.isFinite(basicAttackManaCost) ? Math.max(0, basicAttackManaCost) : 0;
+      if (isBasicAttack && basicManaCost > 0) {
+        const currentMana = Number.isFinite(player.mana) ? Math.max(0, player.mana) : 0;
+        if (currentMana < basicManaCost) {
+          return;
+        }
+        player.mana = Math.max(0, currentMana - basicManaCost);
+      }
       beginPlayerAttack(player, equippedProfile, now);
     }
 
     updatePlayerAttackState(player, now);
+    updatePlayerAttackHitFrameCue(player, now);
     const activeProfile = getAttackProfileForEntity(player, player.activeAttackId);
     processPlayerHits({
       now,

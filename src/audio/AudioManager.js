@@ -7,6 +7,7 @@ export class AudioManager {
     this.currentArea = null;
     this.currentAudio = null;
     this.bgmVolume = bgmVolume;
+    this.bgmVolumeMultiplier = 1;
     this.sfxVolume = sfxVolume;
     this.bgmFadeMs = fadeDurationMs;
     this.fadeTimers = new Map();
@@ -16,6 +17,18 @@ export class AudioManager {
     this._pauseMenuAudioSuspended = false;
     this._resumeMusicAfterPause = false;
     this._pausedSfxShots = new Set();
+  }
+
+  getResolvedBgmVolume() {
+    return Math.max(0, Math.min(1, this.bgmVolume * this.bgmVolumeMultiplier));
+  }
+
+  setBgmVolumeMultiplier(multiplier = 1, { fadeMs = this.bgmFadeMs } = {}) {
+    const safe = Number.isFinite(multiplier) ? Math.max(0, multiplier) : 1;
+    if (Math.abs(safe - this.bgmVolumeMultiplier) < 0.0001) return;
+    this.bgmVolumeMultiplier = safe;
+    if (!this.currentAudio) return;
+    this._fadeAudio(this.currentAudio, this.getResolvedBgmVolume(), fadeMs).catch(() => {});
   }
 
   registerAreaTrack(areaName, src) {
@@ -56,7 +69,7 @@ export class AudioManager {
         this._fadeAudio(prev, 0, fadeMs).then(() => {
           try { prev.pause(); prev.currentTime = 0; } catch (e) {}
         }),
-        this._fadeAudio(nextAudio, this.bgmVolume, fadeMs)
+        this._fadeAudio(nextAudio, this.getResolvedBgmVolume(), fadeMs)
       ]).catch(() => {});
 
       this.currentAudio = nextAudio;
@@ -73,7 +86,7 @@ export class AudioManager {
       }
       this.currentAudio = nextAudio;
       this.currentArea = areaName;
-      this._fadeAudio(nextAudio, this.bgmVolume, fadeMs).catch(() => {});
+      this._fadeAudio(nextAudio, this.getResolvedBgmVolume(), fadeMs).catch(() => {});
       return;
     }
 
@@ -84,7 +97,7 @@ export class AudioManager {
       if (playPromise && typeof playPromise.catch === "function") {
         playPromise.catch(() => {});
       }
-      this._fadeAudio(nextAudio, this.bgmVolume, fadeMs).catch(() => {});
+      this._fadeAudio(nextAudio, this.getResolvedBgmVolume(), fadeMs).catch(() => {});
       this.currentAudio = nextAudio;
       this.currentArea = areaName;
     }
@@ -158,7 +171,7 @@ export class AudioManager {
     const audio = new Audio(src);
     audio.loop = true;
     audio.preload = "auto";
-    audio.volume = this.bgmVolume;
+    audio.volume = this.getResolvedBgmVolume();
     audio.addEventListener('error', (e) => {
       console.warn('AudioManager: BGM load error for', src, e);
     });
@@ -217,7 +230,7 @@ export class AudioManager {
     if (!this.currentAudio) return;
 
     const audio = this.currentAudio;
-    const duckTo = Math.max(0.08, this.bgmVolume * 0.35);
+    const duckTo = Math.max(0.08, this.getResolvedBgmVolume() * 0.35);
     const downMs = 120;
     const holdMs = 520;
     const upMs = 300;
@@ -231,7 +244,7 @@ export class AudioManager {
 
     this._bgmDuckRestoreTimer = setTimeout(() => {
       if (this.currentAudio === audio) {
-        this._fadeAudio(audio, this.bgmVolume, upMs).catch(() => {});
+        this._fadeAudio(audio, this.getResolvedBgmVolume(), upMs).catch(() => {});
       }
       this._bgmDuckRestoreTimer = null;
     }, holdMs);

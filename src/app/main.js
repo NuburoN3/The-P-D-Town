@@ -249,7 +249,13 @@ const collisionService = new CollisionService({
 const movementSystem = createMovementSystem({
   keys: input.keys,
   getActionPressed: (action) => input.isActionPressed(action),
-  getSprintPressed: () => Boolean(mouseUiState.sprintPressed || input.keys.shift),
+  getSprintPressed: () => {
+    const disciplineLevel = Number.isFinite(playerStats.disciplineLevel)
+      ? Math.max(1, Math.floor(playerStats.disciplineLevel))
+      : 1;
+    if (disciplineLevel < SPRINT_UNLOCK_DISCIPLINE_LEVEL) return false;
+    return Boolean(mouseUiState.sprintPressed || input.keys.shift);
+  },
   tileSize: TILE,
   spriteFramesPerRow: SPRITE_FRAMES_PER_ROW,
   cameraZoom: CAMERA_ZOOM,
@@ -279,7 +285,10 @@ const combatFeedback = {
   shakeUntil: 0,
   shakeMagnitude: 0,
   lastEnemyTelegraphAt: 0,
-  playerDamageFlashUntil: 0
+  playerDamageFlashUntil: 0,
+  playerAttackPunchStartedAt: 0,
+  playerAttackPunchUntil: 0,
+  playerAttackPunchMagnitude: 0
 };
 
 const objectiveState = {
@@ -311,10 +320,13 @@ const BONK_SKILL_MANA_COST = 2;
 const BONK_SKILL_COOLDOWN_MS = 8000;
 const BONK_SKILL_WINDUP_MS = 1000;
 const BONK_SKILL_DAMAGE = 20;
+const SPRINT_UNLOCK_DISCIPLINE_LEVEL = 6;
 const OBEY_CAST_RADIUS_TILES = 4;
 const OBEY_CHANNEL_DURATION_MS = 10000;
 const OBEY_PET_FOLLOW_DISTANCE_TILES = 1;
 const OBEY_PET_TELEPORT_DISTANCE_TILES = 8;
+const OBEY_PET_CATCHUP_TRIGGER_DISTANCE_TILES = 3;
+const OBEY_POSSUM_CATCHUP_SPEED_MULTIPLIER = 1.9;
 const OBEY_CANCEL_REVERT_DISTANCE_TILES = 6;
 const OBEY_PET_ASSIST_RADIUS_TILES = 6;
 const OBEY_PET_ASSIST_ATTACK_RANGE_TILES = 1.05;
@@ -346,6 +358,7 @@ const obeyState = {
   petHp: 15,
   petPassedOut: false,
   petPassedOutAt: 0,
+  petWaitingOutside: false,
   petWidth: 25,
   petHeight: 16,
   lastFollowUpdateAt: 0,
@@ -952,6 +965,37 @@ function createObeyHostileEnemyFromNpc(targetNpc) {
   return hostileEnemy;
 }
 
+function isAnimalNpcForRetaliation(npc) {
+  if (!npc || typeof npc !== "object") return false;
+  if (Boolean(npc.isPlayerPet)) return false;
+  if (Boolean(npc.obeyAnimal)) return true;
+  const spriteName = String(npc.spriteName || "").toLowerCase();
+  if (!spriteName) return false;
+  return (
+    spriteName.includes("possum") ||
+    spriteName.includes("dog") ||
+    spriteName.includes("horse") ||
+    spriteName.includes("cow") ||
+    spriteName.includes("chicken")
+  );
+}
+
+function triggerAnimalRetaliationFromNpcHit(npc, now = performance.now()) {
+  if (!isAnimalNpcForRetaliation(npc)) return null;
+  const hasMatchingHostile = enemies.some((enemy) => (
+    enemy &&
+    enemy.obeyHostile &&
+    enemy.obeySourceNpcId === npc.id &&
+    enemy.world === npc.world &&
+    !enemy.dead
+  ));
+  if (hasMatchingHostile) return null;
+  const hostileEnemy = createObeyHostileEnemyFromNpc(npc);
+  if (!hostileEnemy) return null;
+  hostileEnemy.lastAttackAt = now - Math.max(0, Number(hostileEnemy.attackCooldownMs) || 0);
+  return hostileEnemy;
+}
+
 function beginObeyChannel(targetNpc) {
   if (!targetNpc) return false;
   const hostileEnemy = createObeyHostileEnemyFromNpc(targetNpc);
@@ -1283,6 +1327,7 @@ function ensurePetExistsInCurrentArea() {
 function updatePetFollow(now) {
   const pet = ensurePetExistsInCurrentArea();
   if (!pet) return;
+  obeyState.petWaitingOutside = false;
   if (pet.world !== currentAreaId) pet.world = currentAreaId;
   pet.canRoam = false;
   pet.blocking = false;
@@ -1338,8 +1383,18 @@ function updatePetFollow(now) {
   }
 
   const step = Math.min(distance, Math.max(0.35, 1.8 * dtScale));
-  const vx = (dx / distance) * step;
-  const vy = (dy / distance) * step;
+  const playerCenterX = player.x + TILE * 0.5;
+  const playerCenterY = player.y + TILE * 0.5;
+  const petCenterX = pet.x + (Number.isFinite(pet.width) ? pet.width : TILE) * 0.5;
+  const petCenterY = pet.y + (Number.isFinite(pet.height) ? pet.height : TILE) * 0.5;
+  const playerPetDistance = Math.hypot(playerCenterX - petCenterX, playerCenterY - petCenterY);
+  const isPossumPet = String(pet.spriteName || pet.name || "").toLowerCase().includes("possum");
+  const shouldCatchUpBoost = isPossumPet && playerPetDistance >= OBEY_PET_CATCHUP_TRIGGER_DISTANCE_TILES * TILE;
+  const adjustedStep = shouldCatchUpBoost
+    ? Math.min(distance, step * OBEY_POSSUM_CATCHUP_SPEED_MULTIPLIER)
+    : step;
+  const vx = (dx / distance) * adjustedStep;
+  const vy = (dy / distance) * adjustedStep;
 
   const tryX = pet.x + vx;
   const tryY = pet.y + vy;
@@ -1379,6 +1434,32 @@ function updateObeySystem(now) {
 
   maybeRevertCancelledObeyHostile();
 
+  const isOverworldArea = worldService.getAreaKind(currentTownId, currentAreaId) === AREA_KINDS.OVERWORLD;
+  if (obeyState.petId && !isOverworldArea) {
+    const pet = npcs.find((npc) => npc && npc.id === obeyState.petId) || null;
+    if (pet) {
+      pet.maxHp = Number.isFinite(pet.maxHp) ? Math.max(1, pet.maxHp) : 15;
+      pet.hp = Number.isFinite(pet.hp) ? Math.max(0, Math.min(pet.maxHp, pet.hp)) : pet.maxHp;
+      pet.passedOut = Boolean(pet.passedOut) || pet.hp <= 0;
+      obeyState.petTypeName = String(pet.name || obeyState.petTypeName || "Companion");
+      obeyState.petLevel = Number.isFinite(pet.level) ? Math.max(1, Math.floor(pet.level)) : obeyState.petLevel;
+      obeyState.petXp = Number.isFinite(pet.xp) ? Math.max(0, pet.xp) : obeyState.petXp;
+      obeyState.petXpNeeded = Number.isFinite(pet.xpNeeded) ? Math.max(1, pet.xpNeeded) : obeyState.petXpNeeded;
+      obeyState.petMaxHp = pet.maxHp;
+      obeyState.petHp = pet.hp;
+      obeyState.petPassedOut = Boolean(pet.passedOut);
+      obeyState.petPassedOutAt = Number.isFinite(pet.passedOutAt) ? pet.passedOutAt : obeyState.petPassedOutAt;
+      removeNpcById(pet.id);
+    }
+    clearPetAssistState();
+    obeyState.petWaitingOutside = true;
+    return;
+  }
+
+  if (obeyState.petId && isOverworldArea && obeyState.petWaitingOutside) {
+    obeyState.petWaitingOutside = false;
+  }
+
   if (obeyState.petId) {
     if (obeyState.assistActive) {
       updatePetAssistCombat(now);
@@ -1406,6 +1487,7 @@ function dismissObeyPet(now = performance.now()) {
   obeyState.petHp = 15;
   obeyState.petPassedOut = false;
   obeyState.petPassedOutAt = 0;
+  obeyState.petWaitingOutside = false;
   obeyState.petWidth = 25;
   obeyState.petHeight = 16;
   obeyState.lastFollowUpdateAt = 0;
@@ -2346,6 +2428,27 @@ function revivePetOnOverworldEntry(now = performance.now()) {
 
 function handleEnemyDefeatRewards(enemy, now) {
   if (enemy?.obeyHostile) {
+    const enemyId = typeof enemy?.id === "string" ? enemy.id.toLowerCase() : "";
+    const enemyName = typeof enemy?.name === "string" ? enemy.name.toLowerCase() : "";
+    const enemySpriteName = typeof enemy?.spriteName === "string" ? enemy.spriteName.toLowerCase() : "";
+    const isWildPossum =
+      enemyId.includes("possum") ||
+      enemyName.includes("possum") ||
+      enemySpriteName.includes("possum");
+    if (isWildPossum) {
+      const levelsGained = applyCombatXpGain(2, now);
+      const ex = Number.isFinite(enemy?.x) ? enemy.x + (Number(enemy?.width) || TILE) * 0.5 : player.x + TILE * 0.5;
+      const ey = Number.isFinite(enemy?.y) ? enemy.y + (Number(enemy?.height) || TILE) * 0.25 : player.y;
+      vfxSystem.spawn("xpGainText", {
+        x: ex,
+        y: ey,
+        text: "+2 xp",
+        color: levelsGained > 0 ? "#fff2ba" : "#a8e4ff",
+        glowColor: levelsGained > 0 ? "rgba(255, 206, 96, 0.4)" : "rgba(101, 197, 255, 0.34)",
+        size: 24,
+        durationMs: 1000
+      });
+    }
     if (enemy.id === obeyState.hostileEnemyId) {
       if (obeyState.active) {
         resetObeyChannelState();
@@ -3193,15 +3296,29 @@ const {
 
 const combatSystem = createCombatSystem({
   tileSize: TILE,
+  basicAttackManaCost: 0,
   eventHandlers: {
     onRequestVfx: (type, options) => vfxSystem.spawn(type, options),
     onPlayerAttackStarted: ({ profile }) => {
       player.requestedAttackId = null;
-      musicManager.playSfx("attackSwing");
       engagePetAssistMode();
+    },
+    onPlayerAttackHitFrame: () => {
+      musicManager.playSfx("attackSwing");
+      const now = performance.now();
+      combatFeedback.playerAttackPunchStartedAt = now;
+      combatFeedback.playerAttackPunchUntil = now + 220;
+      combatFeedback.playerAttackPunchMagnitude = 0.015;
+      if (userSettings.screenShake) {
+        combatFeedback.shakeUntil = Math.max(combatFeedback.shakeUntil, now + 120);
+        combatFeedback.shakeMagnitude = Math.max(combatFeedback.shakeMagnitude || 0, 1.25);
+      }
     },
     onHitConfirmed: (event) => {
       handleCombatHitConfirmed(event);
+      if (event?.type === "npcHit") {
+        triggerAnimalRetaliationFromNpcHit(event?.target, event?.now);
+      }
       if (event?.type === "entityDamaged") {
         engagePetAssistMode();
       }

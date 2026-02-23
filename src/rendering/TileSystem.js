@@ -28,9 +28,99 @@ import {
   isGrassFamilyTile
 } from "./tileHelpers.js";
 
+function isBoglandArea(deps) {
+  return deps?.currentAreaId === "bogland";
+}
+
+const BOG_TILE_BLEED = 1;
+
 function drawGrassTile(ctx, deps) {
   const { x, y, tileX, tileY } = deps;
   const n = hash2(tileX, tileY, 3);
+  const bogland = isBoglandArea(deps);
+
+  if (bogland) {
+    const macroSeed = hash2(Math.floor(tileX / 4), Math.floor(tileY / 4), 701);
+    const topTone = (macroSeed & 1) === 0 ? "#41533a" : "#465a3d";
+    const reedTone = "#6f7a52";
+    const poolSeed = hash2(Math.floor(tileX / 4), Math.floor(tileY / 4), 911);
+    ctx.fillStyle = topTone;
+    ctx.fillRect(x - BOG_TILE_BLEED, y - BOG_TILE_BLEED, TILE + (BOG_TILE_BLEED * 2), TILE + (BOG_TILE_BLEED * 2));
+
+    // Mud mottling and wet grime.
+    for (let i = 0; i < 12; i++) {
+      const sx = 1 + ((n >> (i * 2 + 1)) % (TILE - 3));
+      const sy = 1 + ((n >> (i * 3 + 2)) % (TILE - 3));
+      ctx.fillStyle = i % 3 === 0 ? "rgba(0,0,0,0.16)" : "rgba(60,47,34,0.28)";
+      ctx.fillRect(x + sx, y + sy, 1, 1);
+    }
+
+    // Random shallow pit/wet patch.
+    if ((n & 31) < 9) {
+      const pitX = x + 7 + ((n >> 5) % 10);
+      const pitY = y + 9 + ((n >> 9) % 8);
+      const pitW = 6 + ((n >> 12) % 8);
+      const pitH = 3 + ((n >> 16) % 4);
+      ctx.fillStyle = "rgba(20,30,22,0.26)";
+      ctx.beginPath();
+      ctx.ellipse(pitX, pitY, pitW, pitH, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(180,205,176,0.08)";
+      ctx.beginPath();
+      ctx.ellipse(pitX - 2, pitY - 1, pitW * 0.38, pitH * 0.32, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Occasional murky standing-water pools.
+    if ((poolSeed & 31) < 2) {
+      const cx = x + 8 + ((n >> 8) % 12);
+      const cy = y + 11 + ((n >> 12) % 8);
+      const rx = 10 + ((n >> 16) % 7);
+      const ry = 4 + ((n >> 20) % 4);
+      ctx.fillStyle = "rgba(12, 25, 23, 0.52)";
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(106, 135, 125, 0.14)";
+      ctx.beginPath();
+      ctx.ellipse(cx - 2, cy - 1, rx * 0.34, ry * 0.3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(8, 14, 13, 0.3)";
+      ctx.beginPath();
+      ctx.ellipse(cx + 1, cy + 1, rx * 0.65, ry * 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(cx - (rx * 0.7), cy + 1, rx * 0.45, ry * 0.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Sparse reeds.
+    for (let i = 0; i < 4; i++) {
+      const sx = 2 + ((n >> (i * 4 + 3)) % (TILE - 4));
+      const sy = 7 + ((n >> (i * 5 + 1)) % (TILE - 10));
+      const h = 2 + ((n >> (i * 3 + 7)) % 3);
+      ctx.fillStyle = reedTone;
+      ctx.fillRect(x + sx, y + sy, 1, h);
+    }
+
+    const left = sampleTile(deps, tileX - 1, tileY);
+    const right = sampleTile(deps, tileX + 1, tileY);
+    const top = sampleTile(deps, tileX, tileY - 1);
+    const bottom = sampleTile(deps, tileX, tileY + 1);
+
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    if (isShadowNeighborTile(left)) ctx.fillRect(x, y, 3, TILE);
+    if (isShadowNeighborTile(right)) ctx.fillRect(x + TILE - 3, y, 3, TILE);
+    if (isShadowNeighborTile(top)) ctx.fillRect(x, y, TILE, 3);
+    if (isShadowNeighborTile(bottom)) ctx.fillRect(x, y + TILE - 3, TILE, 3);
+
+    ctx.fillStyle = "rgba(164, 156, 112, 0.3)";
+    if (left === TILE_TYPES.PATH) ctx.fillRect(x, y + 1, 2, TILE - 2);
+    if (right === TILE_TYPES.PATH) ctx.fillRect(x + TILE - 2, y + 1, 2, TILE - 2);
+    if (top === TILE_TYPES.PATH) ctx.fillRect(x + 1, y, TILE - 2, 2);
+    if (bottom === TILE_TYPES.PATH) ctx.fillRect(x + 1, y + TILE - 2, TILE - 2, 2);
+    return;
+  }
 
   ctx.fillStyle = (tileX + tileY) % 2 === 0 ? COLORS.GRASS : COLORS.GRASS_MID;
   ctx.fillRect(x, y, TILE, TILE);
@@ -79,15 +169,36 @@ function drawGrassTile(ctx, deps) {
 function drawPathTile(ctx, deps) {
   const { x, y, tileX, tileY } = deps;
   const n = hash2(tileX, tileY, 19);
+  const bogland = isBoglandArea(deps);
 
-  ctx.fillStyle = COLORS.PATH;
-  ctx.fillRect(x, y, TILE, TILE);
+  if (bogland) {
+    const macroSeed = hash2(Math.floor(tileX / 4), Math.floor(tileY / 4), 823);
+    ctx.fillStyle = (macroSeed & 1) === 0 ? "#54412e" : "#5a4630";
+    ctx.fillRect(x - BOG_TILE_BLEED, y - BOG_TILE_BLEED, TILE + (BOG_TILE_BLEED * 2), TILE + (BOG_TILE_BLEED * 2));
 
-  for (let i = 0; i < 10; i++) {
-    const sx = 2 + ((n >> (i * 2 + 1)) % (TILE - 4));
-    const sy = 2 + ((n >> (i * 3 + 2)) % (TILE - 4));
-    ctx.fillStyle = i % 3 === 0 ? COLORS.PATH_DARK : COLORS.PATH_LIGHT;
-    ctx.fillRect(x + sx, y + sy, 1, 1);
+    for (let i = 0; i < 12; i++) {
+      const sx = 2 + ((n >> (i * 2 + 1)) % (TILE - 4));
+      const sy = 2 + ((n >> (i * 3 + 2)) % (TILE - 4));
+      ctx.fillStyle = i % 3 === 0 ? "rgba(37,28,19,0.36)" : "rgba(126,101,71,0.28)";
+      ctx.fillRect(x + sx, y + sy, 1, 1);
+    }
+
+    if ((n & 15) < 6) {
+      ctx.fillStyle = "rgba(24,33,27,0.22)";
+      ctx.beginPath();
+      ctx.ellipse(x + 8 + ((n >> 7) % 12), y + 17 + ((n >> 11) % 8), 5, 2.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    ctx.fillStyle = COLORS.PATH;
+    ctx.fillRect(x, y, TILE, TILE);
+
+    for (let i = 0; i < 10; i++) {
+      const sx = 2 + ((n >> (i * 2 + 1)) % (TILE - 4));
+      const sy = 2 + ((n >> (i * 3 + 2)) % (TILE - 4));
+      ctx.fillStyle = i % 3 === 0 ? COLORS.PATH_DARK : COLORS.PATH_LIGHT;
+      ctx.fillRect(x + sx, y + sy, 1, 1);
+    }
   }
 
   const same = (tx, ty) => {
@@ -100,19 +211,19 @@ function drawPathTile(ctx, deps) {
   const connectLeft = same(tileX - 1, tileY);
   const connectRight = same(tileX + 1, tileY);
 
-  ctx.fillStyle = COLORS.PATH_EDGE;
+  ctx.fillStyle = bogland ? "rgba(48,36,24,0.85)" : COLORS.PATH_EDGE;
   if (!connectTop) ctx.fillRect(x, y, TILE, 3);
   if (!connectBottom) ctx.fillRect(x, y + TILE - 3, TILE, 3);
   if (!connectLeft) ctx.fillRect(x, y, 3, TILE);
   if (!connectRight) ctx.fillRect(x + TILE - 3, y, 3, TILE);
 
-  ctx.fillStyle = COLORS.PATH_LIGHT;
+  ctx.fillStyle = bogland ? "rgba(154,132,101,0.45)" : COLORS.PATH_LIGHT;
   if (!connectTop) ctx.fillRect(x + 2, y + 1, TILE - 4, 1);
   if (!connectLeft) ctx.fillRect(x + 1, y + 2, 1, TILE - 4);
 
   const grassNeighbor = (tx, ty) => isGrassFamilyTile(sampleTile(deps, tx, ty));
 
-  ctx.fillStyle = COLORS.GRASS_DARK;
+  ctx.fillStyle = bogland ? "#273527" : COLORS.GRASS_DARK;
   if (!connectTop && grassNeighbor(tileX, tileY - 1)) {
     for (let px = 2; px < TILE - 2; px += 3) {
       ctx.fillRect(x + px, y + 1, 1, 1);
@@ -128,8 +239,62 @@ function drawPathTile(ctx, deps) {
 function drawTreeTile(ctx, deps) {
   const { x, y, tileX, tileY } = deps;
   const n = hash2(tileX, tileY, 47);
+  const bogland = isBoglandArea(deps);
 
   drawGrassTile(ctx, deps);
+
+  if (bogland) {
+    ctx.fillStyle = "rgba(0,0,0,0.32)";
+    ctx.beginPath();
+    ctx.ellipse(x + 16, y + 25, 11, 5.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#3a2a1c";
+    ctx.fillRect(x + 11, y + 18, 10, 14);
+    ctx.fillStyle = "#4a3727";
+    ctx.fillRect(x + 12, y + 18, 8, 13);
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillRect(x + 13, y + 19, 1, 10);
+
+    ctx.fillStyle = "#0b281b";
+    ctx.beginPath();
+    ctx.arc(x + 16, y + 13, 12.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#103424";
+    ctx.beginPath();
+    ctx.arc(x + 8, y + 12, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x + 24, y + 12, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x + 16, y + 17, 7.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#1a4a34";
+    ctx.beginPath();
+    ctx.arc(x + 16, y + 8.5, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x + 10, y + 7, 6.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x + 22, y + 7, 6.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(22, 72, 52, 0.8)";
+    for (let i = 0; i < 10; i++) {
+      const sx = 7 + ((n >> (i * 3 + 1)) % 18);
+      const sy = 2 + ((n >> (i * 4 + 2)) % 12);
+      const size = i % 3 === 0 ? 2 : 1;
+      ctx.fillRect(x + sx, y + sy, size, size);
+    }
+
+    ctx.fillStyle = "rgba(0,0,0,0.24)";
+    ctx.fillRect(x, y + TILE - 3, TILE, 3);
+    return;
+  }
 
   ctx.fillStyle = "rgba(0,0,0,0.2)";
   ctx.beginPath();
@@ -427,38 +592,47 @@ function drawDoorTile(ctx, deps) {
 function drawHillTile(ctx, deps) {
   const { x, y, tileX, tileY } = deps;
   const n = hash2(tileX, tileY, 121);
+  const bogland = isBoglandArea(deps);
   const top = sampleTile(deps, tileX, tileY - 1);
   const bottom = sampleTile(deps, tileX, tileY + 1);
   const left = sampleTile(deps, tileX - 1, tileY);
   const right = sampleTile(deps, tileX + 1, tileY);
   const isHill = (t) => t === TILE_TYPES.HILL;
 
-  ctx.fillStyle = (tileX + tileY) % 2 === 0
-    ? (COLORS.HILL_TOP_LIGHT || "#86be72")
-    : (COLORS.HILL_TOP_DARK || "#6eaa5b");
-  ctx.fillRect(x, y, TILE, TILE);
+  ctx.fillStyle = bogland
+    ? ((hash2(Math.floor(tileX / 4), Math.floor(tileY / 4), 977) & 1) === 0 ? "#554b35" : "#5b5039")
+    : ((tileX + tileY) % 2 === 0
+      ? (COLORS.HILL_TOP_LIGHT || "#86be72")
+      : (COLORS.HILL_TOP_DARK || "#6eaa5b"));
+  if (bogland) {
+    ctx.fillRect(x - BOG_TILE_BLEED, y - BOG_TILE_BLEED, TILE + (BOG_TILE_BLEED * 2), TILE + (BOG_TILE_BLEED * 2));
+  } else {
+    ctx.fillRect(x, y, TILE, TILE);
+  }
 
   for (let i = 0; i < 7; i++) {
     const sx = 2 + ((n >> (i * 3 + 1)) % (TILE - 4));
     const sy = 2 + ((n >> (i * 4 + 2)) % 14);
-    ctx.fillStyle = i % 2 === 0 ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.10)";
+    ctx.fillStyle = i % 2 === 0
+      ? (bogland ? "rgba(0,0,0,0.2)" : "rgba(0,0,0,0.12)")
+      : (bogland ? "rgba(171,146,109,0.12)" : "rgba(255,255,255,0.10)");
     ctx.fillRect(x + sx, y + sy, 1, 1);
   }
 
   if (!isHill(top)) {
-    ctx.fillStyle = "rgba(255,255,255,0.28)";
+    ctx.fillStyle = bogland ? "rgba(196,172,130,0.2)" : "rgba(255,255,255,0.28)";
     ctx.fillRect(x + 1, y + 1, TILE - 2, 2);
-    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.fillStyle = bogland ? "rgba(0,0,0,0.24)" : "rgba(0,0,0,0.18)";
     ctx.fillRect(x, y + 3, TILE, 1);
   }
 
   if (!isHill(bottom)) {
     const cliffGradient = ctx.createLinearGradient(x, y + 18, x, y + TILE);
-    cliffGradient.addColorStop(0, COLORS.HILL_CLIFF_LIGHT || "#8a6a4a");
-    cliffGradient.addColorStop(1, COLORS.HILL_CLIFF_DARK || "#62462f");
+    cliffGradient.addColorStop(0, bogland ? "#5b4a33" : (COLORS.HILL_CLIFF_LIGHT || "#8a6a4a"));
+    cliffGradient.addColorStop(1, bogland ? "#3f3323" : (COLORS.HILL_CLIFF_DARK || "#62462f"));
     ctx.fillStyle = cliffGradient;
     ctx.fillRect(x, y + 18, TILE, TILE - 18);
-    ctx.fillStyle = "rgba(0,0,0,0.2)";
+    ctx.fillStyle = bogland ? "rgba(0,0,0,0.3)" : "rgba(0,0,0,0.2)";
     ctx.fillRect(x, y + 18, TILE, 1);
   }
 

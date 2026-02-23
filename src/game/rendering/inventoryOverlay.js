@@ -824,7 +824,7 @@ function drawEquipmentPreview(
   if (!playerSprite || !(playerSprite.width > 0 || playerSprite.naturalWidth > 0)) return;
 
   const { frameWidth, frameHeight, framesPerRow } = getPlayerPreviewFrameMetrics(playerSprite);
-  const previewFrame = Math.min(1, Math.max(0, framesPerRow - 1));
+  const previewFrame = 0;
   const directionToRow = {
     down: 0,
     left: 1,
@@ -848,6 +848,8 @@ function drawEquipmentPreview(
   const drawY = Math.round(centeredY - 8);
 
   ctx.save();
+  const previousImageSmoothingEnabled = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
   ctx.beginPath();
   ctx.rect(equipmentPanelX + 1, equipmentPanelY + 1, equipmentPanelW - 2, equipmentPanelH - 2);
   ctx.clip();
@@ -901,6 +903,7 @@ function drawEquipmentPreview(
     ctx.globalAlpha = 0.88;
     ctx.drawImage(itemSprite, iconX, iconY, iconSize, iconSize);
   }
+  ctx.imageSmoothingEnabled = previousImageSmoothingEnabled;
   ctx.restore();
 }
 
