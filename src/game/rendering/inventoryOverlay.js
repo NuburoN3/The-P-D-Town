@@ -316,7 +316,7 @@ function wrapTextLines(ctx, text, maxWidth, maxLines = 6) {
   return lines;
 }
 
-function ensureInventorySkillSlots(player, slotCount = 9) {
+function ensureInventorySkillSlots(player, slotCount = 8) {
   if (!player || typeof player !== "object") return [];
   const current = Array.isArray(player.skillSlots) ? player.skillSlots : [];
   const normalized = [];
@@ -1388,7 +1388,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
 
   normalizePlayerEquipment(playerEquipment);
   const playerCurrency = normalizePlayerCurrency(state?.playerCurrency);
-  const playerSkillSlots = ensureInventorySkillSlots(state?.player, 9);
+  const playerSkillSlots = ensureInventorySkillSlots(state?.player, 8);
 
   ctx.fillStyle = colors.INVENTORY_OVERLAY;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1414,7 +1414,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   const panelGap = 24;
   const equippedSkillsSlotSize = 38;
   const equippedSkillsGap = 5;
-  const equippedSkillsCount = 9;
+  const equippedSkillsCount = 8;
   const equippedSkillsW = equippedSkillsCount * equippedSkillsSlotSize + (equippedSkillsCount - 1) * equippedSkillsGap;
   const equippedSkillsX = Math.round((canvas.width - equippedSkillsW) * 0.5);
   const equippedSkillsY = canvas.height - equippedSkillsSlotSize - 18;

@@ -26,7 +26,7 @@ const FALLBACK_RUMOR_CLUE_GROUPS = Object.freeze([
     ]
   }
 ]);
-const SKILL_SLOT_COUNT = 9;
+const SKILL_SLOT_COUNT = 8;
 
 function getRumorCluesFound(tp) {
   return Number(tp.rumorCluePiazza) + Number(tp.rumorClueChapel) + Number(tp.rumorClueBar);

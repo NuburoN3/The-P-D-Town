@@ -215,7 +215,7 @@ export function createGameRuntime() {
     maxMana: 10,
     mana: 10,
     manaRegenPerSecond: 0.65,
-    skillSlots: Array.from({ length: 9 }, (_, index) => ({
+    skillSlots: Array.from({ length: 8 }, (_, index) => ({
       slot: index + 1,
       id: null,
       name: "",

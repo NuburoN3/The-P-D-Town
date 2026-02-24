@@ -57,11 +57,11 @@ export function createInputBindings({
   }
 
   function getSkillSlotIndexFromKeyboardEvent(e, key) {
-    if (/^[1-9]$/.test(key)) return Number.parseInt(key, 10) - 1;
+    if (/^[1-8]$/.test(key)) return Number.parseInt(key, 10) - 1;
     const code = String(e.code || "");
     if (code.startsWith("Numpad")) {
       const digit = code.slice(6);
-      if (/^[1-9]$/.test(digit)) return Number.parseInt(digit, 10) - 1;
+      if (/^[1-8]$/.test(digit)) return Number.parseInt(digit, 10) - 1;
     }
     return -1;
   }

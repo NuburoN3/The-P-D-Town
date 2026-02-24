@@ -688,7 +688,7 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom, getItemSprite =
   if (!isFreeExploreState(state.gameState)) return;
   if (!state.player || !Number.isFinite(state.player.maxHp)) return;
 
-  const slotCount = 9;
+  const slotCount = 8;
   const slotGap = 6;
   const desiredSlotSize = 54;
   const minSlotSize = 40;
@@ -702,7 +702,7 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom, getItemSprite =
   const bottomMargin = 12;
   const slotToBarsGap = 10;
 
-  const legacySlotsWidth = (9 * 36) + (8 * 4);
+  const legacySlotsWidth = (8 * 36) + (7 * 4);
   const barW = Math.min(Math.max(250, legacySlotsWidth), ctx.canvas.width - 34);
   const barH = 12;
   const barX = Math.round((ctx.canvas.width - barW) / 2);

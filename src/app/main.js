@@ -421,7 +421,7 @@ const combatRewardPanel = {
   durationMs: 2200,
   queue: []
 };
-const SKILL_SLOT_COUNT = 9;
+const SKILL_SLOT_COUNT = 8;
 const HUD_FEEDBACK_DURATION_MS = 420;
 
 function getSkillDefaults(skillId) {
