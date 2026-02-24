@@ -295,8 +295,8 @@ export const hanamiTown = {
     id: "hanamiTown",
     name: "Hanami Town",
     defaultSpawnId: "bnbBedroomSpawn",
-    respawnSpawn: "dojoInteriorDoor",
-    respawnNpcId: "mrHanami",
+    respawnSpawn: "bnbUpstairsRespawn",
+    respawnNpcId: "",
     conditionalDoors: [
         { areaId: "hanamiDojo", x: 9, y: 3, hiddenUntil: "acceptedTraining" },
         { areaId: "overworld", x: 48, y: 20, hiddenUntil: "taikoHouseUnlocked" }
@@ -468,6 +468,7 @@ export const hanamiTown = {
         bnbLobbyDoor: { areaId: "patBnBDownstairs", x: 6, y: 8, dir: "up" },
         bnbUpstairsDoor: { areaId: "patBnBDownstairs", x: 9, y: 4, dir: "left" },
         bnbUpstairsEntry: { areaId: "patBnBUpstairs", x: 2, y: 8, dir: "right" },
+        bnbUpstairsRespawn: { areaId: "patBnBUpstairs", x: 8, y: 4, dir: "down" },
         boglandTownGate: { areaId: "overworld", x: 28, y: 40, dir: "up" },
         boglandEntry: { areaId: "bogland", x: 28, y: 3, dir: "down" }
     },
