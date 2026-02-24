@@ -4,6 +4,7 @@ import { clamp, lerp } from "../core/mathUtils.js";
 export function createMovementSystem({
   keys,
   getActionPressed = null,
+  getFacingDirection = null,
   getSprintPressed = null,
   tileSize,
   spriteFramesPerRow,
@@ -217,6 +218,18 @@ export function createMovementSystem({
     if (isPressed("moveRight", ["d", "arrowright"])) {
       dx += movementSpeed * dtScale;
       player.dir = "right";
+    }
+
+    const facingOverride = typeof getFacingDirection === "function"
+      ? String(getFacingDirection() || "").toLowerCase()
+      : "";
+    if (
+      facingOverride === "up" ||
+      facingOverride === "down" ||
+      facingOverride === "left" ||
+      facingOverride === "right"
+    ) {
+      player.dir = facingOverride;
     }
 
     player.walking = dx !== 0 || dy !== 0;

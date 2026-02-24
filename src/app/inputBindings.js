@@ -477,6 +477,11 @@ export function createInputBindings({
       }
 
       if (gameState === gameStates.INVENTORY) {
+        if (key === "space" && !e.repeat && isLeftoversInventoryOpen()) {
+          mouseUiState.leftoversTakeAllRequest = true;
+          e.preventDefault();
+          return;
+        }
         if (input.matchesActionKey("interact", key) && !e.repeat && isLeftoversInventoryOpen()) {
           if (typeof closeInventory === "function") {
             closeInventory();

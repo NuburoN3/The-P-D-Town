@@ -48,6 +48,8 @@ export const DEFAULT_SPRITE_MANIFEST = {
   possum: "assets/sprites/Possum.png",
   obey: "assets/sprites/Obey.png",
   bonk: "assets/sprites/Bonk.png",
+  controllerSkillWheel: "assets/sprites/Controller_Skill_Wheel.png",
+  controllerSkillWheel2: "assets/sprites/Controller_Skill_Wheel2.png",
   ogre64: "assets/sprites/Ogre-64x64.png",
   [ASSET_KEYS.TITLE_HERO_IMAGE]: ASSET_PATHS.TITLE_HERO_IMAGE
 };

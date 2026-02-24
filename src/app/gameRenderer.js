@@ -330,7 +330,11 @@ export function createGameRenderer({
     );
     const useControllerVirtualCursor =
       input.getInputMethod() === "gamepad" &&
-      (gameState === GAME_STATES.INVENTORY || gameState === GAME_STATES.QUEST_TRACKER);
+      (
+        gameState === GAME_STATES.INVENTORY ||
+        gameState === GAME_STATES.QUEST_TRACKER ||
+        gameState === GAME_STATES.QUEST_COMPLETION
+      );
     if (useControllerVirtualCursor) {
       canvas.style.cursor = "none";
     } else if (useStylizedMenuCursor) {

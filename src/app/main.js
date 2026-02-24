@@ -164,6 +164,7 @@ const mouseUiState = {
   inventorySkillsScrollRow: 0,
   inventorySkillsScrollDragging: false,
   inventorySkillsScrollDragOffsetY: 0,
+  inventorySkillsPanelHovered: false,
   inventorySkillsScrollSuppressClick: false,
   inventorySkillsPreviewSkillId: "",
   inventorySkillsPreviewName: "",
@@ -171,6 +172,7 @@ const mouseUiState = {
   inventorySkillsPreviewManaCost: 0,
   inventorySkillsPreviewUseSeconds: 0,
   inventorySkillsPreviewAlpha: 0,
+  leftoversTakeAllRequest: false,
   questTrackerClickRequest: false,
   questCompletionClickRequest: false
 };
@@ -179,6 +181,9 @@ const controllerSkillWheelState = {
   selectedIndex: -1,
   aimX: 0,
   aimY: 0
+};
+const controllerFacingState = {
+  dir: ""
 };
 let menuStateController = null;
 let interactionInputLockedUntil = 0;
@@ -262,6 +267,7 @@ const collisionService = new CollisionService({
 const movementSystem = createMovementSystem({
   keys: input.keys,
   getActionPressed: (action) => input.isActionPressed(action),
+  getFacingDirection: () => controllerFacingState.dir,
   getSprintPressed: () => {
     const disciplineLevel = Number.isFinite(playerStats.disciplineLevel)
       ? Math.max(1, Math.floor(playerStats.disciplineLevel))
@@ -3125,6 +3131,10 @@ function updateRuntimeUi(now) {
     input.clearPausePressed();
   }
 
+  if (gameState === GAME_STATES.INVENTORY || gameState === GAME_STATES.QUEST_TRACKER) {
+    clearPlayerActionInputs();
+  }
+
   const isMovementKeyHeldInInventory = () => {
     if (gameState !== GAME_STATES.INVENTORY) return false;
     const keys = input?.keys && typeof input.keys === "object" ? input.keys : null;
@@ -3143,9 +3153,7 @@ function updateRuntimeUi(now) {
   if (
     isMovementKeyHeldInInventory()
   ) {
-    closeInventoryToWorld();
     clearPlayerActionInputs();
-    return;
   }
 
   if (
@@ -3960,6 +3968,7 @@ const inputController = createInputController({
     },
     closeInventory: closeInventoryToWorld,
     isInventoryOpenedFromPauseMenu,
+    isLeftoversInventoryOpen: () => Boolean(leftoversUiState.active && gameState === GAME_STATES.INVENTORY),
     onAttributes: () => {
       gameState = GAME_STATES.ATTRIBUTES;
     },
@@ -3972,11 +3981,35 @@ const inputController = createInputController({
     openPauseMenu,
     openQuestTracker,
     closeQuestTracker,
+    closeQuestCompletionPanel,
     closePauseMenu: returnToPauseMenu,
     canRunCombatSystems,
     isInputLocked: isHanamiDojoExitControlLockActive,
     isDialogueActive,
-    onSkillSlotPressed: tryActivateSkillSlot
+    isChoiceActive: () => Boolean(choiceState?.active),
+    moveChoiceSelection: (direction) => {
+      const total = Array.isArray(choiceState?.options) ? choiceState.options.length : 0;
+      if (total <= 0) return;
+      const step = direction < 0 ? -1 : 1;
+      choiceState.selected = (choiceState.selected + step + total) % total;
+    },
+    confirmChoice: () => {
+      confirmChoice();
+      input.clearInteractPressed();
+    },
+    tryOpenLeftoversFromInteract: () => {
+      if (!isFreeExploreState(gameState)) return false;
+      if (dialogue.isActive() || choiceState.active || doorSequence.active) return false;
+      const nearbyLeftover = findClosestNearbyLeftoverForInteraction();
+      if (!nearbyLeftover) return false;
+      openLeftoversInventory(nearbyLeftover);
+      input.clearInteractPressed();
+      return true;
+    },
+    onSkillSlotPressed: tryActivateSkillSlot,
+    setControllerFacingDirection: (dir) => {
+      controllerFacingState.dir = String(dir || "").toLowerCase();
+    }
   }
 });
 

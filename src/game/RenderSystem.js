@@ -981,74 +981,142 @@ function drawControllerSkillWheel(ctx, state, tileSize, getItemSprite = null) {
     : 1;
 
   const centerX = state.player.x + tileSize * 0.5 - state.cam.x;
-  const centerY = state.player.y - tileSize * Math.max(0.55, desiredHeightTiles * 0.22) - state.cam.y;
+  const playerDrawHeight = tileSize * desiredHeightTiles;
+  const centerY = state.player.y + tileSize - (playerDrawHeight * 0.5) - state.cam.y;
   const radius = tileSize * 1.95;
   const slotRadius = Math.max(10, tileSize * 0.5);
   const selectedIndex = Number.isFinite(wheelState.selectedIndex) ? wheelState.selectedIndex : -1;
+  const wheelSkin = typeof getItemSprite === "function"
+    ? (getItemSprite("controllerSkillWheel2") || getItemSprite("controllerSkillWheel"))
+    : null;
+  const hasWheelSkin = Boolean(wheelSkin && wheelSkin.width && wheelSkin.height);
+  const wheelDrawSize = Math.round(tileSize * 5.9);
+  const wheelHalf = wheelDrawSize * 0.5;
+  const iconRadiusFromSkin = wheelDrawSize * 0.315;
+  const iconRadius = hasWheelSkin ? iconRadiusFromSkin : radius;
+  const iconSize = hasWheelSkin
+    ? Math.max(12, wheelDrawSize * 0.188)
+    : Math.max(8, slotRadius * 1.4);
+  const skinSlotMaskRadius = hasWheelSkin ? Math.max(10, wheelDrawSize * 0.072) : 0;
+  const maxMana = Number.isFinite(state.player?.maxMana) ? Math.max(1, state.player.maxMana) : 10;
+  const mana = Number.isFinite(state.player?.mana) ? state.player.mana : maxMana;
+  const hasWeaponEquipped = Boolean(String(state.playerEquipment?.weapon || "").trim());
+  const now = performance.now();
 
   ctx.save();
-  ctx.fillStyle = "rgba(8, 14, 20, 0.58)";
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, radius + slotRadius * 0.9, 0, Math.PI * 2);
-  ctx.fill();
+  if (!hasWheelSkin) {
+    ctx.fillStyle = "rgba(8, 14, 20, 0.58)";
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius + slotRadius * 0.9, 0, Math.PI * 2);
+    ctx.fill();
 
-  ctx.strokeStyle = "rgba(255, 236, 194, 0.55)";
-  ctx.lineWidth = Math.max(1, tileSize * 0.055);
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, radius + slotRadius * 0.18, 0, Math.PI * 2);
-  ctx.stroke();
+    ctx.strokeStyle = "rgba(255, 236, 194, 0.55)";
+    ctx.lineWidth = Math.max(1, tileSize * 0.055);
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius + slotRadius * 0.18, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   for (let i = 0; i < 8; i++) {
     const angle = (-Math.PI / 2) + i * (Math.PI / 4);
-    const slotX = centerX + Math.cos(angle) * radius;
-    const slotY = centerY + Math.sin(angle) * radius;
+    const slotX = centerX + Math.cos(angle) * iconRadius;
+    const slotY = centerY + Math.sin(angle) * iconRadius;
     const selected = i === selectedIndex;
     const slot = skillSlots[i] && typeof skillSlots[i] === "object" ? skillSlots[i] : null;
     const hasSkill = Boolean(slot?.id);
     const skillId = String(slot?.id || "").trim().toLowerCase();
+    const manaCost = Number.isFinite(slot?.manaCost) ? Math.max(0, slot.manaCost) : 0;
+    const hasMana = mana >= manaCost;
+    const cooldownMs = Number.isFinite(slot?.cooldownMs) ? Math.max(0, slot.cooldownMs) : 0;
+    const lastUsedAt = Number.isFinite(slot?.lastUsedAt) ? slot.lastUsedAt : -Infinity;
+    const cooldownElapsed = now - lastUsedAt;
+    const isRecharging = hasSkill && cooldownMs > 0 && cooldownElapsed < cooldownMs;
+    const blockedByWeapon = hasSkill && skillId === "bonk" && !hasWeaponEquipped;
+    const isUnavailable = hasSkill && (isRecharging || !hasMana || blockedByWeapon);
+    const showRedSlotGlow = !hasSkill || isUnavailable;
 
-    ctx.fillStyle = selected ? "rgba(255, 233, 164, 0.9)" : "rgba(15, 23, 36, 0.86)";
-    ctx.beginPath();
-    ctx.arc(slotX, slotY, slotRadius, 0, Math.PI * 2);
-    ctx.fill();
+    if (!hasWheelSkin) {
+      ctx.fillStyle = selected ? "rgba(255, 233, 164, 0.9)" : "rgba(15, 23, 36, 0.86)";
+      ctx.beginPath();
+      ctx.arc(slotX, slotY, slotRadius, 0, Math.PI * 2);
+      ctx.fill();
 
-    ctx.strokeStyle = selected ? "rgba(255, 249, 231, 0.98)" : "rgba(228, 205, 157, 0.6)";
-    ctx.lineWidth = selected ? 2 : 1;
-    ctx.beginPath();
-    ctx.arc(slotX, slotY, slotRadius - 0.5, 0, Math.PI * 2);
-    ctx.stroke();
+      ctx.strokeStyle = selected ? "rgba(255, 249, 231, 0.98)" : "rgba(228, 205, 157, 0.6)";
+      ctx.lineWidth = selected ? 2 : 1;
+      ctx.beginPath();
+      ctx.arc(slotX, slotY, slotRadius - 0.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
 
     if (hasSkill && typeof getItemSprite === "function") {
       const sprite = getItemSprite(skillId);
       if (sprite && sprite.width && sprite.height) {
-        const iconSize = Math.max(8, slotRadius * 1.4);
-        ctx.drawImage(sprite, slotX - iconSize / 2, slotY - iconSize / 2, iconSize, iconSize);
+        if (hasWheelSkin) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(slotX, slotY, skinSlotMaskRadius, 0, Math.PI * 2);
+          ctx.clip();
+          ctx.drawImage(sprite, slotX - iconSize / 2, slotY - iconSize / 2, iconSize, iconSize);
+
+          // Feather icon edges so artwork blends behind transparent slot borders.
+          const fade = ctx.createRadialGradient(
+            slotX,
+            slotY,
+            skinSlotMaskRadius * 0.58,
+            slotX,
+            slotY,
+            skinSlotMaskRadius
+          );
+          fade.addColorStop(0, "rgba(0, 0, 0, 0)");
+          fade.addColorStop(0.78, "rgba(0, 0, 0, 0)");
+          fade.addColorStop(1, "rgba(0, 0, 0, 0.42)");
+          ctx.globalCompositeOperation = "destination-out";
+          ctx.fillStyle = fade;
+          ctx.beginPath();
+          ctx.arc(slotX, slotY, skinSlotMaskRadius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        } else {
+          ctx.drawImage(sprite, slotX - iconSize / 2, slotY - iconSize / 2, iconSize, iconSize);
+        }
       }
     }
 
-    if (!hasSkill) {
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.24)";
-      ctx.lineWidth = 1.4;
+    if (showRedSlotGlow) {
+      const glowRadius = hasWheelSkin ? Math.max(14, wheelDrawSize * 0.112) : Math.max(10, slotRadius * 1.14);
+      const innerAlpha = hasSkill ? 0.34 : 0.44;
+      const outerAlpha = hasSkill ? 0.13 : 0.2;
+      const redGlow = ctx.createRadialGradient(slotX, slotY, glowRadius * 0.2, slotX, slotY, glowRadius);
+      redGlow.addColorStop(0, `rgba(255, 72, 72, ${innerAlpha})`);
+      redGlow.addColorStop(0.72, `rgba(230, 42, 42, ${outerAlpha})`);
+      redGlow.addColorStop(1, "rgba(180, 24, 24, 0)");
+      ctx.fillStyle = redGlow;
       ctx.beginPath();
-      ctx.moveTo(slotX - slotRadius * 0.34, slotY - slotRadius * 0.34);
-      ctx.lineTo(slotX + slotRadius * 0.34, slotY + slotRadius * 0.34);
-      ctx.moveTo(slotX + slotRadius * 0.34, slotY - slotRadius * 0.34);
-      ctx.lineTo(slotX - slotRadius * 0.34, slotY + slotRadius * 0.34);
+      ctx.arc(slotX, slotY, glowRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  if (hasWheelSkin) {
+    // Draw the frame after icons so transparent slot windows naturally mask icon edges.
+    ctx.drawImage(wheelSkin, centerX - wheelHalf, centerY - wheelHalf, wheelDrawSize, wheelDrawSize);
+    if (selectedIndex >= 0) {
+      const selectedAngle = (-Math.PI / 2) + selectedIndex * (Math.PI / 4);
+      const selectedX = centerX + Math.cos(selectedAngle) * iconRadius;
+      const selectedY = centerY + Math.sin(selectedAngle) * iconRadius;
+      ctx.strokeStyle = "rgba(255, 245, 213, 0.95)";
+      ctx.lineWidth = Math.max(2, wheelDrawSize * 0.008);
+      ctx.beginPath();
+      ctx.arc(selectedX, selectedY, wheelDrawSize * 0.075, 0, Math.PI * 2);
       ctx.stroke();
     }
-
-    const indexLabel = String(i + 1);
-    ctx.font = FONT_12;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = selected ? "rgba(40, 22, 6, 0.96)" : "rgba(233, 237, 248, 0.95)";
-    ctx.fillText(indexLabel, slotX, slotY + slotRadius * 0.78);
   }
 
   if (selectedIndex >= 0) {
     const selectedAngle = (-Math.PI / 2) + selectedIndex * (Math.PI / 4);
-    const markerX = centerX + Math.cos(selectedAngle) * (radius - slotRadius * 0.62);
-    const markerY = centerY + Math.sin(selectedAngle) * (radius - slotRadius * 0.62);
+    const markerRadius = hasWheelSkin ? (iconRadius - wheelDrawSize * 0.07) : (radius - slotRadius * 0.62);
+    const markerX = centerX + Math.cos(selectedAngle) * markerRadius;
+    const markerY = centerY + Math.sin(selectedAngle) * markerRadius;
     ctx.fillStyle = "rgba(255, 246, 218, 0.95)";
     ctx.beginPath();
     ctx.arc(markerX, markerY, Math.max(2, tileSize * 0.08), 0, Math.PI * 2);
@@ -1923,7 +1991,11 @@ function drawQuestCompletionOverlay(ctx, state, canvas, ui, colors, getItemSprit
 function drawGamepadVirtualCursor(ctx, state) {
   const gameState = state.gameState;
   if (state.inputPromptMode !== "gamepad") return;
-  if (gameState !== GAME_STATES.INVENTORY && gameState !== GAME_STATES.QUEST_TRACKER) return;
+  if (
+    gameState !== GAME_STATES.INVENTORY &&
+    gameState !== GAME_STATES.QUEST_TRACKER &&
+    gameState !== GAME_STATES.QUEST_COMPLETION
+  ) return;
   const mouseX = Number.isFinite(state.mouseUiState?.x) ? state.mouseUiState.x : -1;
   const mouseY = Number.isFinite(state.mouseUiState?.y) ? state.mouseUiState.y : -1;
   if (mouseX < 0 || mouseY < 0) return;

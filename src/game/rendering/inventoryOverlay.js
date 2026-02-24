@@ -1189,13 +1189,23 @@ function drawLeftoversLootOverlay(ctx, state, canvas, colors, getItemSprite) {
   const takeAllW = 90;
   const takeAllH = 18;
   const takeAllX = Math.round(lootPanelX + (lootPanelW - takeAllW) * 0.5);
-  const takeAllY = lootPanelY + lootPanelH - takeAllH - 8;
+  const takeAllY = lootPanelY + lootPanelH - takeAllH - 24;
   const takeAllHovered = mouseInsideCanvas && isPointInsideExpandedRect(mouseX, mouseY, takeAllX, takeAllY, takeAllW, takeAllH, 0);
   ctx.fillStyle = takeAllHovered ? "rgba(255, 227, 160, 0.35)" : "rgba(255, 227, 160, 0.2)";
   ctx.fillRect(takeAllX, takeAllY, takeAllW, takeAllH);
   ctx.strokeStyle = takeAllHovered ? "rgba(255, 236, 194, 0.95)" : "rgba(255, 231, 167, 0.72)";
   ctx.strokeRect(takeAllX + 0.5, takeAllY + 0.5, takeAllW - 1, takeAllH - 1);
   drawUiText(ctx, "Take All", takeAllX + 19, takeAllY + 13, colors);
+  const takeAllShortcutLabel = state?.inputPromptMode === "gamepad" ? "X: Take All" : "Space: Take All";
+  ctx.font = FONT_12;
+  const takeAllShortcutW = Math.ceil(ctx.measureText(takeAllShortcutLabel).width);
+  drawUiText(
+    ctx,
+    takeAllShortcutLabel,
+    Math.round(takeAllX + (takeAllW - takeAllShortcutW) * 0.5),
+    takeAllY + takeAllH + 13,
+    colors
+  );
 
   const transferLootEntry = (entry) => {
     if (!entry) return;
@@ -1214,14 +1224,18 @@ function drawLeftoversLootOverlay(ctx, state, canvas, colors, getItemSprite) {
     if (itemIndex >= 0) activeLeftover.items.splice(itemIndex, 1);
   };
   const canTransferHoveredLoot = hoveredLootIndex >= 0 && hoveredLootIndex < lootEntries.length;
+  const takeAllShortcutRequested = Boolean(mouseUiState?.leftoversTakeAllRequest);
   if (mouseUiState?.inventoryClickRequest && closeButtonHovered) {
     leftoversUiState.requestCloseInventory = true;
     mouseUiState.inventoryClickRequest = false;
     mouseUiState.inventoryDoubleClickRequest = false;
   } else if (mouseUiState?.inventoryDoubleClickRequest && canTransferHoveredLoot) {
     transferLootEntry(lootEntries[hoveredLootIndex]);
-  } else if (mouseUiState?.inventoryClickRequest && takeAllHovered) {
+  } else if ((mouseUiState?.inventoryClickRequest && takeAllHovered) || takeAllShortcutRequested) {
     for (const entry of lootEntries) transferLootEntry(entry);
+  }
+  if (mouseUiState) {
+    mouseUiState.leftoversTakeAllRequest = false;
   }
 
   if (mouseUiState?.inventoryDetailsRequest) {
@@ -1752,6 +1766,17 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   const skillsTrackHovered = mouseInsideCanvas && isPointInsideExpandedRect(
     mouseX, mouseY, skillsTrackX, skillsTrackY, skillsSliderW, skillsTrackH, 0
   );
+  const skillsGridHovered = mouseInsideCanvas && isPointInsideExpandedRect(
+    mouseX, mouseY, skillsGridX, skillsGridY, skillsGridW, skillsGridH, 0
+  );
+  const skillsPanelHovered = mouseInsideCanvas && isPointInsideExpandedRect(
+    mouseX, mouseY, skillsPanelX, skillsPanelY, skillsPanelW, skillsPanelH, 0
+  );
+  if (mouseUiState) {
+    mouseUiState.inventorySkillsPanelHovered = Boolean(
+      skillsPanelHovered || skillsTrackHovered || skillsGridHovered || skillsTabHovered
+    );
+  }
   const skillsThumbHovered = mouseInsideCanvas && isPointInsideExpandedRect(
     mouseX, mouseY, skillsTrackX + 1, skillThumbY, Math.max(1, skillsSliderW - 2), skillThumbH, 0
   );
@@ -1800,7 +1825,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   if (
     mouseInsideCanvas &&
     !mouseUiState?.inventoryDragItemName &&
-    isPointInsideExpandedRect(mouseX, mouseY, skillsGridX, skillsGridY, skillsGridW, skillsGridH, 0)
+    skillsGridHovered
   ) {
     const localX = mouseX - skillsGridX;
     const localY = mouseY - skillsGridY + skillRowPixelOffset;

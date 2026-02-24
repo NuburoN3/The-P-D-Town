@@ -14,24 +14,46 @@ export function createInputController({
     const gamepadMenuState = {
         heldDirection: 0,
         nextMoveAt: 0,
+        skillsScrollHeldDirection: 0,
+        nextSkillsScrollAt: 0,
         lastCursorUpdateAt: 0,
+        lastGameState: "",
+        lastRightStickFacing: "",
+        skillWheelConsumedUntilRelease: false,
+        suppressInventoryConfirmUntilRelease: false,
         lastInventoryConfirmPressedAt: -Infinity,
         confirmHeld: false,
         backHeld: false,
         questHeld: false,
+        leftoversHeld: false,
         startHeld: false,
         attackHeld: false,
-        inventoryHeld: false
+        inventoryHeld: false,
+        skillConfirmHeld: false
     };
+    const LEFT_STICK_MOVE_DEADZONE = 0.17;
+    const MENU_NAV_DEADZONE = 0.6;
 
-    function resetHeldStates() {
-        gamepadMenuState.heldDirection = 0;
+    function resetButtonHeldStates() {
         gamepadMenuState.confirmHeld = false;
         gamepadMenuState.backHeld = false;
         gamepadMenuState.questHeld = false;
+        gamepadMenuState.leftoversHeld = false;
         gamepadMenuState.startHeld = false;
         gamepadMenuState.attackHeld = false;
         gamepadMenuState.inventoryHeld = false;
+        gamepadMenuState.skillConfirmHeld = false;
+    }
+
+    function resetHeldStates() {
+        gamepadMenuState.heldDirection = 0;
+        gamepadMenuState.skillsScrollHeldDirection = 0;
+        gamepadMenuState.nextSkillsScrollAt = 0;
+        resetButtonHeldStates();
+        gamepadMenuState.lastRightStickFacing = "";
+        gamepadMenuState.skillWheelConsumedUntilRelease = false;
+        gamepadMenuState.suppressInventoryConfirmUntilRelease = false;
+        gamepadMenuState.lastGameState = "";
     }
 
     function clearGamepadMovement() {
@@ -166,10 +188,34 @@ export function createInputController({
         return bestIndex;
     }
 
+    function resolveFacingDirectionFromRightStick(axisX, axisY) {
+        const x = Number.isFinite(axisX) ? axisX : 0;
+        const y = Number.isFinite(axisY) ? axisY : 0;
+        const deadzone = 0.34;
+        if (Math.hypot(x, y) < deadzone) return "";
+        if (Math.abs(x) >= Math.abs(y)) {
+            return x >= 0 ? "right" : "left";
+        }
+        return y >= 0 ? "down" : "up";
+    }
+
+    function getMenuConfirmKey() {
+        if (inputManager && typeof inputManager.getPrimaryBinding === "function") {
+            const interactKey = inputManager.getPrimaryBinding("interact");
+            if (typeof interactKey === "string" && interactKey.length > 0) {
+                return interactKey;
+            }
+        }
+        return "space";
+    }
+
     function update(now) {
         if (!isControllerInputEnabled()) {
             clearGamepadMovement();
             setSkillWheelActive(false);
+            if (typeof actions.setControllerFacingDirection === "function") {
+                actions.setControllerFacingDirection("");
+            }
             resetHeldStates();
             return;
         }
@@ -179,6 +225,9 @@ export function createInputController({
         if (!pad) {
             clearGamepadMovement();
             setSkillWheelActive(false);
+            if (typeof actions.setControllerFacingDirection === "function") {
+                actions.setControllerFacingDirection("");
+            }
             resetHeldStates();
             return;
         }
@@ -187,30 +236,88 @@ export function createInputController({
         const buttons = pad.buttons || [];
         const axisX = Array.isArray(pad.axes) && pad.axes.length > 0 ? pad.axes[0] : 0;
         const axisY = Array.isArray(pad.axes) && pad.axes.length > 1 ? pad.axes[1] : 0;
-        const upPressed = Boolean(buttons[12]?.pressed) || axisY < -0.58;
-        const downPressed = Boolean(buttons[13]?.pressed) || axisY > 0.58;
-        const leftPressed = Boolean(buttons[14]?.pressed) || axisX < -0.5;
-        const rightPressed = Boolean(buttons[15]?.pressed) || axisX > 0.5;
-        const direction = upPressed ? -1 : downPressed ? 1 : 0;
+        const rightAxisX = Array.isArray(pad.axes) && pad.axes.length > 2 ? pad.axes[2] : 0;
+        const rightAxisY = Array.isArray(pad.axes) && pad.axes.length > 3 ? pad.axes[3] : 0;
+        const upPressed = Boolean(buttons[12]?.pressed) || axisY < -LEFT_STICK_MOVE_DEADZONE;
+        const downPressed = Boolean(buttons[13]?.pressed) || axisY > LEFT_STICK_MOVE_DEADZONE;
+        const leftPressed = Boolean(buttons[14]?.pressed) || axisX < -LEFT_STICK_MOVE_DEADZONE;
+        const rightPressed = Boolean(buttons[15]?.pressed) || axisX > LEFT_STICK_MOVE_DEADZONE;
+        const menuUpPressed = Boolean(buttons[12]?.pressed) || axisY < -MENU_NAV_DEADZONE;
+        const menuDownPressed = Boolean(buttons[13]?.pressed) || axisY > MENU_NAV_DEADZONE;
+        const direction = menuUpPressed ? -1 : menuDownPressed ? 1 : 0;
 
         const confirmPressed = Boolean(buttons[0]?.pressed); // A
         const backPressed = Boolean(buttons[1]?.pressed); // B
-        const attackPressed = Boolean(buttons[2]?.pressed); // X
+        const leftoversPressed = Boolean(buttons[2]?.pressed); // X
+        const facingLockPressed = Boolean(buttons[4]?.pressed); // LB / L1
+        const skillConfirmPressed = Boolean(buttons[5]?.pressed); // RB / R1
+        const attackPressed = Boolean(buttons[7]?.pressed) || Number(buttons[7]?.value) > 0.35; // RT
         const inventoryPressed = Boolean(buttons[3]?.pressed); // Y
         const questPressed = Boolean(buttons[8]?.pressed); // View/Select
-        const rightTriggerPressed = Boolean(buttons[7]?.pressed) || Number(buttons[7]?.value) > 0.35; // RT
+        const skillWheelPressed = Boolean(buttons[6]?.pressed) || Number(buttons[6]?.value) > 0.35; // LT / L2
         const startPressed = Boolean(buttons[9]?.pressed); // Start
+        if (!skillWheelPressed) {
+            gamepadMenuState.skillWheelConsumedUntilRelease = false;
+        }
 
         const gameState = getGameState();
+        if (gamepadMenuState.lastGameState !== gameState) {
+            gamepadMenuState.heldDirection = 0;
+            gamepadMenuState.nextMoveAt = now;
+            gamepadMenuState.skillsScrollHeldDirection = 0;
+            gamepadMenuState.nextSkillsScrollAt = now;
+            gamepadMenuState.confirmHeld = confirmPressed;
+            gamepadMenuState.backHeld = backPressed;
+            gamepadMenuState.questHeld = questPressed;
+            gamepadMenuState.leftoversHeld = leftoversPressed;
+            gamepadMenuState.startHeld = startPressed;
+            gamepadMenuState.attackHeld = attackPressed;
+            gamepadMenuState.inventoryHeld = inventoryPressed;
+            gamepadMenuState.skillConfirmHeld = skillConfirmPressed;
+            gamepadMenuState.suppressInventoryConfirmUntilRelease =
+                gameState === GAME_STATES.INVENTORY && confirmPressed;
+            gamepadMenuState.lastGameState = gameState;
+        }
+        const choiceActive = Boolean(typeof actions.isChoiceActive === "function" && actions.isChoiceActive());
 
         if (gameState === GAME_STATES.INTRO_CUTSCENE) {
             gamepadMenuState.heldDirection = 0;
             gamepadMenuState.confirmHeld = confirmPressed || startPressed;
             gamepadMenuState.backHeld = backPressed;
             gamepadMenuState.questHeld = questPressed;
+            gamepadMenuState.leftoversHeld = leftoversPressed;
             gamepadMenuState.startHeld = startPressed;
             gamepadMenuState.attackHeld = attackPressed;
             gamepadMenuState.inventoryHeld = inventoryPressed;
+            gamepadMenuState.skillConfirmHeld = skillConfirmPressed;
+            return;
+        }
+
+        if (choiceActive) {
+            if (direction !== 0 && (direction !== gamepadMenuState.heldDirection || now >= gamepadMenuState.nextMoveAt)) {
+                if (typeof actions.moveChoiceSelection === "function") {
+                    actions.moveChoiceSelection(direction);
+                }
+                gamepadMenuState.heldDirection = direction;
+                gamepadMenuState.nextMoveAt = now + 145;
+            } else if (direction === 0) {
+                gamepadMenuState.heldDirection = 0;
+            }
+
+            if (confirmPressed && !gamepadMenuState.confirmHeld) {
+                if (typeof actions.confirmChoice === "function") {
+                    actions.confirmChoice();
+                }
+            }
+
+            gamepadMenuState.confirmHeld = confirmPressed;
+            gamepadMenuState.backHeld = backPressed;
+            gamepadMenuState.questHeld = questPressed;
+            gamepadMenuState.leftoversHeld = leftoversPressed;
+            gamepadMenuState.startHeld = startPressed;
+            gamepadMenuState.attackHeld = attackPressed;
+            gamepadMenuState.inventoryHeld = inventoryPressed;
+            gamepadMenuState.skillConfirmHeld = skillConfirmPressed;
             return;
         }
 
@@ -233,9 +340,11 @@ export function createInputController({
             gamepadMenuState.confirmHeld = confirmPressed;
             gamepadMenuState.backHeld = backPressed;
             gamepadMenuState.questHeld = questPressed;
+            gamepadMenuState.leftoversHeld = leftoversPressed;
             gamepadMenuState.startHeld = startPressed;
             gamepadMenuState.attackHeld = attackPressed;
             gamepadMenuState.inventoryHeld = inventoryPressed;
+            gamepadMenuState.skillConfirmHeld = skillConfirmPressed;
             return;
         }
 
@@ -267,9 +376,7 @@ export function createInputController({
             }
 
             if (confirmPressed && !gamepadMenuState.confirmHeld) {
-                // selectPauseMenuOption();
-                // pauseMenuSystem.handleKeyDown("enter")?
-                pauseMenuSystem.handleKeyDown("enter", pauseActions);
+                pauseMenuSystem.handleKeyDown(getMenuConfirmKey(), pauseActions);
             }
 
             if ((backPressed && !gamepadMenuState.backHeld) || (startPressed && !gamepadMenuState.startHeld)) {
@@ -279,9 +386,11 @@ export function createInputController({
             gamepadMenuState.confirmHeld = confirmPressed;
             gamepadMenuState.backHeld = backPressed;
             gamepadMenuState.questHeld = questPressed;
+            gamepadMenuState.leftoversHeld = leftoversPressed;
             gamepadMenuState.startHeld = startPressed;
             gamepadMenuState.attackHeld = attackPressed;
             gamepadMenuState.inventoryHeld = inventoryPressed;
+            gamepadMenuState.skillConfirmHeld = skillConfirmPressed;
             return;
         }
 
@@ -305,7 +414,7 @@ export function createInputController({
             }
 
             if (confirmPressed && !gamepadMenuState.confirmHeld) {
-                pauseMenuSystem.handleKeyDown("enter", settingsActions);
+                pauseMenuSystem.handleKeyDown(getMenuConfirmKey(), settingsActions);
             }
 
             if ((backPressed && !gamepadMenuState.backHeld) || (startPressed && !gamepadMenuState.startHeld)) {
@@ -316,7 +425,49 @@ export function createInputController({
             }
         } else if (gameState === GAME_STATES.INVENTORY) {
             updateVirtualCursor(now, axisX, axisY);
-            handleInventoryControllerPointer(now, confirmPressed);
+            const inventorySkillsScrollDeadzone = 0.45;
+            const skillsScrollDirection = rightAxisY > inventorySkillsScrollDeadzone
+                ? 1
+                : (rightAxisY < -inventorySkillsScrollDeadzone ? -1 : 0);
+            const canScrollSkillsPanel = Boolean(
+                mouseUiState &&
+                mouseUiState.inventorySkillsPanelHovered &&
+                !mouseUiState.inventorySkillsScrollDragging
+            );
+            if (canScrollSkillsPanel) {
+                if (
+                    skillsScrollDirection !== 0 &&
+                    (
+                        skillsScrollDirection !== gamepadMenuState.skillsScrollHeldDirection ||
+                        now >= gamepadMenuState.nextSkillsScrollAt
+                    )
+                ) {
+                    const nextDelta = (Number(mouseUiState.inventorySkillsScrollDelta) || 0) + skillsScrollDirection;
+                    mouseUiState.inventorySkillsScrollDelta = nextDelta;
+                    gamepadMenuState.skillsScrollHeldDirection = skillsScrollDirection;
+                    gamepadMenuState.nextSkillsScrollAt = now + 110;
+                } else if (skillsScrollDirection === 0) {
+                    gamepadMenuState.skillsScrollHeldDirection = 0;
+                }
+            } else {
+                gamepadMenuState.skillsScrollHeldDirection = 0;
+            }
+            if (gamepadMenuState.suppressInventoryConfirmUntilRelease) {
+                if (!confirmPressed) {
+                    gamepadMenuState.suppressInventoryConfirmUntilRelease = false;
+                }
+            } else {
+                handleInventoryControllerPointer(now, confirmPressed);
+            }
+            if (
+                leftoversPressed &&
+                !gamepadMenuState.leftoversHeld &&
+                typeof actions.isLeftoversInventoryOpen === "function" &&
+                actions.isLeftoversInventoryOpen() &&
+                mouseUiState
+            ) {
+                mouseUiState.leftoversTakeAllRequest = true;
+            }
             if (
                 (backPressed && !gamepadMenuState.backHeld) ||
                 (startPressed && !gamepadMenuState.startHeld)
@@ -343,6 +494,16 @@ export function createInputController({
                     actions.closeQuestTracker();
                 }
             }
+        } else if (gameState === GAME_STATES.QUEST_COMPLETION) {
+            updateVirtualCursor(now, axisX, axisY);
+            if (confirmPressed && !gamepadMenuState.confirmHeld && mouseUiState) {
+                mouseUiState.questCompletionClickRequest = true;
+            }
+            if ((backPressed && !gamepadMenuState.backHeld) || (startPressed && !gamepadMenuState.startHeld)) {
+                if (typeof actions.closeQuestCompletionPanel === "function") {
+                    actions.closeQuestCompletionPanel();
+                }
+            }
         } else if (gameState === GAME_STATES.ATTRIBUTES) {
             if (
                 (confirmPressed && !gamepadMenuState.confirmHeld) ||
@@ -355,41 +516,72 @@ export function createInputController({
             const inputLocked = Boolean(actions.isInputLocked && actions.isInputLocked());
             const dialogueActive = Boolean(actions.isDialogueActive && actions.isDialogueActive());
             const wheelAllowed = !inputLocked && !dialogueActive;
-            if (!rightTriggerPressed || !wheelAllowed) {
+            if (!skillWheelPressed || !wheelAllowed) {
                 setSkillWheelActive(false);
             }
-            const wheelActive = rightTriggerPressed && wheelAllowed;
+            const wheelActive =
+                skillWheelPressed &&
+                wheelAllowed &&
+                !gamepadMenuState.skillWheelConsumedUntilRelease;
+
+            const liveFacingDir = resolveFacingDirectionFromRightStick(rightAxisX, rightAxisY);
+            if (facingLockPressed && liveFacingDir) {
+                gamepadMenuState.lastRightStickFacing = liveFacingDir;
+            }
+            if (typeof actions.setControllerFacingDirection === "function") {
+                const facingDir = (!inputLocked && !dialogueActive)
+                    ? (
+                        facingLockPressed
+                            ? (liveFacingDir || gamepadMenuState.lastRightStickFacing || "")
+                            : ""
+                    )
+                    : "";
+                actions.setControllerFacingDirection(facingDir);
+            }
 
             if (wheelActive) {
                 if (skillWheelState && typeof skillWheelState === "object") {
                     skillWheelState.active = true;
-                    skillWheelState.aimX = axisX;
-                    skillWheelState.aimY = axisY;
+                    skillWheelState.aimX = rightAxisX;
+                    skillWheelState.aimY = rightAxisY;
                     skillWheelState.selectedIndex = resolveSkillWheelSelection(
-                        axisX,
-                        axisY,
+                        rightAxisX,
+                        rightAxisY,
                         Number.isFinite(skillWheelState.selectedIndex) ? skillWheelState.selectedIndex : -1
                     );
                 }
-                clearGamepadMovement();
             }
 
-            if (wheelActive && confirmPressed && !gamepadMenuState.confirmHeld) {
+            if (wheelActive && skillConfirmPressed && !gamepadMenuState.skillConfirmHeld) {
                 const selectedIndex = Number.isFinite(skillWheelState?.selectedIndex)
                     ? skillWheelState.selectedIndex
                     : -1;
                 if (selectedIndex >= 0 && typeof actions.onSkillSlotPressed === "function") {
-                    actions.onSkillSlotPressed(selectedIndex);
+                    const activated = Boolean(actions.onSkillSlotPressed(selectedIndex));
+                    if (activated) {
+                        setSkillWheelActive(false);
+                        gamepadMenuState.skillWheelConsumedUntilRelease = true;
+                    }
                 }
             }
 
             if (wheelActive) {
+                if (!inputLocked) {
+                    inputManager.actionStates.moveUp = upPressed;
+                    inputManager.actionStates.moveDown = downPressed;
+                    inputManager.actionStates.moveLeft = leftPressed;
+                    inputManager.actionStates.moveRight = rightPressed;
+                } else {
+                    clearGamepadMovement();
+                }
                 gamepadMenuState.confirmHeld = confirmPressed;
                 gamepadMenuState.backHeld = backPressed;
                 gamepadMenuState.questHeld = questPressed;
+                gamepadMenuState.leftoversHeld = leftoversPressed;
                 gamepadMenuState.startHeld = startPressed;
                 gamepadMenuState.attackHeld = attackPressed;
                 gamepadMenuState.inventoryHeld = inventoryPressed;
+                gamepadMenuState.skillConfirmHeld = skillConfirmPressed;
                 return;
             }
 
@@ -412,6 +604,11 @@ export function createInputController({
                     actions.openQuestTracker();
                 }
             }
+            if (leftoversPressed && !gamepadMenuState.leftoversHeld && !dialogueActive && !inputLocked) {
+                if (typeof actions.tryOpenLeftoversFromInteract === "function") {
+                    actions.tryOpenLeftoversFromInteract();
+                }
+            }
             if (attackPressed && !gamepadMenuState.attackHeld && !dialogueActive && !inputLocked) { // Removed canRunCombatSystems check because main.js handles it? 
                 // Previous code checked canRunCombatSystems(). I should pass that as a callback or getter?
                 // actions.canRunCombatSystems()
@@ -425,14 +622,19 @@ export function createInputController({
         } else {
             clearGamepadMovement();
             setSkillWheelActive(false);
+            if (typeof actions.setControllerFacingDirection === "function") {
+                actions.setControllerFacingDirection("");
+            }
         }
 
         gamepadMenuState.confirmHeld = confirmPressed;
         gamepadMenuState.backHeld = backPressed;
         gamepadMenuState.questHeld = questPressed;
+        gamepadMenuState.leftoversHeld = leftoversPressed;
         gamepadMenuState.startHeld = startPressed;
         gamepadMenuState.attackHeld = attackPressed;
         gamepadMenuState.inventoryHeld = inventoryPressed;
+        gamepadMenuState.skillConfirmHeld = skillConfirmPressed;
     }
 
     return {
