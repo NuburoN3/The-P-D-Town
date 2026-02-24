@@ -2107,31 +2107,7 @@ function drawCombatDamageFlash(ctx, state) {
 }
 
 function drawItemNotifications(ctx, state, cameraZoom, tileSize, colors, getItemSprite) {
-  const { itemAlert, inventoryHint, player, cam } = state;
-
-  if (itemAlert.active) {
-    const elapsed = performance.now() - itemAlert.startedAt;
-    const alpha = 1 - Math.max(0, (elapsed - (itemAlert.durationMs - 400)) / 400);
-
-    const screenX = (player.x - cam.x) * cameraZoom + (tileSize * cameraZoom) / 2;
-    const screenY = (player.y - cam.y) * cameraZoom - 18;
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.font = FONT_16;
-
-    const padding = 8;
-    const text = itemAlert.text;
-    const textW = ctx.measureText(text).width;
-    const boxW = Math.max(120, textW + padding * 2);
-    const boxH = 28;
-    const boxX = Math.round(screenX - boxW / 2);
-    const boxY = Math.round(screenY - boxH);
-
-    drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors);
-    drawUiText(ctx, text, boxX + padding, boxY + 19, colors);
-    ctx.restore();
-  }
+  const { inventoryHint } = state;
 
   if (inventoryHint.active) {
     const elapsed = performance.now() - inventoryHint.startedAt;
@@ -2411,7 +2387,7 @@ function drawAtmosphere(ctx, canvas, colors, state, cameraZoom = 1) {
   }
 }
 
-function drawQuestUpdateNotice(ctx, state, cameraZoom, tileSize, colors) {
+function drawQuestUpdateNotice(ctx, state, cameraZoom, tileSize, colors, options = {}) {
   const notice = state.questUpdateNoticeState;
   if (!notice?.active) return;
   if (!isFreeExploreState(state.gameState)) return;
@@ -2431,14 +2407,21 @@ function drawQuestUpdateNotice(ctx, state, cameraZoom, tileSize, colors) {
   const text = typeof notice.text === "string" && notice.text.trim().length > 0
     ? notice.text
     : "Quest updated";
-  const screenX = Math.round(ctx.canvas.width * 0.5);
-  const screenY = Math.round(ctx.canvas.height * 0.42);
+  const objectivePanelH = 80;
+  const objectiveBottomReserve = 14;
+  const objectivePanelY = Math.max(14, ctx.canvas.height - objectivePanelH - objectiveBottomReserve);
+  const textX = 24;
+  const defaultTextY = Math.max(34, Math.round(objectivePanelY - 14));
+  const dialogueBoxTop = Number.isFinite(options.dialogueBoxTop) ? options.dialogueBoxTop : null;
+  const dialogueAwareTextY = Boolean(options.dialogueActive) && dialogueBoxTop != null
+    ? Math.round(dialogueBoxTop - 16)
+    : defaultTextY;
+  const textY = Math.max(34, Math.min(defaultTextY, dialogueAwareTextY));
 
   ctx.save();
   ctx.font = FONT_20;
   const textW = Math.ceil(ctx.measureText(text).width);
-  const textX = Math.round(screenX - textW / 2);
-  const textY = Math.round(screenY);
+  const glowCenterX = textX + textW * 0.5;
 
   let alpha = 1;
   let clipX = textX;
@@ -2468,7 +2451,7 @@ function drawQuestUpdateNotice(ctx, state, cameraZoom, tileSize, colors) {
   ctx.clip();
 
   // Soft halo + shadowed text for readability with no panel box.
-  const glow = ctx.createRadialGradient(screenX, textY - 10, 8, screenX, textY - 8, Math.max(80, textW));
+  const glow = ctx.createRadialGradient(glowCenterX, textY - 10, 8, glowCenterX, textY - 8, Math.max(80, textW));
   glow.addColorStop(0, "rgba(137, 209, 255, 0.16)");
   glow.addColorStop(1, "rgba(137, 209, 255, 0)");
   ctx.fillStyle = glow;
@@ -3116,7 +3099,10 @@ export function renderGameFrame({
   const nonDialogueUiAlpha = getDialogueUiAlpha(dialogueActive);
 
   drawItemNotifications(ctx, state, cameraZoom, tileSize, uiColors, getItemSprite);
-  drawQuestUpdateNotice(ctx, state, cameraZoom, tileSize, uiColors);
+  drawQuestUpdateNotice(ctx, state, cameraZoom, tileSize, uiColors, {
+    dialogueActive,
+    dialogueBoxTop: canvas.height - ui.TEXT_BOX_HEIGHT - 20
+  });
 
   if (nonDialogueUiAlpha > 0.01) {
     ctx.save();

@@ -1410,7 +1410,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   const skillsGridH = SKILLS_VISIBLE_ROWS * (slotSize + margin) - margin;
   const skillsPanelW = skillsGridW + 20 + skillsSliderW + 6;
   const skillsPanelH = skillsGridH + 34;
-  const skillsPanelGap = 12;
+  const skillsPanelGap = 20;
   const panelGap = 24;
   const equippedSkillsSlotSize = 38;
   const equippedSkillsGap = 5;
@@ -1533,7 +1533,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   const titlePlateH = 24;
   const titleText = "Inventory";
   const titlePlateW = Math.ceil(ctx.measureText(titleText).width) + titlePadX * 2;
-  const titlePlateX = gridX;
+  const titlePlateX = inventoryPanelX + 1;
   const titlePlateY = gridY - titlePlateH;
 
   const equipmentTitleText = "Equipment";

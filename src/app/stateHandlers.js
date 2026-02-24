@@ -123,6 +123,12 @@ export function createRuntimeStateHandlers({
   doorSequence,
   choiceState
 }) {
+  const SILENT_DOJO_DEFEAT_ENEMY_IDS = new Set([
+    "hanamichallengefightera",
+    "hanamichallengefighterb",
+    "hanamichallengefighterc"
+  ]);
+
   function isDialogueActive() {
     return dialogue.isActive();
   }
@@ -186,6 +192,9 @@ export function createRuntimeStateHandlers({
       triggerCameraShake(2.8, 120);
       const targetId = typeof event?.target?.id === "string" ? event.target.id.toLowerCase() : "";
       const targetName = typeof event?.target?.name === "string" ? event.target.name.toLowerCase() : "";
+      const targetHp = Number.isFinite(event?.target?.hp) ? event.target.hp : null;
+      const isSilentDojoDeath = targetHp != null && targetHp <= 0 && SILENT_DOJO_DEFEAT_ENEMY_IDS.has(targetId);
+      if (isSilentDojoDeath) return;
       const isOgreTarget = targetId.includes("ogre") || targetName.includes("ogre");
       const isPossumTarget = targetId.includes("possum") || targetName.includes("possum");
       musicManager.playSfx(isOgreTarget ? "ogreHurt" : (isPossumTarget ? "possumHurt" : "hitImpact"));

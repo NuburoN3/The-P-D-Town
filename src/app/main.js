@@ -338,6 +338,8 @@ const BONK_SKILL_DAMAGE = 20;
 const SPRINT_UNLOCK_DISCIPLINE_LEVEL = 6;
 const OBEY_CAST_RADIUS_TILES = 4;
 const OBEY_CHANNEL_DURATION_MS = 10000;
+const OBEY_HOSTILE_ATTACK_GRACE_MS = 1200;
+const OBEY_CHANNEL_CANCEL_MOVE_THRESHOLD_PX = 10;
 const OBEY_PET_FOLLOW_DISTANCE_TILES = 1;
 const OBEY_PET_TELEPORT_DISTANCE_TILES = 8;
 const OBEY_PET_CATCHUP_TRIGGER_DISTANCE_TILES = 3;
@@ -1007,7 +1009,7 @@ function triggerAnimalRetaliationFromNpcHit(npc, now = performance.now()) {
   if (hasMatchingHostile) return null;
   const hostileEnemy = createObeyHostileEnemyFromNpc(npc);
   if (!hostileEnemy) return null;
-  hostileEnemy.lastAttackAt = now - Math.max(0, Number(hostileEnemy.attackCooldownMs) || 0);
+  hostileEnemy.lastAttackAt = now + OBEY_HOSTILE_ATTACK_GRACE_MS;
   return hostileEnemy;
 }
 
@@ -1015,6 +1017,7 @@ function beginObeyChannel(targetNpc) {
   if (!targetNpc) return false;
   const hostileEnemy = createObeyHostileEnemyFromNpc(targetNpc);
   if (!hostileEnemy) return false;
+  hostileEnemy.lastAttackAt = performance.now() + OBEY_HOSTILE_ATTACK_GRACE_MS;
   obeyState.active = true;
   obeyState.channelMode = "capture";
   obeyState.startedAt = performance.now();
@@ -1024,6 +1027,23 @@ function beginObeyChannel(targetNpc) {
   obeyState.targetNpcId = targetNpc.id || "";
   obeyState.targetTownId = currentTownId;
   obeyState.targetAreaId = currentAreaId;
+  return true;
+}
+
+function beginObeyChannelFromExistingHostileEnemy(hostileEnemy) {
+  if (!hostileEnemy || hostileEnemy.dead) return false;
+  obeyState.active = true;
+  obeyState.channelMode = "capture";
+  obeyState.startedAt = performance.now();
+  obeyState.durationMs = OBEY_CHANNEL_DURATION_MS;
+  obeyState.startedPlayerX = Number.isFinite(player.x) ? player.x : 0;
+  obeyState.startedPlayerY = Number.isFinite(player.y) ? player.y : 0;
+  obeyState.targetNpcId = String(hostileEnemy.obeySourceNpcId || obeyState.targetNpcId || "");
+  obeyState.targetTownId = currentTownId;
+  obeyState.targetAreaId = currentAreaId;
+  obeyState.hostileEnemyId = String(hostileEnemy.id || obeyState.hostileEnemyId || "");
+  obeyState.hostileState = "channel";
+  hostileEnemy.lastAttackAt = performance.now();
   return true;
 }
 
@@ -1044,11 +1064,14 @@ function beginObeyReleaseChannel() {
 
 function isSkillChannelInterruptedByPlayerAction() {
   if (!obeyState.active) return false;
+  const now = performance.now();
+  const startedAt = Number.isFinite(obeyState.startedAt) ? obeyState.startedAt : now;
+  if (now - startedAt < 260) return false;
   if (player.attackState && player.attackState !== "idle") return true;
   if (!Number.isFinite(player.x) || !Number.isFinite(player.y)) return false;
   const movedX = Math.abs(player.x - obeyState.startedPlayerX);
   const movedY = Math.abs(player.y - obeyState.startedPlayerY);
-  return movedX > 0.001 || movedY > 0.001;
+  return Math.hypot(movedX, movedY) > OBEY_CHANNEL_CANCEL_MOVE_THRESHOLD_PX;
 }
 
 function completeObeyChannelIfReady(now) {
@@ -1600,8 +1623,9 @@ function tryActivateSkillSlot(slotIndex) {
     }
     const hasPet = Boolean(obeyState.petId);
     if (!hasPet) {
+      const existingHostile = findObeyHostileEnemy();
       const obeyTarget = getNearestObeyAnimalInRange();
-      if (!obeyTarget) {
+      if (!existingHostile && !obeyTarget) {
         setSkillHudFeedback(slotIndex, "empty");
         return false;
       }
@@ -1622,8 +1646,12 @@ function tryActivateSkillSlot(slotIndex) {
         return false;
       }
     } else {
+      const existingHostile = findObeyHostileEnemy();
       const obeyTarget = getNearestObeyAnimalInRange();
-      if (!beginObeyChannel(obeyTarget)) {
+      const started = existingHostile
+        ? beginObeyChannelFromExistingHostileEnemy(existingHostile)
+        : beginObeyChannel(obeyTarget);
+      if (!started) {
         setSkillHudFeedback(slotIndex, "empty");
         return false;
       }
@@ -1953,7 +1981,6 @@ function buildBasicTrainingQuest() {
   normalizeGlobalStoryFlags(gameFlags);
   if (!gameFlags.basicTrainingStarted) return null;
   const tp = getTownProgressForCurrentTown();
-  if (tp.basicTrainingQuestClaimed) return null;
   const rumorClues = getRumorCluesFound(tp);
   const bogTarget = getBogQuestTarget(tp);
   const bogKills = Number.isFinite(tp.bogQuestKills) ? tp.bogQuestKills : 0;
@@ -2036,6 +2063,13 @@ function buildBasicTrainingQuest() {
 function syncQuestTrackerState(now = performance.now()) {
   const basicTraining = buildBasicTrainingQuest();
   if (basicTraining) {
+    const previousQuest = Array.isArray(questTrackerState.quests)
+      ? questTrackerState.quests.find((quest) => quest && quest.id === basicTraining.id)
+      : null;
+    const wasCompleted = Boolean(previousQuest?.completed);
+    if (!wasCompleted && basicTraining.completed) {
+      questTrackerState.collapsedById[basicTraining.id] = true;
+    }
     const collapsed = Boolean(questTrackerState.collapsedById[basicTraining.id]);
     questTrackerState.quests = [{
       ...basicTraining,
@@ -2158,6 +2192,9 @@ function markNearbyDoorsDiscovered() {
 }
 
 function syncObjectiveState(now = performance.now()) {
+  if (dialogue && typeof dialogue.isActive === "function" && dialogue.isActive()) {
+    return;
+  }
   const next = deriveObjective();
   const nextMarker = resolveObjectiveMarker(next.id);
   const nextMarkerArea = resolveObjectiveMarkerArea(next.id);
@@ -2199,14 +2236,17 @@ function syncObjectiveState(now = performance.now()) {
         questUpdateNoticeState.active = true;
         questUpdateNoticeState.text = "New quest";
         questUpdateNoticeState.startedAt = now;
+        musicManager.playSfx("questNotification");
       } else if (hadObjective && !hasObjective) {
         questUpdateNoticeState.active = true;
         questUpdateNoticeState.text = "Quest complete";
         questUpdateNoticeState.startedAt = now;
+        musicManager.playSfx("questNotification");
       } else if (hasObjective && previousObjectiveId !== next.id) {
         questUpdateNoticeState.active = true;
         questUpdateNoticeState.text = "Quest updated";
         questUpdateNoticeState.startedAt = now;
+        musicManager.playSfx("questNotification");
       }
     }
   }

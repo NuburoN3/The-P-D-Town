@@ -522,21 +522,18 @@ export function createNPCInteractionHandler({
       const awardLineIndex = reportLines.findIndex((line) => explicitAwardPattern.test(String(line || "")));
       const introLines = awardLineIndex >= 0 ? reportLines.slice(0, awardLineIndex + 1) : reportLines;
       const postAwardLines = awardLineIndex >= 0 ? reportLines.slice(awardLineIndex + 1) : [];
-      setTimeout(() => {
-        showDialogue(npc.name, introLines, () => {
-          awardBogQuestReward(tp);
-          if (postAwardLines.length > 0) {
-            setTimeout(() => {
-              showDialogue(npc.name, postAwardLines);
-              queueItemDialogueAutoContinue();
-            }, ITEM_DIALOGUE_PAUSE_MS);
-            lockInteractionInput(ITEM_DIALOGUE_PAUSE_MS);
-            return;
-          }
-          queueItemDialogueAutoContinue();
-        });
-      }, ITEM_DIALOGUE_PAUSE_MS);
-      lockInteractionInput(ITEM_DIALOGUE_PAUSE_MS);
+      showDialogue(npc.name, introLines, () => {
+        awardBogQuestReward(tp);
+        if (postAwardLines.length > 0) {
+          setTimeout(() => {
+            showDialogue(npc.name, postAwardLines);
+            queueItemDialogueAutoContinue();
+          }, ITEM_DIALOGUE_PAUSE_MS);
+          lockInteractionInput(ITEM_DIALOGUE_PAUSE_MS);
+          return;
+        }
+        queueItemDialogueAutoContinue();
+      });
       syncObjectiveState();
       return;
     }

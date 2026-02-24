@@ -12,6 +12,8 @@ const ATTACK_HEADGEAR_OFFSETS = [
 ];
 const BONK_ATTACK_ID = "bonkStrike";
 const BONK_IMPACT_FRAME_INDEX = 4; // 5th frame across (0-based)
+const FINAL_REWARD_OBJECTIVE_ID = "basic-training-claim-reward";
+const FINAL_REWARD_NPC_IDS = new Set(["mrhanami", "mrhanamibogland"]);
 
 function drawPlayer(
   ctx,
@@ -349,6 +351,36 @@ function drawNpcOwBubble(ctx, npc, drawX, drawY, drawWidth) {
   ctx.restore();
 }
 
+function shouldDrawFinalRewardGlow(state, npc) {
+  const objectiveId = String(state?.objectiveState?.id || "");
+  if (objectiveId !== FINAL_REWARD_OBJECTIVE_ID) return false;
+  const npcId = String(npc?.id || "").toLowerCase();
+  return FINAL_REWARD_NPC_IDS.has(npcId);
+}
+
+function drawFinalRewardGlow(ctx, drawX, drawY, drawWidth, drawHeight, now) {
+  const pulse = 0.5 + Math.sin(now * 0.008) * 0.5;
+  const centerX = drawX + drawWidth * 0.5;
+  const centerY = drawY + drawHeight * 0.56;
+  const radius = Math.max(drawWidth, drawHeight) * (0.54 + pulse * 0.08);
+
+  ctx.save();
+  const halo = ctx.createRadialGradient(centerX, centerY, radius * 0.18, centerX, centerY, radius);
+  halo.addColorStop(0, `rgba(255, 231, 109, ${(0.2 + pulse * 0.1).toFixed(3)})`);
+  halo.addColorStop(1, "rgba(255, 231, 109, 0)");
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = `rgba(255, 239, 156, ${(0.45 + pulse * 0.35).toFixed(3)})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius * (0.8 + pulse * 0.08), 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawNPCs(ctx, state, canvas, tileSize, colors, owBubbleQueue = null, shouldDrawNpc = null) {
   const { currentAreaId, npcs, cam } = state;
   const now = performance.now();
@@ -412,6 +444,9 @@ function drawNPCs(ctx, state, canvas, tileSize, colors, owBubbleQueue = null, sh
         const sinkOffset = isPassedOutPet ? Math.round(passedOutProgress * 12) : 0;
         drawY += sinkOffset;
 
+        if (shouldDrawFinalRewardGlow(state, npc)) {
+          drawFinalRewardGlow(ctx, drawX, drawY, drawWidth, drawHeight, now);
+        }
         drawEntityShadow(ctx, drawX, drawY, drawWidth, drawHeight, colors.GROUND_SHADOW);
         if (isPassedOutPet) {
           ctx.save();
@@ -431,6 +466,9 @@ function drawNPCs(ctx, state, canvas, tileSize, colors, owBubbleQueue = null, sh
       } else {
         if (isPassedOutPet) {
           continue;
+        }
+        if (shouldDrawFinalRewardGlow(state, npc)) {
+          drawFinalRewardGlow(ctx, nx, ny, npc.width || tileSize, npc.height || tileSize, now);
         }
         drawNPCPlaceholder(ctx, nx, ny, colors);
         if (now < (Number.isFinite(npc.hitBubbleUntil) ? npc.hitBubbleUntil : 0)) {
