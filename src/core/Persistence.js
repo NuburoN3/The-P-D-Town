@@ -3,6 +3,7 @@ const SAVE_STORAGE_KEY = "pdtown:save:v1";
 
 export const DEFAULT_USER_SETTINGS = Object.freeze({
   highContrastMenu: false,
+  controllerInput: true,
   screenShake: true,
   reducedFlashes: false,
   textSpeedMultiplier: 1,
@@ -63,6 +64,7 @@ export function sanitizeUserSettings(settings) {
   const source = settings && typeof settings === "object" ? settings : {};
   return {
     highContrastMenu: Boolean(source.highContrastMenu),
+    controllerInput: source.controllerInput !== false,
     screenShake: source.screenShake !== false,
     reducedFlashes: Boolean(source.reducedFlashes),
     textSpeedMultiplier: clampTextSpeed(source.textSpeedMultiplier),

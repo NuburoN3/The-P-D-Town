@@ -85,6 +85,10 @@ export class InputManager {
     this.interactPressed = false;
   }
 
+  triggerInteractPressed() {
+    this.interactPressed = true;
+  }
+
   getAttackPressed() {
     return this.attackPressed;
   }

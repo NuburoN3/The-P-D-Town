@@ -174,6 +174,12 @@ const mouseUiState = {
   questTrackerClickRequest: false,
   questCompletionClickRequest: false
 };
+const controllerSkillWheelState = {
+  active: false,
+  selectedIndex: -1,
+  aimX: 0,
+  aimY: 0
+};
 let menuStateController = null;
 let interactionInputLockedUntil = 0;
 const openPauseMenu = () => {
@@ -200,6 +206,7 @@ if (typeof musicManager.setSfxVolume === "function") {
 
 const SETTINGS_ITEMS = Object.freeze([
   { id: "highContrastMenu", kind: "toggle", label: "High Contrast Menu" },
+  { id: "controllerInput", kind: "toggle", label: "Controller Input" },
   { id: "screenShake", kind: "toggle", label: "Screen Shake" },
   { id: "reducedFlashes", kind: "toggle", label: "Reduced Flashes" },
   { id: "textSpeedMultiplier", kind: "cycle", label: "Text Speed", values: [0.75, 1, 1.25, 1.5, 2] },
@@ -3935,9 +3942,13 @@ input.initialize();
 
 const inputController = createInputController({
   inputManager: input,
+  canvas,
+  mouseUiState,
   titleScreenSystem,
   pauseMenuSystem,
   getGameState: () => gameState,
+  isControllerInputEnabled: () => Boolean(userSettings.controllerInput),
+  skillWheelState: controllerSkillWheelState,
   actions: {
     titleCallbacks: {
       onStartGame: startNewGameWithIntro,
@@ -3959,10 +3970,13 @@ const inputController = createInputController({
     onLoad: performLoadGame,
     onQuit: () => location.reload(),
     openPauseMenu,
+    openQuestTracker,
+    closeQuestTracker,
     closePauseMenu: returnToPauseMenu,
     canRunCombatSystems,
     isInputLocked: isHanamiDojoExitControlLockActive,
-    isDialogueActive
+    isDialogueActive,
+    onSkillSlotPressed: tryActivateSkillSlot
   }
 });
 
@@ -4092,6 +4106,7 @@ const { render } = createGameRenderer({
   combatRewardPanel,
   pauseMenuState,
   mouseUiState,
+  controllerSkillWheelState,
   vfxSystem,
   getCurrentTownId,
   getCurrentAreaId,

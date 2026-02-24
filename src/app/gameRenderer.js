@@ -97,6 +97,7 @@ export function createGameRenderer({
   combatRewardPanel,
   pauseMenuState,
   mouseUiState,
+  controllerSkillWheelState,
   vfxSystem,
   getCurrentTownId,
   getCurrentAreaId,
@@ -327,7 +328,12 @@ export function createGameRenderer({
       gameState === GAME_STATES.QUEST_COMPLETION ||
       gameState === GAME_STATES.ATTRIBUTES
     );
-    if (useStylizedMenuCursor) {
+    const useControllerVirtualCursor =
+      input.getInputMethod() === "gamepad" &&
+      (gameState === GAME_STATES.INVENTORY || gameState === GAME_STATES.QUEST_TRACKER);
+    if (useControllerVirtualCursor) {
+      canvas.style.cursor = "none";
+    } else if (useStylizedMenuCursor) {
       canvas.style.cursor = mouseUiState?.insideCanvas ? MENU_CURSOR_CSS : "default";
     } else {
       canvas.style.cursor = "none";
@@ -419,7 +425,8 @@ export function createGameRenderer({
         minimap,
         doorHintText,
         pauseMenuState,
-        mouseUiState
+        mouseUiState,
+        controllerSkillWheelState
       },
       dialogue
     });

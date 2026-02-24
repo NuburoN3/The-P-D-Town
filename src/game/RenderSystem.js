@@ -970,6 +970,94 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom, getItemSprite =
 
 }
 
+function drawControllerSkillWheel(ctx, state, tileSize, getItemSprite = null) {
+  if (!isFreeExploreState(state.gameState)) return;
+  if (!state.player || !state.controllerSkillWheelState?.active) return;
+
+  const wheelState = state.controllerSkillWheelState;
+  const skillSlots = Array.isArray(state.player.skillSlots) ? state.player.skillSlots : [];
+  const desiredHeightTiles = Number.isFinite(state.player.desiredHeightTiles)
+    ? Math.max(1, state.player.desiredHeightTiles)
+    : 1;
+
+  const centerX = state.player.x + tileSize * 0.5 - state.cam.x;
+  const centerY = state.player.y - tileSize * Math.max(0.55, desiredHeightTiles * 0.22) - state.cam.y;
+  const radius = tileSize * 1.95;
+  const slotRadius = Math.max(10, tileSize * 0.5);
+  const selectedIndex = Number.isFinite(wheelState.selectedIndex) ? wheelState.selectedIndex : -1;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(8, 14, 20, 0.58)";
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius + slotRadius * 0.9, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(255, 236, 194, 0.55)";
+  ctx.lineWidth = Math.max(1, tileSize * 0.055);
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius + slotRadius * 0.18, 0, Math.PI * 2);
+  ctx.stroke();
+
+  for (let i = 0; i < 8; i++) {
+    const angle = (-Math.PI / 2) + i * (Math.PI / 4);
+    const slotX = centerX + Math.cos(angle) * radius;
+    const slotY = centerY + Math.sin(angle) * radius;
+    const selected = i === selectedIndex;
+    const slot = skillSlots[i] && typeof skillSlots[i] === "object" ? skillSlots[i] : null;
+    const hasSkill = Boolean(slot?.id);
+    const skillId = String(slot?.id || "").trim().toLowerCase();
+
+    ctx.fillStyle = selected ? "rgba(255, 233, 164, 0.9)" : "rgba(15, 23, 36, 0.86)";
+    ctx.beginPath();
+    ctx.arc(slotX, slotY, slotRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = selected ? "rgba(255, 249, 231, 0.98)" : "rgba(228, 205, 157, 0.6)";
+    ctx.lineWidth = selected ? 2 : 1;
+    ctx.beginPath();
+    ctx.arc(slotX, slotY, slotRadius - 0.5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    if (hasSkill && typeof getItemSprite === "function") {
+      const sprite = getItemSprite(skillId);
+      if (sprite && sprite.width && sprite.height) {
+        const iconSize = Math.max(8, slotRadius * 1.4);
+        ctx.drawImage(sprite, slotX - iconSize / 2, slotY - iconSize / 2, iconSize, iconSize);
+      }
+    }
+
+    if (!hasSkill) {
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.24)";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(slotX - slotRadius * 0.34, slotY - slotRadius * 0.34);
+      ctx.lineTo(slotX + slotRadius * 0.34, slotY + slotRadius * 0.34);
+      ctx.moveTo(slotX + slotRadius * 0.34, slotY - slotRadius * 0.34);
+      ctx.lineTo(slotX - slotRadius * 0.34, slotY + slotRadius * 0.34);
+      ctx.stroke();
+    }
+
+    const indexLabel = String(i + 1);
+    ctx.font = FONT_12;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = selected ? "rgba(40, 22, 6, 0.96)" : "rgba(233, 237, 248, 0.95)";
+    ctx.fillText(indexLabel, slotX, slotY + slotRadius * 0.78);
+  }
+
+  if (selectedIndex >= 0) {
+    const selectedAngle = (-Math.PI / 2) + selectedIndex * (Math.PI / 4);
+    const markerX = centerX + Math.cos(selectedAngle) * (radius - slotRadius * 0.62);
+    const markerY = centerY + Math.sin(selectedAngle) * (radius - slotRadius * 0.62);
+    ctx.fillStyle = "rgba(255, 246, 218, 0.95)";
+    ctx.beginPath();
+    ctx.arc(markerX, markerY, Math.max(2, tileSize * 0.08), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 function drawCombatLevelHud(ctx, state, colors) {
   if (!isFreeExploreState(state.gameState)) return;
   const now = performance.now();
@@ -1829,6 +1917,36 @@ function drawQuestCompletionOverlay(ctx, state, canvas, ui, colors, getItemSprit
   if (mouseUiState) {
     mouseUiState.questCompletionClickRequest = false;
   }
+  ctx.restore();
+}
+
+function drawGamepadVirtualCursor(ctx, state) {
+  const gameState = state.gameState;
+  if (state.inputPromptMode !== "gamepad") return;
+  if (gameState !== GAME_STATES.INVENTORY && gameState !== GAME_STATES.QUEST_TRACKER) return;
+  const mouseX = Number.isFinite(state.mouseUiState?.x) ? state.mouseUiState.x : -1;
+  const mouseY = Number.isFinite(state.mouseUiState?.y) ? state.mouseUiState.y : -1;
+  if (mouseX < 0 || mouseY < 0) return;
+
+  ctx.save();
+  const outerR = 10;
+  const innerR = 3;
+  const pulse = 0.75 + Math.sin(performance.now() * 0.01) * 0.12;
+  ctx.fillStyle = `rgba(9, 14, 24, ${(0.7 * pulse).toFixed(3)})`;
+  ctx.beginPath();
+  ctx.arc(mouseX, mouseY, outerR + 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(255, 243, 212, 0.95)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(mouseX, mouseY, outerR, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(145, 214, 255, 0.95)";
+  ctx.beginPath();
+  ctx.arc(mouseX, mouseY, innerR, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 
@@ -3088,6 +3206,7 @@ export function renderGameFrame({
     spriteFramesPerRow
   });
   drawPlayerSkillChannelBar(ctx, state, tileSize, getItemSprite);
+  drawControllerSkillWheel(ctx, state, tileSize, getItemSprite);
   drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoom, drawTile);
   drawWorldVfx(ctx, state);
   drawTrainingPopup(ctx, state, canvas, ui, colors, tileSize);
@@ -3141,6 +3260,7 @@ export function renderGameFrame({
     drawSettingsOverlay(ctx, state, canvas, ui, uiColors);
     drawQuestTrackerOverlay(ctx, state, canvas, ui, uiColors);
     drawQuestCompletionOverlay(ctx, state, canvas, ui, uiColors, getItemSprite);
+    drawGamepadVirtualCursor(ctx, state);
     ctx.restore();
   }
   drawCombatLevelCelebrationOverlay(ctx, state);
