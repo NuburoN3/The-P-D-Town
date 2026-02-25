@@ -13,6 +13,8 @@ export function createInputBindings({
   musicManager,
   persistUserSettings,
   titleScreenSystem,
+  onSelectControlMode = () => {},
+  getControllerInputEnabled = () => false,
   pauseMenuSystem,
   performSaveGame,
   performStartNewGame,
@@ -447,7 +449,9 @@ export function createInputBindings({
       if (gameState === gameStates.TITLE_SCREEN) {
         titleScreenSystem.handleKeyDown(key, {
           onStartGame: performStartNewGame,
-          onContinueGame: performLoadGame
+          onContinueGame: performLoadGame,
+          onSelectControlMode,
+          getControllerInputEnabled
         });
         e.preventDefault();
         return;

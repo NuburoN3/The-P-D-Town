@@ -14,6 +14,8 @@ export function createInputController({
     const gamepadMenuState = {
         heldDirection: 0,
         nextMoveAt: 0,
+        heldHorizontalDirection: 0,
+        nextHorizontalMoveAt: 0,
         skillsScrollHeldDirection: 0,
         nextSkillsScrollAt: 0,
         lastCursorUpdateAt: 0,
@@ -22,6 +24,10 @@ export function createInputController({
         skillWheelConsumedUntilRelease: false,
         suppressInventoryConfirmUntilRelease: false,
         lastInventoryConfirmPressedAt: -Infinity,
+        audioAdjustHeldDirection: 0,
+        nextAudioAdjustAt: 0,
+        audioSelectHeldDirection: 0,
+        nextAudioSelectAt: 0,
         confirmHeld: false,
         backHeld: false,
         questHeld: false,
@@ -47,12 +53,18 @@ export function createInputController({
 
     function resetHeldStates() {
         gamepadMenuState.heldDirection = 0;
+        gamepadMenuState.heldHorizontalDirection = 0;
+        gamepadMenuState.nextHorizontalMoveAt = 0;
         gamepadMenuState.skillsScrollHeldDirection = 0;
         gamepadMenuState.nextSkillsScrollAt = 0;
         resetButtonHeldStates();
         gamepadMenuState.lastRightStickFacing = "";
         gamepadMenuState.skillWheelConsumedUntilRelease = false;
         gamepadMenuState.suppressInventoryConfirmUntilRelease = false;
+        gamepadMenuState.audioAdjustHeldDirection = 0;
+        gamepadMenuState.nextAudioAdjustAt = 0;
+        gamepadMenuState.audioSelectHeldDirection = 0;
+        gamepadMenuState.nextAudioSelectAt = 0;
         gamepadMenuState.lastGameState = "";
     }
 
@@ -64,7 +76,7 @@ export function createInputController({
         inputManager.actionStates.moveRight = false;
     }
 
-    function updateVirtualCursor(now, axisX, axisY) {
+    function updateVirtualCursor(now, axisX, axisY, { enableInventorySnap = false } = {}) {
         if (!mouseUiState || !canvas) return;
         const width = Number.isFinite(canvas.width) ? canvas.width : 0;
         const height = Number.isFinite(canvas.height) ? canvas.height : 0;
@@ -97,7 +109,147 @@ export function createInputController({
         const nextY = mouseUiState.y + rawY * moveScale;
         mouseUiState.x = Math.max(0, Math.min(width - 1, nextX));
         mouseUiState.y = Math.max(0, Math.min(height - 1, nextY));
+        if (enableInventorySnap) {
+            applyInventoryCursorSnap(rawX, rawY, width, height, dtMs);
+        }
         mouseUiState.insideCanvas = true;
+    }
+
+    function applyInventoryCursorSnap(rawX, rawY, width, height, dtMs) {
+        if (!mouseUiState || !Array.isArray(mouseUiState.controllerSnapTargets)) return;
+        if (mouseUiState.inventoryDragItemName || mouseUiState.inventoryPanelDragTarget || mouseUiState.inventorySkillsScrollDragging) {
+            if (mouseUiState.controllerSnapState && typeof mouseUiState.controllerSnapState === "object") {
+                mouseUiState.controllerSnapState.locked = null;
+            }
+            return;
+        }
+
+        const cursorX = Number(mouseUiState.x);
+        const cursorY = Number(mouseUiState.y);
+        if (!Number.isFinite(cursorX) || !Number.isFinite(cursorY)) return;
+        const inputMagnitude = Math.hypot(rawX, rawY);
+        if (inputMagnitude < 0.08) return;
+
+        const now = performance.now();
+        const snapRadius = 44;
+        const hardSnapRadius = 16;
+        const escapeMsNeeded = 180;
+        const releaseCooldownMs = 130;
+        const safeDtMs = Number.isFinite(dtMs) ? Math.max(0, Math.min(50, dtMs)) : 16;
+        const state = (
+            mouseUiState.controllerSnapState && typeof mouseUiState.controllerSnapState === "object"
+        )
+            ? mouseUiState.controllerSnapState
+            : { locked: null, releaseCooldownUntil: 0 };
+        mouseUiState.controllerSnapState = state;
+
+        const calcRectDistance = (target) => {
+            const tx = target.x;
+            const ty = target.y;
+            const tw = target.w;
+            const th = target.h;
+            const closestX = Math.max(tx, Math.min(cursorX, tx + tw));
+            const closestY = Math.max(ty, Math.min(cursorY, ty + th));
+            return Math.hypot(cursorX - closestX, cursorY - closestY);
+        };
+        const findBestTargetNearCursor = () => {
+            let best = null;
+            let bestDistance = Infinity;
+            for (const target of mouseUiState.controllerSnapTargets) {
+                if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y) || !Number.isFinite(target.w) || !Number.isFinite(target.h)) continue;
+                if (target.w <= 1 || target.h <= 1) continue;
+                const distance = calcRectDistance(target);
+                if (distance > snapRadius) continue;
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = target;
+                }
+            }
+            return { target: best, distance: bestDistance };
+        };
+        const findLockedTarget = () => {
+            const lock = state.locked;
+            if (!lock || !Number.isFinite(lock.cx) || !Number.isFinite(lock.cy)) return null;
+            let best = null;
+            let bestDist = Infinity;
+            for (const target of mouseUiState.controllerSnapTargets) {
+                if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y) || !Number.isFinite(target.w) || !Number.isFinite(target.h)) continue;
+                const cx = target.x + target.w * 0.5;
+                const cy = target.y + target.h * 0.5;
+                const dist = Math.hypot(cx - lock.cx, cy - lock.cy);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = target;
+                }
+            }
+            return bestDist <= 24 ? best : null;
+        };
+
+        let activeTarget = findLockedTarget();
+        let activeDistance = Infinity;
+        let escapeRatio = 0;
+
+        if (activeTarget) {
+            activeDistance = calcRectDistance(activeTarget);
+            const centerX = activeTarget.x + activeTarget.w * 0.5;
+            const centerY = activeTarget.y + activeTarget.h * 0.5;
+            const toCursorX = cursorX - centerX;
+            const toCursorY = cursorY - centerY;
+            const centerDistance = Math.hypot(toCursorX, toCursorY);
+            let movingAwayStrength = 0;
+            if (centerDistance > 1 && inputMagnitude > 0.18) {
+                const nx = toCursorX / centerDistance;
+                const ny = toCursorY / centerDistance;
+                const inx = rawX / inputMagnitude;
+                const iny = rawY / inputMagnitude;
+                const dot = inx * nx + iny * ny;
+                if (dot > 0.42) {
+                    movingAwayStrength = Math.min(1, (dot - 0.42) / 0.58);
+                }
+            }
+
+            state.locked.escapeMs = Number.isFinite(state.locked.escapeMs) ? state.locked.escapeMs : 0;
+            if (movingAwayStrength > 0) {
+                state.locked.escapeMs = Math.min(
+                    escapeMsNeeded + 120,
+                    state.locked.escapeMs + safeDtMs * (0.7 + movingAwayStrength)
+                );
+            } else {
+                state.locked.escapeMs = Math.max(0, state.locked.escapeMs - safeDtMs * 1.25);
+            }
+
+            if (state.locked.escapeMs >= escapeMsNeeded) {
+                state.locked = null;
+                state.releaseCooldownUntil = now + releaseCooldownMs;
+                return;
+            }
+            escapeRatio = Math.max(0, Math.min(1, state.locked.escapeMs / escapeMsNeeded));
+        } else if (now >= (Number.isFinite(state.releaseCooldownUntil) ? state.releaseCooldownUntil : 0)) {
+            const bestNear = findBestTargetNearCursor();
+            activeTarget = bestNear.target;
+            activeDistance = bestNear.distance;
+            if (activeTarget) {
+                state.locked = {
+                    cx: activeTarget.x + activeTarget.w * 0.5,
+                    cy: activeTarget.y + activeTarget.h * 0.5,
+                    escapeMs: 0
+                };
+            }
+        }
+
+        if (!activeTarget) return;
+
+        const targetCenterX = activeTarget.x + activeTarget.w * 0.5;
+        const targetCenterY = activeTarget.y + activeTarget.h * 0.5;
+        let pull = activeDistance <= hardSnapRadius
+            ? 0.55
+            : (0.08 + ((snapRadius - activeDistance) / snapRadius) * 0.24);
+        // Gradually ease out of magnetic force while the player keeps pushing away.
+        pull *= (1 - escapeRatio * 0.7);
+        const snappedX = cursorX + (targetCenterX - cursorX) * pull;
+        const snappedY = cursorY + (targetCenterY - cursorY) * pull;
+        mouseUiState.x = Math.max(0, Math.min(width - 1, snappedX));
+        mouseUiState.y = Math.max(0, Math.min(height - 1, snappedY));
     }
 
     function handleInventoryControllerPointer(now, confirmPressed) {
@@ -211,7 +363,7 @@ export function createInputController({
 
     function update(now) {
         if (!isControllerInputEnabled()) {
-            clearGamepadMovement();
+            inputManager.setInputMethod("keyboard");
             setSkillWheelActive(false);
             if (typeof actions.setControllerFacingDirection === "function") {
                 actions.setControllerFacingDirection("");
@@ -223,7 +375,6 @@ export function createInputController({
         const gamepads = navigator.getGamepads();
         const pad = Array.from(gamepads || []).find((candidate) => candidate && candidate.connected);
         if (!pad) {
-            clearGamepadMovement();
             setSkillWheelActive(false);
             if (typeof actions.setControllerFacingDirection === "function") {
                 actions.setControllerFacingDirection("");
@@ -245,6 +396,15 @@ export function createInputController({
         const menuUpPressed = Boolean(buttons[12]?.pressed) || axisY < -MENU_NAV_DEADZONE;
         const menuDownPressed = Boolean(buttons[13]?.pressed) || axisY > MENU_NAV_DEADZONE;
         const direction = menuUpPressed ? -1 : menuDownPressed ? 1 : 0;
+        const menuLeftPressed = Boolean(buttons[14]?.pressed) || axisX < -MENU_NAV_DEADZONE;
+        const menuRightPressed = Boolean(buttons[15]?.pressed) || axisX > MENU_NAV_DEADZONE;
+        const horizontalMenuDirection = menuRightPressed ? 1 : (menuLeftPressed ? -1 : 0);
+        const audioAdjustDirection = rightAxisX > MENU_NAV_DEADZONE
+            ? 1
+            : (rightAxisX < -MENU_NAV_DEADZONE ? -1 : 0);
+        const audioSelectDirection = rightAxisY > MENU_NAV_DEADZONE
+            ? 1
+            : (rightAxisY < -MENU_NAV_DEADZONE ? -1 : 0);
 
         const confirmPressed = Boolean(buttons[0]?.pressed); // A
         const backPressed = Boolean(buttons[1]?.pressed); // B
@@ -264,6 +424,8 @@ export function createInputController({
         if (gamepadMenuState.lastGameState !== gameState) {
             gamepadMenuState.heldDirection = 0;
             gamepadMenuState.nextMoveAt = now;
+            gamepadMenuState.heldHorizontalDirection = 0;
+            gamepadMenuState.nextHorizontalMoveAt = now;
             gamepadMenuState.skillsScrollHeldDirection = 0;
             gamepadMenuState.nextSkillsScrollAt = now;
             gamepadMenuState.confirmHeld = confirmPressed;
@@ -276,6 +438,10 @@ export function createInputController({
             gamepadMenuState.skillConfirmHeld = skillConfirmPressed;
             gamepadMenuState.suppressInventoryConfirmUntilRelease =
                 gameState === GAME_STATES.INVENTORY && confirmPressed;
+            gamepadMenuState.audioAdjustHeldDirection = 0;
+            gamepadMenuState.nextAudioAdjustAt = now;
+            gamepadMenuState.audioSelectHeldDirection = 0;
+            gamepadMenuState.nextAudioSelectAt = now;
             gamepadMenuState.lastGameState = gameState;
         }
         const choiceActive = Boolean(typeof actions.isChoiceActive === "function" && actions.isChoiceActive());
@@ -322,12 +488,63 @@ export function createInputController({
         }
 
         if (gameState === GAME_STATES.TITLE_SCREEN) {
+            const shouldAdjustAudio = typeof pauseMenuSystem.adjustSoundControlByController === "function";
+            if (
+                shouldAdjustAudio &&
+                audioAdjustDirection !== 0 &&
+                (
+                    audioAdjustDirection !== gamepadMenuState.audioAdjustHeldDirection ||
+                    now >= gamepadMenuState.nextAudioAdjustAt
+                )
+            ) {
+                pauseMenuSystem.adjustSoundControlByController(audioAdjustDirection, {
+                    layoutMode: "title",
+                    persist: true
+                });
+                gamepadMenuState.audioAdjustHeldDirection = audioAdjustDirection;
+                gamepadMenuState.nextAudioAdjustAt = now + 95;
+            } else if (audioAdjustDirection === 0) {
+                gamepadMenuState.audioAdjustHeldDirection = 0;
+            }
+            if (
+                typeof pauseMenuSystem.cycleSoundControlSelectionByController === "function" &&
+                audioSelectDirection !== 0 &&
+                (
+                    audioSelectDirection !== gamepadMenuState.audioSelectHeldDirection ||
+                    now >= gamepadMenuState.nextAudioSelectAt
+                )
+            ) {
+                pauseMenuSystem.cycleSoundControlSelectionByController(audioSelectDirection, {
+                    layoutMode: "title"
+                });
+                gamepadMenuState.audioSelectHeldDirection = audioSelectDirection;
+                gamepadMenuState.nextAudioSelectAt = now + 170;
+            } else if (audioSelectDirection === 0) {
+                gamepadMenuState.audioSelectHeldDirection = 0;
+            }
+
             if (direction !== 0 && (direction !== gamepadMenuState.heldDirection || now >= gamepadMenuState.nextMoveAt)) {
                 titleScreenSystem.handleKeyDown(direction === 1 ? "arrowdown" : "arrowup", actions.titleCallbacks);
                 gamepadMenuState.heldDirection = direction;
                 gamepadMenuState.nextMoveAt = now + 170;
             } else if (direction === 0) {
                 gamepadMenuState.heldDirection = 0;
+            }
+            if (
+                horizontalMenuDirection !== 0 &&
+                (
+                    horizontalMenuDirection !== gamepadMenuState.heldHorizontalDirection ||
+                    now >= gamepadMenuState.nextHorizontalMoveAt
+                )
+            ) {
+                titleScreenSystem.handleKeyDown(
+                    horizontalMenuDirection === 1 ? "arrowright" : "arrowleft",
+                    actions.titleCallbacks
+                );
+                gamepadMenuState.heldHorizontalDirection = horizontalMenuDirection;
+                gamepadMenuState.nextHorizontalMoveAt = now + 170;
+            } else if (horizontalMenuDirection === 0) {
+                gamepadMenuState.heldHorizontalDirection = 0;
             }
 
             if (confirmPressed && !gamepadMenuState.confirmHeld) {
@@ -378,6 +595,39 @@ export function createInputController({
             if (confirmPressed && !gamepadMenuState.confirmHeld) {
                 pauseMenuSystem.handleKeyDown(getMenuConfirmKey(), pauseActions);
             }
+            if (
+                typeof pauseMenuSystem.adjustSoundControlByController === "function" &&
+                audioAdjustDirection !== 0 &&
+                (
+                    audioAdjustDirection !== gamepadMenuState.audioAdjustHeldDirection ||
+                    now >= gamepadMenuState.nextAudioAdjustAt
+                )
+            ) {
+                pauseMenuSystem.adjustSoundControlByController(audioAdjustDirection, {
+                    layoutMode: "pause",
+                    persist: true
+                });
+                gamepadMenuState.audioAdjustHeldDirection = audioAdjustDirection;
+                gamepadMenuState.nextAudioAdjustAt = now + 95;
+            } else if (audioAdjustDirection === 0) {
+                gamepadMenuState.audioAdjustHeldDirection = 0;
+            }
+            if (
+                typeof pauseMenuSystem.cycleSoundControlSelectionByController === "function" &&
+                audioSelectDirection !== 0 &&
+                (
+                    audioSelectDirection !== gamepadMenuState.audioSelectHeldDirection ||
+                    now >= gamepadMenuState.nextAudioSelectAt
+                )
+            ) {
+                pauseMenuSystem.cycleSoundControlSelectionByController(audioSelectDirection, {
+                    layoutMode: "pause"
+                });
+                gamepadMenuState.audioSelectHeldDirection = audioSelectDirection;
+                gamepadMenuState.nextAudioSelectAt = now + 170;
+            } else if (audioSelectDirection === 0) {
+                gamepadMenuState.audioSelectHeldDirection = 0;
+            }
 
             if ((backPressed && !gamepadMenuState.backHeld) || (startPressed && !gamepadMenuState.startHeld)) {
                 actions.onResume();
@@ -416,6 +666,39 @@ export function createInputController({
             if (confirmPressed && !gamepadMenuState.confirmHeld) {
                 pauseMenuSystem.handleKeyDown(getMenuConfirmKey(), settingsActions);
             }
+            if (
+                typeof pauseMenuSystem.adjustSoundControlByController === "function" &&
+                audioAdjustDirection !== 0 &&
+                (
+                    audioAdjustDirection !== gamepadMenuState.audioAdjustHeldDirection ||
+                    now >= gamepadMenuState.nextAudioAdjustAt
+                )
+            ) {
+                pauseMenuSystem.adjustSoundControlByController(audioAdjustDirection, {
+                    layoutMode: "pause",
+                    persist: true
+                });
+                gamepadMenuState.audioAdjustHeldDirection = audioAdjustDirection;
+                gamepadMenuState.nextAudioAdjustAt = now + 95;
+            } else if (audioAdjustDirection === 0) {
+                gamepadMenuState.audioAdjustHeldDirection = 0;
+            }
+            if (
+                typeof pauseMenuSystem.cycleSoundControlSelectionByController === "function" &&
+                audioSelectDirection !== 0 &&
+                (
+                    audioSelectDirection !== gamepadMenuState.audioSelectHeldDirection ||
+                    now >= gamepadMenuState.nextAudioSelectAt
+                )
+            ) {
+                pauseMenuSystem.cycleSoundControlSelectionByController(audioSelectDirection, {
+                    layoutMode: "pause"
+                });
+                gamepadMenuState.audioSelectHeldDirection = audioSelectDirection;
+                gamepadMenuState.nextAudioSelectAt = now + 170;
+            } else if (audioSelectDirection === 0) {
+                gamepadMenuState.audioSelectHeldDirection = 0;
+            }
 
             if ((backPressed && !gamepadMenuState.backHeld) || (startPressed && !gamepadMenuState.startHeld)) {
                 // Escape logic handled by PauseMenuSystem?
@@ -424,7 +707,7 @@ export function createInputController({
                 pauseMenuSystem.handleKeyDown("escape", settingsActions);
             }
         } else if (gameState === GAME_STATES.INVENTORY) {
-            updateVirtualCursor(now, axisX, axisY);
+            updateVirtualCursor(now, axisX, axisY, { enableInventorySnap: true });
             const inventorySkillsScrollDeadzone = 0.45;
             const skillsScrollDirection = rightAxisY > inventorySkillsScrollDeadzone
                 ? 1

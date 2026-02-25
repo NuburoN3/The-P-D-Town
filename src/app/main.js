@@ -172,6 +172,7 @@ const mouseUiState = {
   inventorySkillsPreviewManaCost: 0,
   inventorySkillsPreviewUseSeconds: 0,
   inventorySkillsPreviewAlpha: 0,
+  controllerSnapTargets: [],
   leftoversTakeAllRequest: false,
   questTrackerClickRequest: false,
   questCompletionClickRequest: false
@@ -3669,12 +3670,23 @@ function handleTitleLeftClick(mouseX, mouseY) {
       startNewGameWithIntro();
     },
     onContinueGame: () => {
+      commitTitleControlSelection();
       performLoadGame();
+    },
+    onSelectControlMode: (controllerEnabled) => {
+      userSettings.controllerInput = Boolean(controllerEnabled);
     }
   });
 }
 
+function commitTitleControlSelection() {
+  userSettings.controllerInput = userSettings.controllerInput === true;
+  input.setInputMethod(userSettings.controllerInput ? "gamepad" : "keyboard");
+  persistUserSettings();
+}
+
 function startNewGameWithIntro() {
+  commitTitleControlSelection();
   performStartNewGame();
   studioIntroState.startedAt = performance.now();
   studioIntroState.firstCutsceneSfxPlayed = false;
@@ -3955,12 +3967,19 @@ const inputController = createInputController({
   titleScreenSystem,
   pauseMenuSystem,
   getGameState: () => gameState,
-  isControllerInputEnabled: () => Boolean(userSettings.controllerInput),
+  isControllerInputEnabled: () => gameState === GAME_STATES.TITLE_SCREEN || userSettings.controllerInput === true,
   skillWheelState: controllerSkillWheelState,
   actions: {
     titleCallbacks: {
       onStartGame: startNewGameWithIntro,
-      onContinueGame: performLoadGame
+      onContinueGame: () => {
+        commitTitleControlSelection();
+        performLoadGame();
+      },
+      onSelectControlMode: (controllerEnabled) => {
+        userSettings.controllerInput = Boolean(controllerEnabled);
+      },
+      getControllerInputEnabled: () => userSettings.controllerInput === true
     },
     onResume: resumeFromPauseMenu,
     onInventory: () => {
@@ -4028,10 +4047,17 @@ const { syncPointerLockWithState, register: registerInputBindings } = createInpu
   musicManager,
   persistUserSettings,
   titleScreenSystem,
+  onSelectControlMode: (controllerEnabled) => {
+    userSettings.controllerInput = Boolean(controllerEnabled);
+  },
+  getControllerInputEnabled: () => userSettings.controllerInput === true,
   pauseMenuSystem,
   performSaveGame,
   performStartNewGame: startNewGameWithIntro,
-  performLoadGame,
+  performLoadGame: () => {
+    commitTitleControlSelection();
+    performLoadGame();
+  },
   resumeFromPauseMenu,
   openInventoryFromPauseMenu,
   toggleQuestTracker,

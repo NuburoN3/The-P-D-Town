@@ -26,6 +26,7 @@ const SKILLS_TOTAL_SLOTS = SKILLS_GRID_COLS * SKILLS_TOTAL_ROWS;
 const SKILLS_VISIBLE_SLOTS = SKILLS_GRID_COLS * SKILLS_VISIBLE_ROWS;
 const SKILL_PREVIEW_FADE_IN = 0.18;
 const SKILL_PREVIEW_FADE_OUT = 0.12;
+const CONTROLLER_SNAP_MAX_TARGETS = 320;
 const SKILL_METADATA = Object.freeze({
   obey: {
     displayName: "Obey",
@@ -69,6 +70,23 @@ const ITEM_METADATA = Object.freeze({
     }
   }
 });
+
+function resetControllerSnapTargets(mouseUiState) {
+  if (!mouseUiState || typeof mouseUiState !== "object") return;
+  mouseUiState.controllerSnapTargets = [];
+}
+
+function addControllerSnapTarget(targets, x, y, w, h) {
+  if (!Array.isArray(targets) || targets.length >= CONTROLLER_SNAP_MAX_TARGETS) return;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) return;
+  if (w <= 1 || h <= 1) return;
+  targets.push({ x, y, w, h });
+}
+
+function commitControllerSnapTargets(mouseUiState, targets) {
+  if (!mouseUiState || typeof mouseUiState !== "object") return;
+  mouseUiState.controllerSnapTargets = Array.isArray(targets) ? targets : [];
+}
 
 function inferCategory(itemName) {
   const known = ITEM_METADATA[itemName]?.category;
@@ -909,8 +927,12 @@ function drawEquipmentPreview(
 
 function drawLeftoversLootOverlay(ctx, state, canvas, colors, getItemSprite) {
   const { playerInventory, playerCurrency, mouseUiState, leftoversUiState, leftovers, inventoryUiLayout } = state;
-  if (!leftoversUiState?.active) return false;
+  if (!leftoversUiState?.active) {
+    resetControllerSnapTargets(mouseUiState);
+    return false;
+  }
   if (!Array.isArray(leftovers)) {
+    resetControllerSnapTargets(mouseUiState);
     clearLeftoversInspection(mouseUiState);
     leftoversUiState.active = false;
     leftoversUiState.leftoverId = "";
@@ -921,6 +943,7 @@ function drawLeftoversLootOverlay(ctx, state, canvas, colors, getItemSprite) {
 
   let activeLeftover = leftovers.find((entry) => entry?.id === leftoversUiState.leftoverId) || null;
   if (!activeLeftover) {
+    resetControllerSnapTargets(mouseUiState);
     clearLeftoversInspection(mouseUiState);
     leftoversUiState.active = false;
     leftoversUiState.leftoverId = "";
@@ -1045,6 +1068,10 @@ function drawLeftoversLootOverlay(ctx, state, canvas, colors, getItemSprite) {
   const clickInsideLootPanel = mouseInsideCanvas && isPointInsideExpandedRect(
     mouseX, mouseY, lootPanelX, lootPanelY - tabH, lootPanelW, lootPanelH + tabH, 0
   );
+  const controllerSnapTargets = [];
+  addControllerSnapTarget(controllerSnapTargets, inventoryTabX, inventoryTabY, inventoryTabW, tabH);
+  addControllerSnapTarget(controllerSnapTargets, leftoversTabX, leftoversTabY, leftoversTabW, tabH);
+  addControllerSnapTarget(controllerSnapTargets, closeButtonX, closeButtonY, closeButtonW, closeButtonH);
   if (
     mouseUiState?.inventoryClickRequest &&
     mouseInsideCanvas &&
@@ -1088,6 +1115,7 @@ function drawLeftoversLootOverlay(ctx, state, canvas, colors, getItemSprite) {
     const row = Math.floor(i / cols);
     const x = gridX + col * (slotSize + margin);
     const y = gridY + row * (slotSize + margin);
+    addControllerSnapTarget(controllerSnapTargets, x, y, slotSize, slotSize);
     const itemName = slotOrder[i];
 
     ctx.fillStyle = colors.INVENTORY_SLOT_BG;
@@ -1149,6 +1177,7 @@ function drawLeftoversLootOverlay(ctx, state, canvas, colors, getItemSprite) {
     const row = Math.floor(i / lootCols);
     const x = lootGridX + col * (lootSlotSize + margin);
     const y = lootGridY + row * (lootSlotSize + margin);
+    addControllerSnapTarget(controllerSnapTargets, x, y, lootSlotSize, lootSlotSize);
     const entry = lootEntries[i] || null;
     const isHovered = mouseInsideCanvas && isPointInsideExpandedRect(mouseX, mouseY, x, y, lootSlotSize, lootSlotSize, 0);
     if (isHovered) hoveredLootIndex = i;
@@ -1190,6 +1219,7 @@ function drawLeftoversLootOverlay(ctx, state, canvas, colors, getItemSprite) {
   const takeAllH = 18;
   const takeAllX = Math.round(lootPanelX + (lootPanelW - takeAllW) * 0.5);
   const takeAllY = lootPanelY + lootPanelH - takeAllH - 24;
+  addControllerSnapTarget(controllerSnapTargets, takeAllX, takeAllY, takeAllW, takeAllH);
   const takeAllHovered = mouseInsideCanvas && isPointInsideExpandedRect(mouseX, mouseY, takeAllX, takeAllY, takeAllW, takeAllH, 0);
   ctx.fillStyle = takeAllHovered ? "rgba(255, 227, 160, 0.35)" : "rgba(255, 227, 160, 0.2)";
   ctx.fillRect(takeAllX, takeAllY, takeAllW, takeAllH);
@@ -1362,6 +1392,7 @@ function drawLeftoversLootOverlay(ctx, state, canvas, colors, getItemSprite) {
     const buttonW = Math.max(66, actionTextW + 18);
     const buttonX = bubbleX + Math.round((bubbleW - buttonW) / 2);
     const buttonY = bubbleY + textSectionH + actionGapY;
+    addControllerSnapTarget(controllerSnapTargets, buttonX, buttonY, buttonW, actionHeight);
     const hoveringTakeButton = mouseX >= buttonX && mouseX <= buttonX + buttonW && mouseY >= buttonY && mouseY <= buttonY + actionHeight;
     if (mouseUiState.inventoryClickRequest && hoveringTakeButton) {
       transferLootEntry(inspectedLootEntry);
@@ -1379,6 +1410,7 @@ function drawLeftoversLootOverlay(ctx, state, canvas, colors, getItemSprite) {
   }
 
   if (mouseUiState) {
+    commitControllerSnapTargets(mouseUiState, controllerSnapTargets);
     mouseUiState.inventoryClickRequest = false;
     mouseUiState.inventoryDoubleClickRequest = false;
     mouseUiState.inventoryDragStartRequest = false;
@@ -1393,12 +1425,16 @@ function drawLeftoversLootOverlay(ctx, state, canvas, colors, getItemSprite) {
 
 export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSprite) {
   const { gameState, playerInventory, playerEquipment, mouseUiState } = state;
-  if (gameState !== GAME_STATES.INVENTORY) return;
+  if (gameState !== GAME_STATES.INVENTORY) {
+    resetControllerSnapTargets(mouseUiState);
+    return;
+  }
 
   if (drawLeftoversLootOverlay(ctx, state, canvas, colors, getItemSprite)) {
     return;
   }
   clearLeftoversInspection(mouseUiState);
+  const controllerSnapTargets = [];
 
   normalizePlayerEquipment(playerEquipment);
   const playerCurrency = normalizePlayerCurrency(state?.playerCurrency);
@@ -1656,6 +1692,27 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     skillsTitleH,
     0
   );
+  addControllerSnapTarget(controllerSnapTargets, titlePlateX, titlePlateY, titlePlateW, titlePlateH);
+  addControllerSnapTarget(controllerSnapTargets, equipmentTitleX, equipmentTitleY, equipmentTitleW, equipmentTitleH);
+  addControllerSnapTarget(controllerSnapTargets, skillsTitleX, skillsTitleY, skillsTitleW, skillsTitleH);
+  addControllerSnapTarget(
+    controllerSnapTargets,
+    previewRotateButtons.left.x,
+    previewRotateButtons.left.y,
+    previewRotateButtons.left.w,
+    previewRotateButtons.left.h
+  );
+  addControllerSnapTarget(
+    controllerSnapTargets,
+    previewRotateButtons.right.x,
+    previewRotateButtons.right.y,
+    previewRotateButtons.right.w,
+    previewRotateButtons.right.h
+  );
+  if (showPager) {
+    addControllerSnapTarget(controllerSnapTargets, pagerLeftRect.x, pagerLeftRect.y, pagerLeftRect.w, pagerLeftRect.h);
+    addControllerSnapTarget(controllerSnapTargets, pagerRightRect.x, pagerRightRect.y, pagerRightRect.w, pagerRightRect.h);
+  }
 
   if (
     mouseUiState?.inventoryDragStartRequest &&
@@ -2271,6 +2328,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     const row = Math.floor(i / cols);
     const x = gridX + col * (slotSize + margin);
     const y = gridY + row * (slotSize + margin);
+    addControllerSnapTarget(controllerSnapTargets, x, y, slotSize, slotSize);
 
     ctx.fillStyle = colors.INVENTORY_SLOT_BG;
     ctx.fillRect(x, y, slotSize, slotSize);
@@ -2411,6 +2469,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     const y = skillsGridY + localRow * skillRowStep - skillRowPixelOffset;
     for (let col = 0; col < SKILLS_GRID_COLS; col++) {
       const x = skillsGridX + col * skillRowStep;
+      addControllerSnapTarget(controllerSnapTargets, x, y, slotSize, slotSize);
       const skillIndex = absoluteRow * SKILLS_GRID_COLS + col;
       const skillEntry = skillIndex < unlockedSkills.length ? unlockedSkills[skillIndex] : null;
 
@@ -2457,6 +2516,8 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
 
   ctx.fillStyle = "rgba(12, 10, 8, 0.76)";
   ctx.fillRect(skillsTrackX, skillsTrackY, skillsSliderW, skillsTrackH);
+  addControllerSnapTarget(controllerSnapTargets, skillsTrackX, skillsTrackY, skillsSliderW, skillsTrackH);
+  addControllerSnapTarget(controllerSnapTargets, skillsTrackX + 1, skillThumbY, Math.max(1, skillsSliderW - 2), skillThumbH);
   ctx.strokeStyle = "rgba(255, 231, 167, 0.42)";
   ctx.lineWidth = 1;
   ctx.strokeRect(skillsTrackX + 0.5, skillsTrackY + 0.5, skillsSliderW - 1, skillsTrackH - 1);
@@ -2554,6 +2615,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
 
   for (const slot of EQUIPMENT_SLOT_ORDER) {
     const rect = equipmentLayout.slots[slot.id];
+    addControllerSnapTarget(controllerSnapTargets, rect.x, rect.y, rect.w, rect.h);
     const equippedItemName = playerEquipment?.[slot.id] || null;
     const isHovered = slot.id === hover.hoveredEquipmentSlotId;
     const dragItem = mouseUiState?.inventoryDragItemName || "";
@@ -2811,6 +2873,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
       const buttonW = Math.max(66, actionTextW + 18);
       const buttonX = bubbleX + Math.round((bubbleW - buttonW) / 2);
       const buttonY = bubbleY + textSectionH + actionGapY;
+      addControllerSnapTarget(controllerSnapTargets, buttonX, buttonY, buttonW, actionHeight);
       const hoveringEquipButton =
         mouseX >= buttonX &&
         mouseX <= buttonX + buttonW &&
@@ -2875,6 +2938,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
 
   for (let i = 0; i < equippedSkillsRects.length; i++) {
     const rect = equippedSkillsRects[i];
+    addControllerSnapTarget(controllerSnapTargets, rect.x, rect.y, rect.w, rect.h);
     const slotSkill = playerSkillSlots[i];
     const skillId = String(slotSkill?.id || "").trim().toLowerCase();
     const bonkBlocked = skillId === "bonk" && !String(playerEquipment?.weapon || "").trim();
@@ -2960,6 +3024,8 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     }
     mouseUiState.inventoryClickRequest = false;
   }
+
+  commitControllerSnapTargets(mouseUiState, controllerSnapTargets);
 
   if (draggingItemName && mouseUiState?.insideCanvas) {
     const dragSize = 34;

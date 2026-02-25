@@ -2866,6 +2866,26 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
     soundControls: state.pauseMenuState?.soundControls || {}
   });
 
+  const controlPickerLayout = getTitleControlPickerLayout(canvas);
+  const useControllerAsDefault = Boolean(state.userSettings?.controllerInput);
+  ctx.font = FONT_16;
+  ctx.fillStyle = "rgba(244, 227, 195, 0.9)";
+  ctx.fillText("Default Controls", controlPickerLayout.keyboardMouse.x, controlPickerLayout.keyboardMouse.y - 16);
+  drawTitleControlOptionCard(ctx, {
+    rect: controlPickerLayout.keyboardMouse,
+    label: "Mouse & Keyboard",
+    iconType: "keyboardMouse",
+    isSelected: !useControllerAsDefault,
+    isFocused: Boolean(titleState.controlPickerFocused && Number(titleState.controlPickerIndex) === 0)
+  });
+  drawTitleControlOptionCard(ctx, {
+    rect: controlPickerLayout.controller,
+    label: "Controller",
+    iconType: "controller",
+    isSelected: useControllerAsDefault,
+    isFocused: Boolean(titleState.controlPickerFocused && Number(titleState.controlPickerIndex) === 1)
+  });
+
   const panelX = 72;
   const optionCount = Array.isArray(titleState.options) ? titleState.options.length : 0;
   const panelH = Math.max(188, 144 + Math.max(0, optionCount - 1) * 38);
@@ -3134,6 +3154,146 @@ function drawIntroCutsceneOverlay(ctx, canvas, state) {
   if (frameBottomY < canvas.height) {
     ctx.fillRect(0, frameBottomY, canvas.width, canvas.height - frameBottomY);
   }
+}
+
+function getTitleControlPickerLayout(canvas) {
+  const panelX = 72;
+  const panelW = 372;
+  const boxW = 206;
+  const boxH = 150;
+  const gap = 28;
+  const totalW = boxW * 2 + gap;
+  const minX = panelX + panelW + 26;
+  const maxX = Math.max(minX, canvas.width - totalW - 24);
+  const preferredX = Math.round(canvas.width * 0.56);
+  const baseX = Math.max(minX, Math.min(maxX, preferredX));
+  const topY = Math.max(140, Math.round(canvas.height * 0.37));
+  return {
+    keyboardMouse: { x: baseX, y: topY, w: boxW, h: boxH },
+    controller: { x: baseX + boxW + gap, y: topY, w: boxW, h: boxH }
+  };
+}
+
+function drawTitleControlOptionCard(ctx, { rect, label, iconType, isSelected, isFocused = false }) {
+  const inset = isSelected ? 8 : 0;
+  const x = rect.x + inset;
+  const y = rect.y + inset;
+  const w = rect.w - inset * 2;
+  const h = rect.h - inset * 2;
+
+  const bg = ctx.createLinearGradient(x, y, x, y + h);
+  bg.addColorStop(0, isSelected ? "rgba(255, 243, 206, 0.2)" : "rgba(236, 214, 176, 0.12)");
+  bg.addColorStop(1, isSelected ? "rgba(55, 76, 48, 0.22)" : "rgba(16, 19, 24, 0.3)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(x, y, w, h);
+
+  ctx.lineWidth = isSelected ? 3 : 2;
+  ctx.strokeStyle = isSelected
+    ? "#89d483"
+    : (isFocused ? "rgba(149, 206, 255, 0.9)" : "rgba(238, 215, 174, 0.62)");
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+
+  if (iconType === "controller") {
+    drawControllerIcon(ctx, x, y, w, h);
+  } else {
+    drawKeyboardMouseIcon(ctx, x, y, w, h);
+  }
+
+  ctx.font = FONT_16;
+  ctx.textAlign = "center";
+  ctx.fillStyle = isSelected ? "#f5ffd8" : "rgba(248, 230, 201, 0.9)";
+  ctx.fillText(label, x + w * 0.5, y + h - 18);
+  if (isSelected) {
+    ctx.font = FONT_12;
+    ctx.fillStyle = "#67d96d";
+    ctx.fillText("selected", x + w * 0.5, y + h + 18);
+  }
+  ctx.textAlign = "left";
+}
+
+function drawKeyboardMouseIcon(ctx, x, y, w, h) {
+  const keyboardW = Math.round(w * 0.58);
+  const keyboardH = Math.round(h * 0.28);
+  const keyboardX = Math.round(x + (w - keyboardW) * 0.5);
+  const keyboardY = Math.round(y + h * 0.2);
+  ctx.fillStyle = "rgba(27, 36, 46, 0.88)";
+  ctx.fillRect(keyboardX, keyboardY, keyboardW, keyboardH);
+  ctx.strokeStyle = "rgba(220, 236, 247, 0.7)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(keyboardX + 0.5, keyboardY + 0.5, keyboardW - 1, keyboardH - 1);
+  const cols = 6;
+  const rows = 3;
+  const keyGap = 4;
+  const keyW = Math.floor((keyboardW - keyGap * (cols + 1)) / cols);
+  const keyH = Math.floor((keyboardH - keyGap * (rows + 1)) / rows);
+  ctx.fillStyle = "rgba(197, 218, 234, 0.65)";
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const kx = keyboardX + keyGap + col * (keyW + keyGap);
+      const ky = keyboardY + keyGap + row * (keyH + keyGap);
+      ctx.fillRect(kx, ky, keyW, keyH);
+    }
+  }
+
+  const mouseW = Math.round(w * 0.18);
+  const mouseH = Math.round(h * 0.24);
+  const mouseX = Math.round(x + w * 0.5 - mouseW * 0.5);
+  const mouseY = Math.round(y + h * 0.53);
+  ctx.fillStyle = "rgba(231, 240, 248, 0.88)";
+  ctx.beginPath();
+  drawRoundedRectPath(ctx, mouseX, mouseY, mouseW, mouseH, 9);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(25, 34, 43, 0.75)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(mouseX + mouseW * 0.5, mouseY + 4);
+  ctx.lineTo(mouseX + mouseW * 0.5, mouseY + mouseH * 0.48);
+  ctx.stroke();
+}
+
+function drawControllerIcon(ctx, x, y, w, h) {
+  const bodyW = Math.round(w * 0.62);
+  const bodyH = Math.round(h * 0.36);
+  const bodyX = Math.round(x + (w - bodyW) * 0.5);
+  const bodyY = Math.round(y + h * 0.28);
+  ctx.fillStyle = "rgba(230, 238, 247, 0.9)";
+  ctx.beginPath();
+  drawRoundedRectPath(ctx, bodyX, bodyY, bodyW, bodyH, 26);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(28, 34, 42, 0.78)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  const dpadX = bodyX + bodyW * 0.24;
+  const dpadY = bodyY + bodyH * 0.5;
+  ctx.fillStyle = "rgba(34, 43, 55, 0.92)";
+  ctx.fillRect(dpadX - 10, dpadY - 3, 20, 6);
+  ctx.fillRect(dpadX - 3, dpadY - 10, 6, 20);
+
+  const buttonsX = bodyX + bodyW * 0.74;
+  const buttonsY = bodyY + bodyH * 0.48;
+  ctx.fillStyle = "rgba(34, 43, 55, 0.92)";
+  ctx.beginPath();
+  ctx.arc(buttonsX - 7, buttonsY, 4, 0, Math.PI * 2);
+  ctx.arc(buttonsX + 7, buttonsY, 4, 0, Math.PI * 2);
+  ctx.arc(buttonsX, buttonsY - 7, 4, 0, Math.PI * 2);
+  ctx.arc(buttonsX, buttonsY + 7, 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawRoundedRectPath(ctx, x, y, w, h, radius) {
+  const r = Math.max(0, Math.min(radius, Math.floor(Math.min(w, h) * 0.5)));
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
 }
 
 function drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoom, drawTile) {

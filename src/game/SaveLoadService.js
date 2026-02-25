@@ -28,6 +28,7 @@ export function buildGameSnapshot({
     leftoversState,
     objectiveState = null
 }) {
+    const snapshotNow = performance.now();
     const snapshotObjective = objectiveState && typeof objectiveState === "object"
         ? {
             id: String(objectiveState.id || ""),
@@ -52,14 +53,23 @@ export function buildGameSnapshot({
             maxMana: Number.isFinite(player.maxMana) ? player.maxMana : 10,
             manaRegenPerSecond: Number.isFinite(player.manaRegenPerSecond) ? player.manaRegenPerSecond : 0.65,
             skillSlots: Array.isArray(player.skillSlots)
-                ? player.skillSlots.map((slot, index) => ({
-                    slot: index + 1,
-                    id: slot?.id || null,
-                    name: String(slot?.name || ""),
-                    manaCost: Number.isFinite(slot?.manaCost) ? Math.max(0, slot.manaCost) : 0,
-                    cooldownMs: Number.isFinite(slot?.cooldownMs) ? Math.max(0, slot.cooldownMs) : 0,
-                    lastUsedAt: Number.isFinite(slot?.lastUsedAt) ? slot.lastUsedAt : -Infinity
-                }))
+                ? player.skillSlots.map((slot, index) => {
+                    const cooldownMs = Number.isFinite(slot?.cooldownMs) ? Math.max(0, slot.cooldownMs) : 0;
+                    const lastUsedAt = Number.isFinite(slot?.lastUsedAt) ? slot.lastUsedAt : -Infinity;
+                    const cooldownElapsed = snapshotNow - lastUsedAt;
+                    const cooldownRemainingMs = (cooldownMs > 0 && Number.isFinite(lastUsedAt))
+                        ? Math.max(0, Math.min(cooldownMs, cooldownMs - cooldownElapsed))
+                        : 0;
+                    return {
+                        slot: index + 1,
+                        id: slot?.id || null,
+                        name: String(slot?.name || ""),
+                        manaCost: Number.isFinite(slot?.manaCost) ? Math.max(0, slot.manaCost) : 0,
+                        cooldownMs,
+                        cooldownRemainingMs,
+                        lastUsedAt
+                    };
+                })
                 : [],
             unlockedSkills: Array.isArray(player.unlockedSkills)
                 ? player.unlockedSkills.filter((id) => typeof id === "string" && id.length > 0)
@@ -194,14 +204,40 @@ export function applyGameSnapshot(snapshot, context) {
         ? Math.max(0, snapshot.player.manaRegenPerSecond)
         : (Number.isFinite(player.manaRegenPerSecond) ? player.manaRegenPerSecond : 0.65);
     if (Array.isArray(snapshot.player?.skillSlots)) {
-        player.skillSlots = snapshot.player.skillSlots.map((slot, index) => ({
-            slot: index + 1,
-            id: slot?.id || null,
-            name: String(slot?.name || ""),
-            manaCost: Number.isFinite(slot?.manaCost) ? Math.max(0, slot.manaCost) : 0,
-            cooldownMs: Number.isFinite(slot?.cooldownMs) ? Math.max(0, slot.cooldownMs) : 0,
-            lastUsedAt: Number.isFinite(slot?.lastUsedAt) ? slot.lastUsedAt : -Infinity
-        }));
+        const loadNow = performance.now();
+        player.skillSlots = snapshot.player.skillSlots.map((slot, index) => {
+            const cooldownMs = Number.isFinite(slot?.cooldownMs) ? Math.max(0, slot.cooldownMs) : 0;
+            const storedRemaining = Number.isFinite(slot?.cooldownRemainingMs)
+                ? Math.max(0, Math.min(cooldownMs, slot.cooldownRemainingMs))
+                : null;
+            const legacyLastUsedAt = Number.isFinite(slot?.lastUsedAt) ? slot.lastUsedAt : -Infinity;
+            let resolvedLastUsedAt = -Infinity;
+
+            if (cooldownMs > 0) {
+                if (storedRemaining !== null) {
+                    resolvedLastUsedAt = storedRemaining > 0 ? loadNow - storedRemaining : -Infinity;
+                } else if (Number.isFinite(legacyLastUsedAt)) {
+                    const legacyElapsed = loadNow - legacyLastUsedAt;
+                    // Legacy saves stored performance.now() directly; if that value is "in the future"
+                    // after a reload, drop it to avoid a huge cooldown lockout.
+                    if (legacyElapsed >= 0) {
+                        const remaining = Math.max(0, cooldownMs - legacyElapsed);
+                        resolvedLastUsedAt = remaining > 0 ? loadNow - remaining : -Infinity;
+                    } else {
+                        resolvedLastUsedAt = -Infinity;
+                    }
+                }
+            }
+
+            return {
+                slot: index + 1,
+                id: slot?.id || null,
+                name: String(slot?.name || ""),
+                manaCost: Number.isFinite(slot?.manaCost) ? Math.max(0, slot.manaCost) : 0,
+                cooldownMs,
+                lastUsedAt: resolvedLastUsedAt
+            };
+        });
     }
     if (Array.isArray(snapshot.player?.unlockedSkills)) {
         player.unlockedSkills = snapshot.player.unlockedSkills

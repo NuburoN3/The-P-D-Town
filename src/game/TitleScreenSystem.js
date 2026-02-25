@@ -18,6 +18,8 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
         selected: 0,
         hovered: -1,
         pointerNavigation: false,
+        controlPickerFocused: false,
+        controlPickerIndex: 0,
         options: [...CONTINUE_OPTIONS],
         hasContinueSave: true,
         showHowTo: false,
@@ -34,6 +36,7 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
     function handleMouseMove(mouseX, mouseY) {
         if (state.showHowTo) return false;
         state.pointerNavigation = true;
+        state.controlPickerFocused = false;
 
         const hoverIndex = getTitleOptionIndexAtPosition(mouseX, mouseY);
         if (hoverIndex !== state.hovered) {
@@ -51,7 +54,7 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
      * @param {object} callbacks - { onStartGame, onContinueGame }
      * @returns {boolean} true if click was handled
      */
-    function handleClick(mouseX, mouseY, { onStartGame, onContinueGame }) {
+    function handleClick(mouseX, mouseY, { onStartGame, onContinueGame, onSelectControlMode }) {
         if (state.showHowTo) {
             // Close "How to Play" on click
             const helpW = Math.min(canvas.width - 120, 520);
@@ -66,8 +69,21 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
             return false;
         }
 
+        const controlChoice = getControlChoiceAtPosition(mouseX, mouseY);
+        if (controlChoice) {
+            const isControllerChoice = controlChoice === "controller";
+            state.controlPickerFocused = true;
+            state.controlPickerIndex = isControllerChoice ? 1 : 0;
+            if (typeof onSelectControlMode === "function") {
+                onSelectControlMode(isControllerChoice);
+            }
+            musicManager.playSfx("menuConfirm");
+            return true;
+        }
+
         const hoverIndex = getTitleOptionIndexAtPosition(mouseX, mouseY);
         if (hoverIndex >= 0) {
+            state.controlPickerFocused = false;
             if (state.selected !== hoverIndex) {
                 state.selected = hoverIndex;
                 musicManager.playSfx("menuMove");
@@ -79,12 +95,54 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
         return false;
     }
 
-    function handleKeyDown(key, { onStartGame, onContinueGame }) {
+    function handleKeyDown(key, { onStartGame, onContinueGame, onSelectControlMode, getControllerInputEnabled }) {
         if (state.showHowTo) {
             if (key === "escape" || key === "enter" || key === "space" || key === " ") {
                 state.showHowTo = false;
                 musicManager.playSfx("menuConfirm");
             }
+            return;
+        }
+
+        if (state.controlPickerFocused) {
+            state.pointerNavigation = false;
+            state.hovered = -1;
+            if (key === "arrowleft" || key === "a") {
+                if (state.controlPickerIndex > 0) {
+                    state.controlPickerIndex -= 1;
+                    musicManager.playSfx("menuMove");
+                } else {
+                    state.controlPickerFocused = false;
+                    musicManager.playSfx("menuMove");
+                }
+                return;
+            }
+            if (key === "arrowright" || key === "d") {
+                if (state.controlPickerIndex < 1) {
+                    state.controlPickerIndex += 1;
+                    musicManager.playSfx("menuMove");
+                }
+                return;
+            }
+            if (key === "enter" || key === "space" || key === " " || key === "e") {
+                const selectController = state.controlPickerIndex === 1;
+                if (typeof onSelectControlMode === "function") {
+                    onSelectControlMode(selectController);
+                }
+                musicManager.playSfx("menuConfirm");
+                return;
+            }
+            return;
+        }
+
+        if (key === "arrowright" || key === "d") {
+            state.pointerNavigation = false;
+            state.hovered = -1;
+            state.controlPickerFocused = true;
+            state.controlPickerIndex = typeof getControllerInputEnabled === "function" && getControllerInputEnabled()
+                ? 1
+                : 0;
+            musicManager.playSfx("menuMove");
             return;
         }
 
@@ -130,6 +188,8 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
         state.selected = Math.max(0, Math.min(state.selected, state.options.length - 1));
         state.hovered = -1;
         state.pointerNavigation = false;
+        state.controlPickerFocused = false;
+        state.controlPickerIndex = 0;
     }
 
     function update(now, { player, cam, currentMapW, currentMapH, onFadeOutComplete }) {
@@ -184,6 +244,37 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
             if (pointInRect(mouseX, mouseY, rowX, rowY, rowW, rowH)) return i;
         }
         return -1;
+    }
+
+    function getControlChoiceAtPosition(mouseX, mouseY) {
+        const layout = getControlPickerLayout();
+        const keyboardRect = layout.keyboardMouse;
+        if (pointInRect(mouseX, mouseY, keyboardRect.x, keyboardRect.y, keyboardRect.w, keyboardRect.h)) {
+            return "keyboardMouse";
+        }
+        const controllerRect = layout.controller;
+        if (pointInRect(mouseX, mouseY, controllerRect.x, controllerRect.y, controllerRect.w, controllerRect.h)) {
+            return "controller";
+        }
+        return "";
+    }
+
+    function getControlPickerLayout() {
+        const panelX = 72;
+        const panelW = 372;
+        const boxW = 206;
+        const boxH = 150;
+        const gap = 28;
+        const totalW = boxW * 2 + gap;
+        const minX = panelX + panelW + 26;
+        const maxX = Math.max(minX, canvas.width - totalW - 24);
+        const preferredX = Math.round(canvas.width * 0.56);
+        const baseX = Math.max(minX, Math.min(maxX, preferredX));
+        const topY = Math.max(140, Math.round(canvas.height * 0.37));
+        return {
+            keyboardMouse: { x: baseX, y: topY, w: boxW, h: boxH },
+            controller: { x: baseX + boxW + gap, y: topY, w: boxW, h: boxH }
+        };
     }
 
     return {
