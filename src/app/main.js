@@ -11,6 +11,7 @@ import {
   GAME_STATES,
   TILE_TYPES,
   AUDIO_TRACKS,
+  SPRINT_UNLOCK_DISCIPLINE_LEVEL,
   isFreeExploreState
 } from "../core/constants.js";
 import { InputManager } from "../core/InputManager.js";
@@ -349,7 +350,6 @@ const BONK_SKILL_MANA_COST = 2;
 const BONK_SKILL_COOLDOWN_MS = 8000;
 const BONK_SKILL_WINDUP_MS = 1000;
 const BONK_SKILL_DAMAGE = 20;
-const SPRINT_UNLOCK_DISCIPLINE_LEVEL = 6;
 const OBEY_CAST_RADIUS_TILES = 4;
 const OBEY_CHANNEL_DURATION_MS = 10000;
 const OBEY_HOSTILE_ATTACK_GRACE_MS = 1200;

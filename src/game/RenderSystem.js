@@ -1,4 +1,4 @@
-import { AREA_KINDS, BRANDING, GAME_STATES, TILE_TYPES, isFreeExploreState } from "../core/constants.js";
+import { AREA_KINDS, BRANDING, DISCIPLINE_UNLOCKS, GAME_STATES, TILE_TYPES, isFreeExploreState } from "../core/constants.js";
 import {
   FONT_12,
   FONT_16,
@@ -469,46 +469,241 @@ function drawAttributesOverlay(ctx, state, canvas, ui, colors) {
   const { gameState, playerStats } = state;
   if (gameState !== GAME_STATES.ATTRIBUTES) return;
 
-  ctx.fillStyle = colors.INVENTORY_OVERLAY;
+  const disciplineLevel = Number.isFinite(playerStats?.disciplineLevel)
+    ? Math.max(1, Math.floor(playerStats.disciplineLevel))
+    : 1;
+  const disciplineXP = Number.isFinite(playerStats?.disciplineXP) ? Math.max(0, playerStats.disciplineXP) : 0;
+  const disciplineXPNeeded = Number.isFinite(playerStats?.disciplineXPNeeded) ? Math.max(1, playerStats.disciplineXPNeeded) : 1;
+  const progressRatio = clamp01(disciplineXP / disciplineXPNeeded);
+  const unlocks = Array.isArray(DISCIPLINE_UNLOCKS)
+    ? [...DISCIPLINE_UNLOCKS].sort((a, b) => {
+      const levelA = Number.isFinite(a?.level) ? a.level : 9999;
+      const levelB = Number.isFinite(b?.level) ? b.level : 9999;
+      return levelA - levelB;
+    })
+    : [];
+  const nextUnlock = unlocks.find((unlock) => Number.isFinite(unlock?.level) && unlock.level > disciplineLevel) || null;
+  const unlockedCount = unlocks.filter((unlock) => Number.isFinite(unlock?.level) && unlock.level <= disciplineLevel).length;
+
+  ctx.save();
+  const backdropGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  backdropGradient.addColorStop(0, "rgba(4, 10, 17, 0.74)");
+  backdropGradient.addColorStop(1, "rgba(6, 16, 28, 0.86)");
+  ctx.fillStyle = backdropGradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const boxW = ui.INVENTORY_BOX_WIDTH;
-  const boxH = ui.INVENTORY_BOX_HEIGHT;
-  const boxX = (canvas.width - boxW) / 2;
-  const boxY = (canvas.height - boxH) / 2;
+  const panelW = Math.min(canvas.width - 64, 860);
+  const panelH = Math.min(canvas.height - 64, 560);
+  const panelX = Math.round((canvas.width - panelW) * 0.5);
+  const panelY = Math.round((canvas.height - panelH) * 0.5);
+  drawSkinnedPanel(ctx, panelX, panelY, panelW, panelH, colors, { titleBand: true });
 
-  drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors, { titleBand: true });
+  const panelShine = ctx.createRadialGradient(
+    panelX + panelW * 0.78,
+    panelY + panelH * 0.18,
+    8,
+    panelX + panelW * 0.78,
+    panelY + panelH * 0.18,
+    panelW * 0.68
+  );
+  panelShine.addColorStop(0, "rgba(134, 225, 255, 0.18)");
+  panelShine.addColorStop(1, "rgba(134, 225, 255, 0)");
+  ctx.fillStyle = panelShine;
+  ctx.fillRect(panelX, panelY, panelW, panelH);
 
   ctx.font = FONT_28;
-  ctx.fillStyle = "black";
-  ctx.fillText("Attributes", boxX + 24, boxY + 42);
+  drawUiText(ctx, "Discipline Progression", panelX + 24, panelY + 42, colors);
+  ctx.font = FONT_12;
+  drawUiText(ctx, "Unlock abilities as your discipline grows", panelX + 24, panelY + 62, colors);
+
+  const levelBadgeW = 128;
+  const levelBadgeH = 34;
+  const levelBadgeX = panelX + panelW - levelBadgeW - 22;
+  const levelBadgeY = panelY + 18;
+  ctx.beginPath();
+  drawRoundedRectPath(ctx, levelBadgeX, levelBadgeY, levelBadgeW, levelBadgeH, 12);
+  const levelBadgeGrad = ctx.createLinearGradient(levelBadgeX, levelBadgeY, levelBadgeX, levelBadgeY + levelBadgeH);
+  levelBadgeGrad.addColorStop(0, "rgba(38, 91, 112, 0.88)");
+  levelBadgeGrad.addColorStop(1, "rgba(18, 50, 64, 0.9)");
+  ctx.fillStyle = levelBadgeGrad;
+  ctx.fill();
+  ctx.strokeStyle = "rgba(162, 234, 255, 0.74)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.font = FONT_16;
+  ctx.fillStyle = "#dff7ff";
+  ctx.fillText(`Lv ${disciplineLevel}`, levelBadgeX + 40, levelBadgeY + 22);
+
+  const contentX = panelX + 22;
+  const contentY = panelY + 76;
+  const contentW = panelW - 44;
+  const contentH = panelH - 112;
+  const summaryW = Math.max(250, Math.min(332, Math.floor(contentW * 0.4)));
+  const summaryH = contentH;
+  const roadmapX = contentX + summaryW + 16;
+  const roadmapW = contentW - summaryW - 16;
+
+  ctx.beginPath();
+  drawRoundedRectPath(ctx, contentX, contentY, summaryW, summaryH, 16);
+  const summaryGrad = ctx.createLinearGradient(contentX, contentY, contentX, contentY + summaryH);
+  summaryGrad.addColorStop(0, "rgba(18, 33, 52, 0.93)");
+  summaryGrad.addColorStop(1, "rgba(11, 23, 38, 0.94)");
+  ctx.fillStyle = summaryGrad;
+  ctx.fill();
+  ctx.strokeStyle = "rgba(130, 202, 235, 0.42)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
 
   ctx.font = FONT_20;
-  ctx.fillStyle = "black";
-  const levelY = boxY + 90;
-  ctx.fillText(`Discipline Lv. ${playerStats.disciplineLevel}`, boxX + 24, levelY);
-
-  const barX = boxX + 24;
-  const barY = levelY + 18;
-  const barW = boxW - 48;
-  const barH = 20;
-  const progressRatio = Math.min(1, playerStats.disciplineXP / playerStats.disciplineXPNeeded);
-
-  ctx.fillStyle = colors.POPUP_BAR_BG;
-  ctx.fillRect(barX, barY, barW, barH);
-
-  ctx.fillStyle = colors.INVENTORY_BAR_FILL;
-  ctx.fillRect(barX, barY, barW * progressRatio, barH);
-
-  ctx.strokeStyle = colors.DIALOGUE_BORDER;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(barX, barY, barW, barH);
+  ctx.fillStyle = "#ecf8ff";
+  ctx.fillText("Current Growth", contentX + 16, contentY + 30);
 
   ctx.font = FONT_16;
-  const progressText = `${playerStats.disciplineXP} / ${playerStats.disciplineXPNeeded}`;
-  const textWidth = ctx.measureText(progressText).width;
-  ctx.fillStyle = "black";
-  ctx.fillText(progressText, barX + (barW - textWidth) / 2, barY + 15);
+  ctx.fillStyle = "#b7deef";
+  ctx.fillText(`Discipline Lv. ${disciplineLevel}`, contentX + 16, contentY + 56);
+
+  const xpBarX = contentX + 16;
+  const xpBarY = contentY + 70;
+  const xpBarW = summaryW - 32;
+  const xpBarH = 24;
+  ctx.beginPath();
+  drawRoundedRectPath(ctx, xpBarX, xpBarY, xpBarW, xpBarH, 10);
+  ctx.fillStyle = "rgba(15, 28, 42, 0.9)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(159, 220, 247, 0.5)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  if (progressRatio > 0) {
+    ctx.beginPath();
+    drawRoundedRectPath(ctx, xpBarX + 2, xpBarY + 2, Math.max(0, (xpBarW - 4) * progressRatio), xpBarH - 4, 8);
+    const fillGrad = ctx.createLinearGradient(xpBarX, xpBarY, xpBarX, xpBarY + xpBarH);
+    fillGrad.addColorStop(0, "#73e7ca");
+    fillGrad.addColorStop(1, "#2f8f9e");
+    ctx.fillStyle = fillGrad;
+    ctx.fill();
+  }
+
+  ctx.font = FONT_12;
+  ctx.fillStyle = "#e9fbff";
+  const xpText = `${disciplineXP} / ${disciplineXPNeeded} XP`;
+  const xpTextW = ctx.measureText(xpText).width;
+  ctx.fillText(xpText, xpBarX + (xpBarW - xpTextW) * 0.5, xpBarY + 16);
+
+  ctx.font = FONT_16;
+  ctx.fillStyle = "#d5ecf9";
+  ctx.fillText(`Unlocks active: ${unlockedCount}/${unlocks.length}`, contentX + 16, xpBarY + 52);
+
+  const nextUnlockText = nextUnlock
+    ? `Next: Lv.${nextUnlock.level} ${String(nextUnlock.title || "Unlock")}`
+    : "All listed unlocks are active";
+  ctx.font = FONT_12;
+  ctx.fillStyle = "#9dc2d8";
+  const nextUnlockLines = wrapTextLines(ctx, nextUnlockText, summaryW - 32).slice(0, 2);
+  for (let i = 0; i < nextUnlockLines.length; i += 1) {
+    ctx.fillText(nextUnlockLines[i], contentX + 16, xpBarY + 78 + i * 16);
+  }
+
+  ctx.font = FONT_12;
+  ctx.fillStyle = "rgba(192, 225, 239, 0.86)";
+  ctx.fillText("Future unlocks can be added in core constants.", contentX + 16, contentY + summaryH - 18);
+
+  ctx.beginPath();
+  drawRoundedRectPath(ctx, roadmapX, contentY, roadmapW, contentH, 16);
+  const roadmapGrad = ctx.createLinearGradient(roadmapX, contentY, roadmapX, contentY + contentH);
+  roadmapGrad.addColorStop(0, "rgba(17, 40, 60, 0.9)");
+  roadmapGrad.addColorStop(1, "rgba(8, 20, 34, 0.93)");
+  ctx.fillStyle = roadmapGrad;
+  ctx.fill();
+  ctx.strokeStyle = "rgba(138, 206, 236, 0.42)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.font = FONT_20;
+  ctx.fillStyle = "#ecf8ff";
+  ctx.fillText("Unlock Roadmap", roadmapX + 16, contentY + 30);
+
+  const listX = roadmapX + 16;
+  const listY = contentY + 44;
+  const listW = roadmapW - 32;
+  const cardGap = 10;
+  const cardH = 76;
+  const maxCards = Math.max(1, Math.floor((contentH - 58) / (cardH + cardGap)));
+  const displayUnlocks = unlocks.slice(0, maxCards);
+
+  for (let i = 0; i < displayUnlocks.length; i += 1) {
+    const unlock = displayUnlocks[i];
+    const unlockLevel = Number.isFinite(unlock?.level) ? Math.max(1, Math.floor(unlock.level)) : 1;
+    const unlocked = disciplineLevel >= unlockLevel;
+    const currentGoal = !unlocked && nextUnlock && unlock.id === nextUnlock.id;
+    const cardY = listY + i * (cardH + cardGap);
+
+    ctx.beginPath();
+    drawRoundedRectPath(ctx, listX, cardY, listW, cardH, 12);
+    const cardGrad = ctx.createLinearGradient(listX, cardY, listX, cardY + cardH);
+    if (unlocked) {
+      cardGrad.addColorStop(0, "rgba(29, 94, 85, 0.86)");
+      cardGrad.addColorStop(1, "rgba(17, 57, 52, 0.9)");
+    } else if (currentGoal) {
+      cardGrad.addColorStop(0, "rgba(64, 87, 120, 0.86)");
+      cardGrad.addColorStop(1, "rgba(37, 56, 88, 0.9)");
+    } else {
+      cardGrad.addColorStop(0, "rgba(34, 46, 64, 0.86)");
+      cardGrad.addColorStop(1, "rgba(21, 30, 43, 0.9)");
+    }
+    ctx.fillStyle = cardGrad;
+    ctx.fill();
+    ctx.strokeStyle = unlocked
+      ? "rgba(118, 236, 200, 0.74)"
+      : (currentGoal ? "rgba(167, 206, 255, 0.68)" : "rgba(129, 156, 184, 0.45)");
+    ctx.lineWidth = unlocked ? 1.4 : 1;
+    ctx.stroke();
+
+    const statusText = unlocked ? "Unlocked" : (currentGoal ? "Current Goal" : "Locked");
+    ctx.font = FONT_12;
+    ctx.fillStyle = unlocked ? "#b8ffe8" : (currentGoal ? "#d4ebff" : "#9cb8d1");
+    ctx.fillText(statusText, listX + 14, cardY + 18);
+
+    ctx.font = FONT_16;
+    ctx.fillStyle = "#edf7ff";
+    ctx.fillText(String(unlock?.title || "Unknown Unlock"), listX + 14, cardY + 39);
+
+    const tagText = String(unlock?.tag || "Ability");
+    ctx.font = FONT_12;
+    ctx.fillStyle = "#d1e7f3";
+    ctx.fillText(tagText, listX + 14, cardY + 56);
+
+    const levelPillW = 72;
+    const levelPillH = 24;
+    const levelPillX = listX + listW - levelPillW - 10;
+    const levelPillY = cardY + 10;
+    ctx.beginPath();
+    drawRoundedRectPath(ctx, levelPillX, levelPillY, levelPillW, levelPillH, 10);
+    ctx.fillStyle = unlocked ? "rgba(116, 228, 178, 0.24)" : "rgba(129, 164, 198, 0.22)";
+    ctx.fill();
+    ctx.strokeStyle = unlocked ? "rgba(127, 244, 195, 0.62)" : "rgba(150, 184, 215, 0.48)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = unlocked ? "#c8ffe9" : "#d8ebff";
+    ctx.font = FONT_12;
+    ctx.fillText(`Level ${unlockLevel}`, levelPillX + 10, levelPillY + 16);
+
+    ctx.font = FONT_12;
+    ctx.fillStyle = "rgba(219, 240, 255, 0.85)";
+    const descriptionLines = wrapTextLines(ctx, String(unlock?.description || ""), listW - 110).slice(0, 1);
+    if (descriptionLines.length > 0) ctx.fillText(descriptionLines[0], listX + 14, cardY + 69);
+  }
+
+  if (displayUnlocks.length < unlocks.length) {
+    const hiddenCount = unlocks.length - displayUnlocks.length;
+    ctx.font = FONT_12;
+    ctx.fillStyle = "rgba(171, 207, 233, 0.84)";
+    ctx.fillText(`+${hiddenCount} more unlock${hiddenCount > 1 ? "s" : ""}`, listX, contentY + contentH - 12);
+  }
+
+  ctx.font = FONT_12;
+  drawUiText(ctx, "Press Esc to close", panelX + panelW - 140, panelY + panelH - 12, colors);
+  ctx.restore();
 }
 
 function drawSettingsOverlay(ctx, state, canvas, ui, colors) {

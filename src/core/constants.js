@@ -199,6 +199,18 @@ export const UI = {
   INTERACT_REACH: TILE
 };
 
+// Discipline progression unlock milestones.
+export const SPRINT_UNLOCK_DISCIPLINE_LEVEL = 6;
+export const DISCIPLINE_UNLOCKS = Object.freeze([
+  Object.freeze({
+    id: "sprint",
+    level: SPRINT_UNLOCK_DISCIPLINE_LEVEL,
+    title: "Sprint",
+    description: "Hold Right Click or Shift to sprint while moving.",
+    tag: "Movement"
+  })
+]);
+
 // Training Constants
 export const TRAINING = {
   DURATION_MS: 2000,
