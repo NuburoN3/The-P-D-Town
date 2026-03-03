@@ -31,7 +31,8 @@ export function createCombatSystem({
     onPlayerAttackStarted: eventHandlers.onPlayerAttackStarted || (() => { }),
     onPlayerAttackActive: eventHandlers.onPlayerAttackActive || (() => { }),
     onPlayerAttackHitFrame: eventHandlers.onPlayerAttackHitFrame || (() => { }),
-    onHitConfirmed: eventHandlers.onHitConfirmed || (() => { })
+    onHitConfirmed: eventHandlers.onHitConfirmed || (() => { }),
+    onEnemyProjectileSpawn: eventHandlers.onEnemyProjectileSpawn || (() => { })
   };
 
   function canApplyHitForProfile(player, profile, now) {
@@ -241,11 +242,14 @@ export function createCombatSystem({
     const bonusDamage = profile?.ignoreWeaponBonus ? 0 : resolveWeaponBonusDamage(playerEquipment);
     const flatProfileBonus = Number.isFinite(profile?.damageBonusFlat) ? profile.damageBonusFlat : 0;
     const damage = Math.max(0, baseDamage + bonusDamage + flatProfileBonus);
+    const interruptsEnemy = profile?.interruptsEnemy === true;
     enemy.hp = Math.max(0, enemy.hp - damage);
     enemy.invulnerableUntil = now + 180;
-    enemy.hitStunUntil = now + 230;
-    enemy.state = "hitStun";
-    enemy.pendingStrike = false;
+    if (interruptsEnemy) {
+      enemy.hitStunUntil = now + 230;
+      enemy.state = "hitStun";
+      enemy.pendingStrike = false;
+    }
 
     const ex = enemy.x + enemy.width / 2;
     const ey = enemy.y + enemy.height / 2;
@@ -320,6 +324,14 @@ export function createCombatSystem({
       ? profile.getAttackCenter(player)
       : { x: player.x + tileSize / 2, y: player.y + tileSize / 2 };
     const hitRadius = Number.isFinite(profile.hitRadius) ? profile.hitRadius : tileSize * 0.7;
+    const brogId = "thebrog";
+    const circleIntersectsRect = (cx, cy, radius, rx, ry, rw, rh) => {
+      const clampedX = Math.max(rx, Math.min(cx, rx + rw));
+      const clampedY = Math.max(ry, Math.min(cy, ry + rh));
+      const dx = cx - clampedX;
+      const dy = cy - clampedY;
+      return (dx * dx + dy * dy) <= (radius * radius);
+    };
 
     for (const enemy of enemies) {
       if (!enemy || enemy.dead || enemy.world !== currentAreaId) continue;
@@ -328,8 +340,29 @@ export function createCombatSystem({
 
       const enemyCenterX = enemy.x + enemy.width / 2;
       const enemyCenterY = enemy.y + enemy.height / 2;
-      const d = distance(attackCenter.x, attackCenter.y, enemyCenterX, enemyCenterY);
-      if (d > hitRadius + enemy.width * 0.42) continue;
+      const enemyId = String(enemy.id || "").toLowerCase();
+      let shouldHitEnemy = false;
+      if (enemyId === brogId) {
+        const visualSize = Number.isFinite(enemy.desiredHeightTiles)
+          ? Math.max(tileSize, enemy.desiredHeightTiles * tileSize)
+          : tileSize * 4.4;
+        const spriteX = enemyCenterX - visualSize * 0.5;
+        const spriteY = enemyCenterY - visualSize * 0.5;
+        const touchAllowance = Math.max(2, tileSize * 0.1);
+        shouldHitEnemy = circleIntersectsRect(
+          attackCenter.x,
+          attackCenter.y,
+          hitRadius + touchAllowance,
+          spriteX,
+          spriteY,
+          visualSize,
+          visualSize
+        );
+      } else {
+        const d = distance(attackCenter.x, attackCenter.y, enemyCenterX, enemyCenterY);
+        shouldHitEnemy = d <= hitRadius + enemy.width * 0.42;
+      }
+      if (!shouldHitEnemy) continue;
 
       hitIdsInCurrentSwing.add(enemy.id);
       hitEnemy(player, enemy, profile, now, playerEquipment);
@@ -400,6 +433,44 @@ export function createCombatSystem({
       const strikeCenter = enemyProfile?.getAttackCenter
         ? enemyProfile.getAttackCenter(enemy)
         : { x: enemyCenterX, y: enemyCenterY };
+      const projectileProfile = enemyProfile?.projectile && typeof enemyProfile.projectile === "object"
+        ? enemyProfile.projectile
+        : null;
+      if (projectileProfile && !targetIsPet) {
+        const toTargetX = targetCenterX - enemyCenterX;
+        const toTargetY = targetCenterY - enemyCenterY;
+        const toTargetLength = Math.max(0.001, Math.hypot(toTargetX, toTargetY));
+        const normX = toTargetX / toTargetLength;
+        const normY = toTargetY / toTargetLength;
+        const projectileSpeed = Number.isFinite(projectileProfile.speedPxPerFrame)
+          ? Math.max(0.6, projectileProfile.speedPxPerFrame)
+          : 2.4;
+        const projectileRange = Number.isFinite(enemyProfile?.range)
+          ? Math.max(tileSize * 1.5, enemyProfile.range)
+          : Math.max(tileSize * 1.5, Number.isFinite(enemy.attackRange) ? enemy.attackRange : tileSize * 2.5);
+        const startX = enemyCenterX + normX * (tileSize * 0.46);
+        const startY = enemyCenterY + normY * (tileSize * 0.2) - tileSize * 0.12;
+        const projectileDurationMs = Math.max(350, (projectileRange / Math.max(0.001, projectileSpeed)) * 16.667);
+        handlers.onEnemyProjectileSpawn({
+          source: enemy,
+          target: strikeTarget,
+          now,
+          startX,
+          startY,
+          velocityX: normX * projectileSpeed,
+          velocityY: normY * projectileSpeed,
+          range: projectileRange,
+          durationMs: projectileDurationMs,
+          radius: Number.isFinite(projectileProfile.radius) ? Math.max(2, projectileProfile.radius) : tileSize * 0.2,
+          damage: resolveEntityDamage(enemy, Number.isFinite(enemyProfile?.damage) ? enemyProfile.damage : enemy.damage, "damageRollTable"),
+          projectileType: String(projectileProfile.type || "enemyProjectile"),
+          poisonDurationMs: Number.isFinite(projectileProfile.poisonDurationMs)
+            ? Math.max(0, projectileProfile.poisonDurationMs)
+            : 0
+        });
+        continue;
+      }
+
       const strikeRadius = Number.isFinite(enemyProfile?.hitRadius)
         ? enemyProfile.hitRadius
         : (Number.isFinite(enemy.attackRange) ? enemy.attackRange : tileSize * 0.9);

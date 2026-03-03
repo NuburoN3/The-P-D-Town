@@ -1267,6 +1267,37 @@ export const hanamiTown = {
             countsForBogTrial: true,
             lootDropChancePercent: 40,
             lootSilverRange: [5, 10]
+        },
+        {
+            id: "theBrog",
+            name: "The Brog",
+            archetypeId: "bogFrogBoss",
+            areaId: "bogland",
+            x: 48,
+            y: 38,
+            dir: "left",
+            spriteName: "theBogFrogFront",
+            spriteNameUp: "theBogFrogBack",
+            spriteNameDown: "theBogFrogFront",
+            spriteNameLeft: "theBogFrogLeft",
+            spriteNameRight: "theBogFrogRight",
+            desiredHeightTiles: 4.4,
+            maxHp: 250,
+            damage: 10,
+            damageRollTable: [{ value: 8, weight: 30 }, { value: 10, weight: 45 }, { value: 12, weight: 25 }],
+            speed: 0.74,
+            aggroRangeTiles: 10.5,
+            attackRangeTiles: 7.2,
+            attackCooldownMs: 1450,
+            attackWindupMs: 520,
+            attackRecoveryMs: 420,
+            respawnDelayMs: 9999999,
+            behaviorType: "zoneKeeper",
+            attackType: "venomSpit",
+            respawnEnabled: false,
+            countsForBogTrial: false,
+            lootDropChancePercent: 100,
+            lootSilverRange: [35, 55]
         }
     ]
 };

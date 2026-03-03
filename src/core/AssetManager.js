@@ -54,6 +54,11 @@ export const DEFAULT_SPRITE_MANIFEST = {
   overrun_man_1_32: "assets/sprites/Overrun_Man_1_32.png",
   overrun_woman_1_32: "assets/sprites/Overrun_Woman_1_32.png",
   overrun_woman_2_32: "assets/sprites/Overrun_Woman_2_32.png",
+  theBogFrogFront: "assets/sprites/TheBogFrog_Front_160.png",
+  theBogFrogLeft: "assets/sprites/TheBogFrog_LeftSide_160.png",
+  theBogFrogRight: "assets/sprites/TheBogFrog_RightSide_160.png",
+  theBogFrogBack: "assets/sprites/TheBogFrog_Back_160.png",
+  poisoned: "assets/sprites/Poisoned.png",
   [ASSET_KEYS.TITLE_HERO_IMAGE]: ASSET_PATHS.TITLE_HERO_IMAGE
 };
 

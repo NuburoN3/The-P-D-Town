@@ -233,14 +233,14 @@ let interactionSystem = null;
 const input = new InputManager({
   keyBindings: userSettings.keybindings,
   onToggleInventory: () => {
-    if (isHanamiDojoExitControlLockActive()) return;
+    if (isStoryNpcExitControlLockActive()) return;
     if (interactionSystem) {
       setInventoryOpenedFromPauseMenu(false);
       interactionSystem.toggleInventory();
     }
   },
   shouldHandleInput: () => !(
-    isHanamiDojoExitControlLockActive() ||
+    isStoryNpcExitControlLockActive() ||
     gameState === GAME_STATES.TITLE_SCREEN ||
     gameState === GAME_STATES.PAUSE_MENU ||
     gameState === GAME_STATES.INVENTORY ||
@@ -437,6 +437,19 @@ const combatRewardPanel = {
 };
 const SKILL_SLOT_COUNT = 8;
 const HUD_FEEDBACK_DURATION_MS = 420;
+const PLAYER_POISON_DAMAGE_PER_TICK = 1;
+const PLAYER_POISON_TICK_MS = 3000;
+const PLAYER_POISON_DEFAULT_DURATION_MS = 15000;
+const ENEMY_PROJECTILE_MAX_LIFETIME_MS = 8000;
+
+const enemyProjectiles = [];
+const combatStatusState = {
+  lastProjectileUpdateAt: 0,
+  poisonedUntil: 0,
+  poisonDurationMs: 0,
+  poisonedAppliedAt: 0,
+  poisonLastTickAt: 0
+};
 
 function getSkillDefaults(skillId) {
   const normalized = String(skillId || "").trim().toLowerCase();
@@ -547,6 +560,14 @@ const HANAMI_DOJO_UPSTAIRS_DOOR_X = 9;
 const HANAMI_DOJO_UPSTAIRS_DOOR_Y = 3;
 const HANAMI_DOJO_EXIT_X = 6 * TILE;
 const HANAMI_DOJO_EXIT_Y = 9 * TILE;
+const HANAMI_BOGLAND_AREA_ID = "bogland";
+const HANAMI_BOGLAND_NPC_ID = "mrHanamiBogland";
+const HANAMI_BOGLAND_EXIT_X = 28 * TILE;
+const HANAMI_BOGLAND_EXIT_Y = 0;
+const HANAMI_BOGLAND_SIGN_TILE_X = 28;
+const HANAMI_BOGLAND_SIGN_TILE_Y = 5;
+const BROG_BOSS_ID = "theBrog";
+const BROG_GUARANTEED_DROP_ITEM_NAME = "Brog Trophy";
 const BASE_COMBAT_XP_NEEDED = 150;
 const COMBAT_XP_GROWTH_MULTIPLIER = 1.25;
 const patInnIntroState = {
@@ -572,6 +593,13 @@ const hanamiDojoExitState = {
   lastProgressAt: 0,
   lastX: 0,
   lastY: 0
+};
+const hanamiBoglandExitState = {
+  active: false,
+  lastUpdateAt: 0,
+  startedAt: 0,
+  pathTiles: [],
+  nextPathIndex: 0
 };
 const doorAccessNoticeState = {
   active: false,
@@ -1702,6 +1730,178 @@ function regenerateMana(now) {
   player.mana = Math.min(player.maxMana, player.mana + (regenPerSecond * dtMs) / 1000);
 }
 
+function clearPlayerPoisonStatus() {
+  combatStatusState.poisonedUntil = 0;
+  combatStatusState.poisonDurationMs = 0;
+  combatStatusState.poisonedAppliedAt = 0;
+  combatStatusState.poisonLastTickAt = 0;
+}
+
+function applyPoisonToPlayer(now, durationMs = PLAYER_POISON_DEFAULT_DURATION_MS) {
+  const resolvedDuration = Number.isFinite(durationMs) ? Math.max(0, durationMs) : PLAYER_POISON_DEFAULT_DURATION_MS;
+  if (resolvedDuration <= 0) return;
+  combatStatusState.poisonedAppliedAt = now;
+  combatStatusState.poisonedUntil = now + resolvedDuration;
+  combatStatusState.poisonDurationMs = resolvedDuration;
+  combatStatusState.poisonLastTickAt = now;
+}
+
+function updatePlayerPoisonStatus(now) {
+  if (!Number.isFinite(combatStatusState.poisonedUntil) || combatStatusState.poisonedUntil <= now) {
+    if (combatStatusState.poisonedUntil > 0) {
+      clearPlayerPoisonStatus();
+    }
+    return;
+  }
+  const lastTick = Number.isFinite(combatStatusState.poisonLastTickAt)
+    ? combatStatusState.poisonLastTickAt
+    : now;
+  if (now - lastTick < PLAYER_POISON_TICK_MS) return;
+
+  const ticks = Math.max(1, Math.floor((now - lastTick) / PLAYER_POISON_TICK_MS));
+  combatStatusState.poisonLastTickAt = lastTick + ticks * PLAYER_POISON_TICK_MS;
+  const totalDamage = ticks * PLAYER_POISON_DAMAGE_PER_TICK;
+  if (totalDamage <= 0) return;
+
+  player.hp = Math.max(0, player.hp - totalDamage);
+  vfxSystem.spawn("damageText", {
+    x: player.x + TILE * 0.5,
+    y: player.y + TILE * 0.15,
+    text: `-${totalDamage}`,
+    color: "#9df08f",
+    size: 28,
+    durationMs: 620
+  });
+
+  if (player.hp <= 0) {
+    clearPlayerPoisonStatus();
+    handlePlayerDefeated({ player });
+  }
+}
+
+function spawnEnemyProjectile({
+  source = null,
+  now = performance.now(),
+  startX = 0,
+  startY = 0,
+  velocityX = 0,
+  velocityY = 0,
+  radius = TILE * 0.2,
+  damage = 0,
+  projectileType = "enemyProjectile",
+  durationMs = 1400,
+  poisonDurationMs = 0
+} = {}) {
+  const vx = Number.isFinite(velocityX) ? velocityX : 0;
+  const vy = Number.isFinite(velocityY) ? velocityY : 0;
+  const speed = Math.hypot(vx, vy);
+  if (speed <= 0.001) return;
+
+  enemyProjectiles.push({
+    id: `enemyProjectile-${Math.floor(now)}-${Math.random().toString(16).slice(2, 8)}`,
+    type: String(projectileType || "enemyProjectile"),
+    sourceId: typeof source?.id === "string" ? source.id : "",
+    sourceName: typeof source?.name === "string" ? source.name : "",
+    areaId: currentAreaId,
+    x: Number.isFinite(startX) ? startX : 0,
+    y: Number.isFinite(startY) ? startY : 0,
+    vx,
+    vy,
+    radius: Number.isFinite(radius) ? Math.max(2, radius) : TILE * 0.2,
+    damage: Number.isFinite(damage) ? Math.max(0, damage) : 0,
+    poisonDurationMs: Number.isFinite(poisonDurationMs) ? Math.max(0, poisonDurationMs) : 0,
+    expiresAt: now + Math.max(220, Math.min(ENEMY_PROJECTILE_MAX_LIFETIME_MS, durationMs))
+  });
+}
+
+function updateEnemyProjectiles(now) {
+  const previousTick = Number.isFinite(combatStatusState.lastProjectileUpdateAt)
+    ? combatStatusState.lastProjectileUpdateAt
+    : now;
+  combatStatusState.lastProjectileUpdateAt = now;
+  const dtScale = Math.max(0, Math.min(3.5, (now - previousTick) / 16.667));
+  if (dtScale <= 0 || enemyProjectiles.length === 0) return;
+
+  const playerCenterX = player.x + TILE * 0.5;
+  const playerCenterY = player.y + TILE * 0.5;
+  for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+    const projectile = enemyProjectiles[i];
+    if (!projectile || projectile.areaId !== currentAreaId || now >= projectile.expiresAt) {
+      enemyProjectiles.splice(i, 1);
+      continue;
+    }
+
+    projectile.x += projectile.vx * dtScale;
+    projectile.y += projectile.vy * dtScale;
+
+    const radius = Number.isFinite(projectile.radius) ? Math.max(2, projectile.radius) : TILE * 0.2;
+    const outOfBounds =
+      projectile.x < 0 ||
+      projectile.y < 0 ||
+      projectile.x >= currentMapW * TILE ||
+      projectile.y >= currentMapH * TILE;
+    if (outOfBounds) {
+      enemyProjectiles.splice(i, 1);
+      continue;
+    }
+
+    if (
+      collisionService.collides(
+        projectile.x - radius,
+        projectile.y - radius,
+        currentMap,
+        currentMapW,
+        currentMapH
+      )
+    ) {
+      enemyProjectiles.splice(i, 1);
+      continue;
+    }
+
+    if (player.invulnerableUntil > now) continue;
+    const hitDistance = Math.hypot(projectile.x - playerCenterX, projectile.y - playerCenterY);
+    if (hitDistance > radius + TILE * 0.36) continue;
+
+    const damage = Number.isFinite(projectile.damage) ? Math.max(0, projectile.damage) : 0;
+    if (damage > 0) {
+      player.hp = Math.max(0, player.hp - damage);
+      player.invulnerableUntil = now + player.invulnerableMs;
+      handleCombatHitConfirmed({
+        type: "playerDamaged",
+        source: { id: projectile.sourceId, name: projectile.sourceName },
+        target: player,
+        damage,
+        now
+      });
+      vfxSystem.spawn("hitSpark", {
+        x: playerCenterX,
+        y: playerCenterY - 6,
+        size: 20,
+        durationMs: 240
+      });
+      vfxSystem.spawn("damageText", {
+        x: playerCenterX + 8,
+        y: playerCenterY - 18,
+        text: `-${damage}`,
+        color: "#ff3b3b",
+        size: 30,
+        durationMs: 620
+      });
+    }
+    if (projectile.poisonDurationMs > 0) {
+      applyPoisonToPlayer(now, projectile.poisonDurationMs);
+    }
+
+    enemyProjectiles.splice(i, 1);
+
+    if (player.hp <= 0) {
+      clearPlayerPoisonStatus();
+      handlePlayerDefeated({ player });
+      return;
+    }
+  }
+}
+
 ensurePlayerSkillState(player);
 player.lastManaRegenTickAt = performance.now();
 
@@ -2494,6 +2694,36 @@ function grantCombatXpAndCollectSummary(enemy, now) {
   };
 }
 
+function getBrogBossEnemy() {
+  return enemies.find((enemy) => enemy && enemy.id === BROG_BOSS_ID && enemy.world === HANAMI_BOGLAND_AREA_ID && !enemy.dead) || null;
+}
+
+function updateBrogBossEncounterIntro(now = performance.now()) {
+  if (gameFlags.brogIntroSeen || gameFlags.brogDefeated) return;
+  if (currentTownId !== PAT_INN_TOWN_ID || currentAreaId !== HANAMI_BOGLAND_AREA_ID) return;
+  if (!isFreeExploreState(gameState)) return;
+  const brog = getBrogBossEnemy();
+  if (!brog) return;
+
+  const playerCenterX = player.x + TILE * 0.5;
+  const playerCenterY = player.y + TILE * 0.5;
+  const brogCenterX = brog.x + (Number.isFinite(brog.width) ? brog.width : TILE) * 0.5;
+  const brogCenterY = brog.y + (Number.isFinite(brog.height) ? brog.height : TILE) * 0.5;
+  const aggroRange = Number.isFinite(brog.aggroRange) ? brog.aggroRange : TILE * 8;
+  const d = Math.hypot(playerCenterX - brogCenterX, playerCenterY - brogCenterY);
+  if (d > aggroRange) return;
+
+  gameFlags.brogIntroSeen = true;
+  queueCombatReward({
+    title: "Boss Encounter: The Brog",
+    lines: [
+      "\"Brog croaks: GRAAAK... intruder in my swamp!\"",
+      "A giant venomous Bog Frog rises from the mire."
+    ],
+    durationMs: 3600
+  });
+}
+
 function applyCombatXpGain(xpGained, now = performance.now()) {
   const safeXp = Number.isFinite(xpGained) ? Math.max(0, Math.floor(xpGained)) : 0;
   if (safeXp <= 0) return 0;
@@ -2534,6 +2764,8 @@ function completeBasicTrainingQuestRewards(now = performance.now()) {
   itemAlert.active = true;
   itemAlert.text = "Quest complete: Basic Training. Rewards claimed.";
   itemAlert.startedAt = now;
+  gameFlags.hanamiBoglandExitPending = true;
+  gameFlags.hanamiLeftBogland = false;
   questCompletionState.active = false;
   questCompletionState.requestComplete = false;
   mouseUiState.questCompletionClickRequest = false;
@@ -2624,6 +2856,22 @@ function handleEnemyDefeatRewards(enemy, now) {
   const reward = grantCombatXpAndCollectSummary(enemy, now);
   grantPetCombatXpFromEnemyDefeat(reward.xpGained);
   spawnEnemyLeftovers(enemy, now);
+  const enemyId = typeof enemy?.id === "string" ? enemy.id.toLowerCase() : "";
+  if (enemyId === BROG_BOSS_ID.toLowerCase()) {
+    playerInventory[BROG_GUARANTEED_DROP_ITEM_NAME] = (Number(playerInventory[BROG_GUARANTEED_DROP_ITEM_NAME]) || 0) + 1;
+    gameFlags.brogDefeated = true;
+    itemAlert.active = true;
+    itemAlert.text = `Boss drop acquired: ${BROG_GUARANTEED_DROP_ITEM_NAME}`;
+    itemAlert.startedAt = now;
+    queueCombatReward({
+      title: "Boss Defeated: The Brog",
+      lines: [
+        `Guaranteed drop: ${BROG_GUARANTEED_DROP_ITEM_NAME}`,
+        "The Bog Frog has been slain."
+      ],
+      durationMs: 3600
+    });
+  }
   const ex = Number.isFinite(enemy?.x) ? enemy.x + (Number(enemy?.width) || TILE) * 0.5 : player.x + TILE * 0.5;
   const ey = Number.isFinite(enemy?.y) ? enemy.y + (Number(enemy?.height) || TILE) * 0.25 : player.y;
   vfxSystem.spawn("xpGainText", {
@@ -2686,11 +2934,34 @@ function removeNpcById(npcId, areaId = null) {
   }
 }
 
+function restoreNpcByIdFromTown(npcId, townId = currentTownId) {
+  if (!npcId) return null;
+  const existingNpc = npcs.find((npc) => npc && npc.id === npcId) || null;
+  if (existingNpc) return existingNpc;
+  const townNpcs = worldService.createNPCsForTown(townId);
+  const restoredNpc = townNpcs.find((npc) => npc && npc.id === npcId) || null;
+  if (!restoredNpc) return null;
+  npcs.push(restoredNpc);
+  return restoredNpc;
+}
+
 function applyStoryNpcVisibility() {
   if (gameFlags.hanamiLeftDojo) {
     gameFlags.hanamiDojoExitPending = false;
     resetHanamiDojoExitState();
     removeNpcById(HANAMI_NPC_ID, HANAMI_DOJO_AREA_ID);
+  }
+  const shouldShowBoglandHanami = !gameFlags.hanamiLeftBogland && (gameFlags.hanamiLeftDojo || gameFlags.hanamiDojoExitPending);
+  if (!shouldShowBoglandHanami) {
+    resetHanamiBoglandExitState();
+    removeNpcById(HANAMI_BOGLAND_NPC_ID, HANAMI_BOGLAND_AREA_ID);
+  } else if (currentTownId === PAT_INN_TOWN_ID) {
+    restoreNpcByIdFromTown(HANAMI_BOGLAND_NPC_ID, PAT_INN_TOWN_ID);
+  }
+  if (gameFlags.hanamiLeftBogland) {
+    gameFlags.hanamiBoglandExitPending = false;
+    resetHanamiBoglandExitState();
+    removeNpcById(HANAMI_BOGLAND_NPC_ID, HANAMI_BOGLAND_AREA_ID);
   }
 }
 
@@ -2698,9 +2969,22 @@ function getDojoHanamiNpc() {
   return npcs.find((npc) => npc && npc.id === HANAMI_NPC_ID && npc.world === HANAMI_DOJO_AREA_ID) || null;
 }
 
+function getBoglandHanamiNpc() {
+  return npcs.find((npc) => npc && npc.id === HANAMI_BOGLAND_NPC_ID && npc.world === HANAMI_BOGLAND_AREA_ID) || null;
+}
+
 function isHanamiDojoExitControlLockActive() {
   if (currentTownId !== PAT_INN_TOWN_ID || currentAreaId !== HANAMI_DOJO_AREA_ID) return false;
   return Boolean(gameFlags.hanamiDojoExitPending) && !Boolean(gameFlags.hanamiLeftDojo);
+}
+
+function isHanamiBoglandExitControlLockActive() {
+  if (currentTownId !== PAT_INN_TOWN_ID || currentAreaId !== HANAMI_BOGLAND_AREA_ID) return false;
+  return Boolean(gameFlags.hanamiBoglandExitPending) && !Boolean(gameFlags.hanamiLeftBogland);
+}
+
+function isStoryNpcExitControlLockActive() {
+  return isHanamiDojoExitControlLockActive() || isHanamiBoglandExitControlLockActive();
 }
 
 function getEntityTilePosition(entity) {
@@ -2826,6 +3110,37 @@ function resetHanamiDojoExitState() {
   hanamiDojoExitState.lastProgressAt = 0;
   hanamiDojoExitState.lastX = 0;
   hanamiDojoExitState.lastY = 0;
+}
+
+function resetHanamiBoglandExitState() {
+  hanamiBoglandExitState.active = false;
+  hanamiBoglandExitState.lastUpdateAt = 0;
+  hanamiBoglandExitState.startedAt = 0;
+  hanamiBoglandExitState.pathTiles = [];
+  hanamiBoglandExitState.nextPathIndex = 0;
+}
+
+function buildBoglandHanamiExitPath(hanamiNpc) {
+  const leftPath = [
+    { tx: HANAMI_BOGLAND_SIGN_TILE_X - 1, ty: HANAMI_BOGLAND_SIGN_TILE_Y + 1 },
+    { tx: HANAMI_BOGLAND_SIGN_TILE_X - 1, ty: HANAMI_BOGLAND_SIGN_TILE_Y - 1 },
+    { tx: HANAMI_BOGLAND_SIGN_TILE_X, ty: HANAMI_BOGLAND_SIGN_TILE_Y - 1 },
+    { tx: Math.floor(HANAMI_BOGLAND_EXIT_X / TILE), ty: Math.floor(HANAMI_BOGLAND_EXIT_Y / TILE) }
+  ];
+  const rightPath = [
+    { tx: HANAMI_BOGLAND_SIGN_TILE_X + 1, ty: HANAMI_BOGLAND_SIGN_TILE_Y + 1 },
+    { tx: HANAMI_BOGLAND_SIGN_TILE_X + 1, ty: HANAMI_BOGLAND_SIGN_TILE_Y - 1 },
+    { tx: HANAMI_BOGLAND_SIGN_TILE_X, ty: HANAMI_BOGLAND_SIGN_TILE_Y - 1 },
+    { tx: Math.floor(HANAMI_BOGLAND_EXIT_X / TILE), ty: Math.floor(HANAMI_BOGLAND_EXIT_Y / TILE) }
+  ];
+  const routeCandidates = [leftPath, rightPath];
+  for (const route of routeCandidates) {
+    const filteredRoute = route.filter((tile) => tile && Number.isFinite(tile.tx) && Number.isFinite(tile.ty));
+    if (filteredRoute.length === 0) continue;
+    const allWalkable = filteredRoute.every((tile) => isHanamiExitTileWalkable(tile.tx, tile.ty, hanamiNpc, true));
+    if (allWalkable) return filteredRoute;
+  }
+  return [{ tx: Math.floor(HANAMI_BOGLAND_EXIT_X / TILE), ty: Math.floor(HANAMI_BOGLAND_EXIT_Y / TILE) }];
 }
 
 function isPatIntroTileWalkable(tx, ty, patNpc) {
@@ -3121,11 +3436,75 @@ function updateHanamiDojoExitSequence(now) {
   gameFlags.hanamiDojoExitPending = false;
 }
 
+function updateHanamiBoglandExitSequence(now) {
+  applyStoryNpcVisibility();
+  if (gameFlags.hanamiLeftBogland || !gameFlags.hanamiBoglandExitPending) return;
+  if (currentTownId !== PAT_INN_TOWN_ID || currentAreaId !== HANAMI_BOGLAND_AREA_ID) return;
+  if (!isFreeExploreState(gameState)) return;
+
+  const hanamiNpc = getBoglandHanamiNpc();
+  if (!hanamiNpc) {
+    gameFlags.hanamiLeftBogland = true;
+    gameFlags.hanamiBoglandExitPending = false;
+    resetHanamiBoglandExitState();
+    return;
+  }
+
+  if (!hanamiBoglandExitState.active) {
+    resetHanamiBoglandExitState();
+    hanamiBoglandExitState.active = true;
+    hanamiBoglandExitState.lastUpdateAt = now;
+    hanamiBoglandExitState.startedAt = now;
+    hanamiBoglandExitState.pathTiles = buildBoglandHanamiExitPath(hanamiNpc);
+    hanamiBoglandExitState.nextPathIndex = 0;
+    hanamiNpc.canRoam = false;
+    hanamiNpc.blocking = false;
+    dialogue.close();
+  }
+
+  const rawDt = Number.isFinite(hanamiBoglandExitState.lastUpdateAt) ? (now - hanamiBoglandExitState.lastUpdateAt) : 16.667;
+  hanamiBoglandExitState.lastUpdateAt = now;
+  const dtScale = Math.max(0.2, Math.min(2.2, rawDt / 16.667));
+  const activeMs = now - hanamiBoglandExitState.startedAt;
+  if (activeMs >= 12000) {
+    removeNpcById(HANAMI_BOGLAND_NPC_ID, HANAMI_BOGLAND_AREA_ID);
+    resetHanamiBoglandExitState();
+    gameFlags.hanamiLeftBogland = true;
+    gameFlags.hanamiBoglandExitPending = false;
+    return;
+  }
+
+  const fallbackPath = [{ tx: Math.floor(HANAMI_BOGLAND_EXIT_X / TILE), ty: Math.floor(HANAMI_BOGLAND_EXIT_Y / TILE) }];
+  const activePath = Array.isArray(hanamiBoglandExitState.pathTiles) && hanamiBoglandExitState.pathTiles.length > 0
+    ? hanamiBoglandExitState.pathTiles
+    : fallbackPath;
+  const pathIndex = Math.max(0, Math.min(activePath.length - 1, hanamiBoglandExitState.nextPathIndex));
+  const waypoint = activePath[pathIndex];
+  if (!waypoint) {
+    hanamiBoglandExitState.pathTiles = fallbackPath;
+    hanamiBoglandExitState.nextPathIndex = 0;
+    return;
+  }
+  const reachedWaypoint = moveNpcAxisAlignedToward(hanamiNpc, waypoint.tx * TILE, waypoint.ty * TILE, dtScale);
+  if (!reachedWaypoint) return;
+  if (pathIndex < activePath.length - 1) {
+    hanamiBoglandExitState.nextPathIndex = pathIndex + 1;
+    return;
+  }
+
+  if (hanamiNpc.y > TILE * 0.55) return;
+
+  removeNpcById(HANAMI_BOGLAND_NPC_ID, HANAMI_BOGLAND_AREA_ID);
+  resetHanamiBoglandExitState();
+  gameFlags.hanamiLeftBogland = true;
+  gameFlags.hanamiBoglandExitPending = false;
+}
+
 function updateRuntimeUi(now) {
   if (typeof dialogue.update === "function") {
     dialogue.update(now);
   }
-  if (isHanamiDojoExitControlLockActive()) {
+  if (isStoryNpcExitControlLockActive()) {
     clearPlayerActionInputs();
     input.clearAttackPressed();
     input.clearInteractPressed();
@@ -3134,6 +3513,19 @@ function updateRuntimeUi(now) {
 
   if (gameState === GAME_STATES.INVENTORY || gameState === GAME_STATES.QUEST_TRACKER) {
     clearPlayerActionInputs();
+  }
+  const simulationGameState = getSimulationGameState(gameState);
+  if (
+    isFreeExploreState(simulationGameState) &&
+    !dialogue.isActive() &&
+    !choiceState.active &&
+    !doorSequence.active &&
+    now >= combatFeedback.hitstopUntil
+  ) {
+    updateEnemyProjectiles(now);
+    updatePlayerPoisonStatus(now);
+  } else {
+    combatStatusState.lastProjectileUpdateAt = now;
   }
 
   const isMovementKeyHeldInInventory = () => {
@@ -3262,6 +3654,8 @@ function updateRuntimeUi(now) {
   }
 
   updateHanamiDojoExitSequence(now);
+  updateHanamiBoglandExitSequence(now);
+  updateBrogBossEncounterIntro(now);
   updatePatInnIntroSequence(now);
   syncObjectiveState(now);
   markNearbyDoorsDiscovered();
@@ -3464,6 +3858,9 @@ const combatSystem = createCombatSystem({
   basicAttackManaCost: 0,
   eventHandlers: {
     onRequestVfx: (type, options) => vfxSystem.spawn(type, options),
+    onEnemyProjectileSpawn: (payload) => {
+      spawnEnemyProjectile(payload);
+    },
     onPlayerAttackStarted: ({ profile }) => {
       player.requestedAttackId = null;
       engagePetAssistMode();
@@ -3496,6 +3893,7 @@ const combatSystem = createCombatSystem({
       handleEnemyDefeatRewards(enemy, now);
     },
     onPlayerDefeated: ({ player: defeatedPlayer }) => {
+      clearPlayerPoisonStatus();
       handlePlayerDefeated({ player: defeatedPlayer });
     }
   }
@@ -3556,7 +3954,7 @@ function lockInteractionInput(durationMs = 0) {
 }
 
 function isInteractionLocked() {
-  return performance.now() < interactionInputLockedUntil || isHanamiDojoExitControlLockActive();
+  return performance.now() < interactionInputLockedUntil || isStoryNpcExitControlLockActive();
 }
 
 function clearMenuHoverState() {
@@ -3883,7 +4281,7 @@ gameController = createGameController({
     getCurrentMapH: () => currentMapH,
     getGameState: () => gameState,
     resolveGameplayState: () => getSimulationGameState(gameState),
-    isPlayerMovementLocked: () => patInnIntroState.active || isHanamiDojoExitControlLockActive(),
+    isPlayerMovementLocked: () => patInnIntroState.active || isStoryNpcExitControlLockActive(),
     setGameState: (nextState) => {
       gameState = nextState;
     }
@@ -3898,6 +4296,7 @@ gameController = createGameController({
     handleInteraction: () => interactionSystem.handleInteraction(),
     updateFeatureState: (activeGameState) => featureCoordinator.updateForState(activeGameState),
     onAreaChanged: ({ previousTownId, previousAreaId, townId, areaId }) => {
+      enemyProjectiles.length = 0;
       if (previousTownId !== townId || previousAreaId !== areaId) {
         uiMotionState.minimapRevealAt = performance.now();
       }
@@ -4004,7 +4403,7 @@ const inputController = createInputController({
     closeQuestCompletionPanel,
     closePauseMenu: returnToPauseMenu,
     canRunCombatSystems,
-    isInputLocked: isHanamiDojoExitControlLockActive,
+    isInputLocked: isStoryNpcExitControlLockActive,
     isDialogueActive,
     isChoiceActive: () => Boolean(choiceState?.active),
     moveChoiceSelection: (direction) => {
@@ -4075,7 +4474,7 @@ const { syncPointerLockWithState, register: registerInputBindings } = createInpu
   },
   returnToPauseMenu,
   openPauseMenu,
-  isInputLocked: isHanamiDojoExitControlLockActive,
+  isInputLocked: isStoryNpcExitControlLockActive,
   isFreeExploreState,
   handleSkillSlotPressed: tryActivateSkillSlot,
   tryOpenLeftoversFromInteract: () => {
@@ -4140,6 +4539,7 @@ const { render } = createGameRenderer({
   player,
   npcs,
   enemies,
+  enemyProjectiles,
   leftoversState,
   gameFlags,
   input,
@@ -4164,6 +4564,7 @@ const { render } = createGameRenderer({
   saveNoticeState,
   doorAccessNoticeState,
   combatRewardPanel,
+  combatStatusState,
   pauseMenuState,
   mouseUiState,
   controllerSkillWheelState,

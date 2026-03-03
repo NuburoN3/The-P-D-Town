@@ -99,10 +99,48 @@ export function createDefaultAttackCatalog(tileSize) {
     }
   };
 
+  const venomSpit = {
+    id: "venomSpit",
+    cooldownMs: 1450,
+    windupMs: 520,
+    activeMs: 120,
+    recoveryMs: 420,
+    range: tileSize * 7.2,
+    hitRadius: tileSize * 0.5,
+    damage: 10,
+    hitstopMs: 30,
+    projectile: {
+      type: "venomGlob",
+      speedPxPerFrame: 2.9,
+      radius: tileSize * 0.2,
+      poisonDurationMs: 15000
+    },
+    vfx: {
+      type: "warningRing",
+      durationMs: 280,
+      sizeOffset: 8
+    },
+    getAttackCenter(attacker) {
+      const facing = directionToVector(attacker.dir);
+      return {
+        x: attacker.x + tileSize / 2 + facing.x * this.range,
+        y: attacker.y + tileSize / 2 + facing.y * this.range
+      };
+    },
+    getVfxOrigin(attacker) {
+      const facing = directionToVector(attacker.dir);
+      return {
+        x: attacker.x + tileSize / 2 + facing.x * (tileSize * 0.4),
+        y: attacker.y + tileSize * 0.25 + facing.y * (tileSize * 0.25)
+      };
+    }
+  };
+
   return {
     [lightSlash.id]: lightSlash,
     [heavySlash.id]: heavySlash,
-    [chiBolt.id]: chiBolt
+    [chiBolt.id]: chiBolt,
+    [venomSpit.id]: venomSpit
   };
 }
 

@@ -69,6 +69,10 @@ export function createEnemiesForTown(town, tileSize, getSprite) {
       y,
       dir,
       spriteName,
+      spriteNameUp,
+      spriteNameDown,
+      spriteNameLeft,
+      spriteNameRight,
       maxHp,
       damage,
       speed,
@@ -85,6 +89,18 @@ export function createEnemiesForTown(town, tileSize, getSprite) {
     const spawnX = x * tileSize;
     const spawnY = y * tileSize;
     const resolvedMaxHp = Number.isFinite(maxHp) ? Math.max(1, maxHp) : 35;
+    const directionalSprites = {
+      up: spriteNameUp ? getSprite(spriteNameUp) : null,
+      down: spriteNameDown ? getSprite(spriteNameDown) : null,
+      left: spriteNameLeft ? getSprite(spriteNameLeft) : null,
+      right: spriteNameRight ? getSprite(spriteNameRight) : null
+    };
+    const hasDirectionalSprites = Boolean(
+      directionalSprites.up ||
+      directionalSprites.down ||
+      directionalSprites.left ||
+      directionalSprites.right
+    );
 
     return {
       ...customFields,
@@ -98,7 +114,8 @@ export function createEnemiesForTown(town, tileSize, getSprite) {
       width: tileSize,
       height: tileSize,
       dir: dir || "down",
-      sprite: spriteName ? getSprite(spriteName) : null,
+      sprite: spriteName ? getSprite(spriteName) : (directionalSprites.down || directionalSprites.up || directionalSprites.left || directionalSprites.right || null),
+      ...(hasDirectionalSprites ? { directionalSprites } : {}),
       maxHp: resolvedMaxHp,
       hp: resolvedMaxHp,
       damage: Number.isFinite(damage) ? Math.max(0, damage) : 8,

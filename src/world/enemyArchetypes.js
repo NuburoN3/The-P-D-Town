@@ -50,5 +50,18 @@ export const ENEMY_ARCHETYPES = Object.freeze({
     respawnDelayMs: 5400,
     behaviorType: "rangedKiter",
     attackType: "chiBolt"
+  },
+  bogFrogBoss: {
+    maxHp: 250,
+    damage: 10,
+    speed: 0.74,
+    aggroRangeTiles: 10.5,
+    attackRangeTiles: 7.2,
+    attackCooldownMs: 1450,
+    attackWindupMs: 520,
+    attackRecoveryMs: 420,
+    respawnDelayMs: 12000,
+    behaviorType: "zoneKeeper",
+    attackType: "venomSpit"
   }
 });

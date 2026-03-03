@@ -913,12 +913,17 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom, getItemSprite =
   const maxMana = Number.isFinite(state.player.maxMana) ? Math.max(1, state.player.maxMana) : 10;
   const mana = Number.isFinite(state.player.mana) ? state.player.mana : maxMana;
   const manaRatio = Math.max(0, Math.min(1, mana / maxMana));
+  const now = performance.now();
+  const poisonedUntil = Number.isFinite(state.playerStatusEffects?.poisonedUntil)
+    ? state.playerStatusEffects.poisonedUntil
+    : 0;
+  const poisonActive = poisonedUntil > now;
+  const poisonPulse = poisonActive ? (0.5 + Math.sin(now * 0.01) * 0.5) : 0;
   const skillSlots = Array.isArray(state.player.skillSlots) ? state.player.skillSlots : [];
   const hasWeaponEquipped = Boolean(String(state.playerEquipment?.weapon || "").trim());
   const feedback = state.player.skillHudFeedback && typeof state.player.skillHudFeedback === "object"
     ? state.player.skillHudFeedback
     : null;
-  const now = performance.now();
   const resolvedZoom = Number.isFinite(cameraZoom) && cameraZoom > 0 ? cameraZoom : 1;
   const resolvedTileSize = Number.isFinite(tileSize) && tileSize > 0 ? tileSize : 32;
   const desiredHeightTiles = Number.isFinite(state.player.desiredHeightTiles) ? Math.max(1, state.player.desiredHeightTiles) : 1;
@@ -973,8 +978,23 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom, getItemSprite =
   ctx.fillStyle = "rgba(10, 12, 18, 0.88)";
   ctx.fillRect(barX, hpBarY, barW, barH);
   ctx.fillRect(barX, manaBarY, barW, barH);
-  ctx.fillStyle = hpRatio > 0.5 ? "#df4949" : hpRatio > 0.25 ? "#cf3434" : "#b91f1f";
+  if (poisonActive) {
+    const poisonHpGradient = ctx.createLinearGradient(barX, hpBarY, barX + barW, hpBarY + barH);
+    poisonHpGradient.addColorStop(0, `rgba(122, 255, 124, ${(0.42 + poisonPulse * 0.14).toFixed(3)})`);
+    poisonHpGradient.addColorStop(0.46, "rgba(76, 197, 86, 0.88)");
+    poisonHpGradient.addColorStop(1, "rgba(186, 255, 174, 0.58)");
+    ctx.fillStyle = poisonHpGradient;
+  } else {
+    ctx.fillStyle = hpRatio > 0.5 ? "#df4949" : hpRatio > 0.25 ? "#cf3434" : "#b91f1f";
+  }
   ctx.fillRect(barX, hpBarY, Math.round(barW * hpRatio), barH);
+  if (poisonActive) {
+    const sheen = ctx.createLinearGradient(barX, hpBarY, barX, hpBarY + barH);
+    sheen.addColorStop(0, `rgba(230, 255, 212, ${(0.16 + poisonPulse * 0.15).toFixed(3)})`);
+    sheen.addColorStop(1, "rgba(230, 255, 212, 0)");
+    ctx.fillStyle = sheen;
+    ctx.fillRect(barX, hpBarY, Math.round(barW * hpRatio), barH);
+  }
   ctx.fillStyle = "#4da3ff";
   ctx.fillRect(barX, manaBarY, Math.round(barW * manaRatio), barH);
   ctx.strokeStyle = "rgba(255,255,255,0.45)";
@@ -1163,6 +1183,56 @@ function drawCombatHud(ctx, state, colors, tileSize, cameraZoom, getItemSprite =
   }
   ctx.restore();
 
+}
+
+function drawPlayerPoisonStatus(ctx, state, tileSize, getItemSprite = null) {
+  if (!state?.player || !state?.cam) return;
+  const poison = state.playerStatusEffects && typeof state.playerStatusEffects === "object"
+    ? state.playerStatusEffects
+    : null;
+  if (!poison) return;
+  const now = performance.now();
+  const poisonedUntil = Number.isFinite(poison.poisonedUntil) ? poison.poisonedUntil : 0;
+  if (poisonedUntil <= now) return;
+
+  const durationMs = Number.isFinite(poison.poisonDurationMs) ? Math.max(1, poison.poisonDurationMs) : 15000;
+  const remainingMs = Math.max(0, poisonedUntil - now);
+  const ratio = Math.max(0, Math.min(1, remainingMs / durationMs));
+  const player = state.player;
+  const cam = state.cam;
+  const px = player.x - cam.x + tileSize * 0.5;
+  const py = player.y - cam.y - tileSize * 1.48;
+
+  const iconSize = Math.max(16, Math.round(tileSize * 0.78));
+  const panelSize = iconSize + 4;
+  const panelX = Math.round(px - panelSize * 0.5);
+  const panelY = Math.round(py - panelSize * 0.5);
+  const sprite = typeof getItemSprite === "function" ? getItemSprite("poisoned") : null;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(10, 16, 10, 0.78)";
+  ctx.fillRect(panelX, panelY, panelSize, panelSize);
+  ctx.strokeStyle = "rgba(173, 255, 169, 0.88)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelSize - 1, panelSize - 1);
+  if (sprite && sprite.width && sprite.height) {
+    ctx.drawImage(sprite, panelX + 2, panelY + 2, iconSize, iconSize);
+  }
+
+  const barW = Math.max(24, Math.round(tileSize * 1.38));
+  const barH = 4;
+  const barX = Math.round(px - barW * 0.5);
+  const barY = panelY - 8;
+  ctx.fillStyle = "rgba(5, 10, 8, 0.84)";
+  ctx.fillRect(barX, barY, barW, barH);
+  const poisonBar = ctx.createLinearGradient(barX, barY, barX + barW, barY);
+  poisonBar.addColorStop(0, "rgba(183, 255, 165, 0.95)");
+  poisonBar.addColorStop(1, "rgba(76, 196, 84, 0.95)");
+  ctx.fillStyle = poisonBar;
+  ctx.fillRect(barX, barY, Math.round(barW * ratio), barH);
+  ctx.strokeStyle = "rgba(221, 255, 216, 0.78)";
+  ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
+  ctx.restore();
 }
 
 function drawControllerSkillWheel(ctx, state, tileSize, getItemSprite = null) {
@@ -2852,6 +2922,50 @@ function drawQuestUpdateNotice(ctx, state, cameraZoom, tileSize, colors, options
   ctx.restore();
 }
 
+function drawBossHealthBanner(ctx, state, colors) {
+  if (!isFreeExploreState(state.gameState)) return;
+  const enemies = Array.isArray(state.enemies) ? state.enemies : [];
+  const currentAreaId = String(state.currentAreaId || "");
+  const boss = enemies.find((enemy) => (
+    enemy &&
+    !enemy.dead &&
+    String(enemy.world || "") === currentAreaId &&
+    String(enemy.id || "").toLowerCase() === "thebrog"
+  ));
+  if (!boss) return;
+  const bossState = String(boss.state || "idle").toLowerCase();
+  const bossAggroActive = bossState !== "idle" && bossState !== "return";
+  if (!bossAggroActive) return;
+
+  const maxHp = Number.isFinite(boss.maxHp) ? Math.max(1, boss.maxHp) : 1;
+  const hp = Number.isFinite(boss.hp) ? Math.max(0, Math.min(maxHp, boss.hp)) : maxHp;
+  const ratio = hp / maxHp;
+  const boxW = Math.min(440, ctx.canvas.width - 80);
+  const boxH = 54;
+  const boxX = Math.round((ctx.canvas.width - boxW) * 0.5);
+  const boxY = 10;
+  const barX = boxX + 14;
+  const barY = boxY + 30;
+  const barW = boxW - 28;
+  const barH = 12;
+
+  drawSkinnedPanel(ctx, boxX, boxY, boxW, boxH, colors, { titleBand: true });
+  ctx.font = FONT_16;
+  drawUiText(ctx, `The Brog ${Math.round(hp)} / ${Math.round(maxHp)}`, boxX + 14, boxY + 22, colors);
+
+  ctx.fillStyle = "rgba(8, 10, 14, 0.88)";
+  ctx.fillRect(barX, barY, barW, barH);
+  const fill = ctx.createLinearGradient(barX, barY, barX + barW, barY + barH);
+  fill.addColorStop(0, "rgba(154, 231, 115, 0.95)");
+  fill.addColorStop(0.5, "rgba(88, 175, 86, 0.95)");
+  fill.addColorStop(1, "rgba(62, 130, 66, 0.95)");
+  ctx.fillStyle = fill;
+  ctx.fillRect(barX, barY, Math.round(barW * ratio), barH);
+  ctx.strokeStyle = "rgba(235, 251, 229, 0.68)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
+}
+
 function drawWorldVfx(ctx, state) {
   const effects = Array.isArray(state.vfxEffects) ? state.vfxEffects : null;
   if (!effects || effects.length === 0) return;
@@ -3633,6 +3747,7 @@ export function renderGameFrame({
     spriteFramesPerRow
   });
   drawPlayerSkillChannelBar(ctx, state, tileSize, getItemSprite);
+  drawPlayerPoisonStatus(ctx, state, tileSize, getItemSprite);
   drawControllerSkillWheel(ctx, state, tileSize, getItemSprite);
   drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoom, drawTile);
   drawWorldVfx(ctx, state);
@@ -3671,6 +3786,7 @@ export function renderGameFrame({
     ctx.save();
     ctx.globalAlpha *= nonDialogueUiAlpha;
     drawCombatHud(ctx, state, uiColors, tileSize, cameraZoom, getItemSprite);
+    drawBossHealthBanner(ctx, state, uiColors);
     drawCombatLevelHud(ctx, state, uiColors);
     drawObjectiveTracker(ctx, state, uiColors);
     drawQuestTrackerHint(ctx, state, uiColors);

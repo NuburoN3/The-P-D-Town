@@ -60,6 +60,10 @@ export function normalizeGlobalStoryFlags(gameFlags) {
   }
   if (typeof gameFlags.hanamiDojoExitPending !== "boolean") gameFlags.hanamiDojoExitPending = false;
   if (typeof gameFlags.hanamiLeftDojo !== "boolean") gameFlags.hanamiLeftDojo = false;
+  if (typeof gameFlags.hanamiBoglandExitPending !== "boolean") gameFlags.hanamiBoglandExitPending = false;
+  if (typeof gameFlags.hanamiLeftBogland !== "boolean") gameFlags.hanamiLeftBogland = false;
+  if (typeof gameFlags.brogIntroSeen !== "boolean") gameFlags.brogIntroSeen = false;
+  if (typeof gameFlags.brogDefeated !== "boolean") gameFlags.brogDefeated = false;
   if (typeof gameFlags.taikoHouseUnlocked !== "boolean") gameFlags.taikoHouseUnlocked = false;
   if (typeof gameFlags.townRumorResolved !== "boolean") gameFlags.townRumorResolved = false;
   if (typeof gameFlags.questTrackerHintDismissed !== "boolean") gameFlags.questTrackerHintDismissed = false;

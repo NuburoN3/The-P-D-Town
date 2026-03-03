@@ -553,13 +553,14 @@ function drawEnemies(ctx, state, canvas, tileSize, shouldDrawEnemy = null) {
     let ex = Math.round(enemy.x - cam.x);
     let ey = Math.round(enemy.y - cam.y);
 
-    if (enemy.sprite && enemy.sprite.width && enemy.sprite.height) {
+    const enemySprite = (enemy?.directionalSprites && enemy.directionalSprites[enemy.dir]) || enemy.sprite;
+    if (enemySprite && enemySprite.width && enemySprite.height) {
       const sourceHeight = Number.isFinite(enemy.spriteHeight) && enemy.spriteHeight > 0
         ? enemy.spriteHeight
-        : enemy.sprite.height;
+        : enemySprite.height;
       const sourceWidth = Number.isFinite(enemy.spriteWidth) && enemy.spriteWidth > 0
         ? enemy.spriteWidth
-        : enemy.sprite.width;
+        : enemySprite.width;
       if (Number.isFinite(enemy.desiredHeightTiles) && enemy.desiredHeightTiles > 0) {
         drawHeight = tileSize * enemy.desiredHeightTiles;
         const scale = drawHeight / sourceHeight;
@@ -578,8 +579,8 @@ function drawEnemies(ctx, state, canvas, tileSize, shouldDrawEnemy = null) {
 
     if (ex > canvas.width || ey > canvas.height || ex < -drawWidth || ey < -drawHeight) continue;
 
-    if (enemy.sprite && enemy.sprite.width && enemy.sprite.height) {
-      ctx.drawImage(enemy.sprite, ex, ey, drawWidth, drawHeight);
+    if (enemySprite && enemySprite.width && enemySprite.height) {
+      ctx.drawImage(enemySprite, ex, ey, drawWidth, drawHeight);
     } else {
       drawEnemyPlaceholder(ctx, enemy, ex, ey, tileSize);
     }
@@ -634,6 +635,42 @@ function drawEnemies(ctx, state, canvas, tileSize, shouldDrawEnemy = null) {
     }
 
     drawEnemyHealthBar(ctx, enemy, ex, ey, drawWidth);
+  }
+}
+
+function drawEnemyProjectiles(ctx, state, canvas, tileSize, shouldDrawProjectile = null) {
+  const { currentAreaId, enemyProjectiles, cam } = state;
+  if (!Array.isArray(enemyProjectiles) || enemyProjectiles.length === 0) return;
+
+  for (const projectile of enemyProjectiles) {
+    if (!projectile || projectile.areaId !== currentAreaId) continue;
+    if (typeof shouldDrawProjectile === "function" && !shouldDrawProjectile(projectile)) continue;
+    const radius = Number.isFinite(projectile.radius) ? Math.max(2, projectile.radius) : tileSize * 0.2;
+    const px = projectile.x - cam.x;
+    const py = projectile.y - cam.y;
+    if (px + radius < 0 || py + radius < 0 || px - radius > canvas.width || py - radius > canvas.height) continue;
+
+    const pulse = 0.5 + Math.sin((performance.now() + px * 0.2) * 0.02) * 0.5;
+    const outer = radius * (2 + pulse * 0.6);
+    const glow = ctx.createRadialGradient(px, py, radius * 0.2, px, py, outer);
+    glow.addColorStop(0, "rgba(170, 255, 165, 0.95)");
+    glow.addColorStop(0.6, "rgba(67, 196, 95, 0.5)");
+    glow.addColorStop(1, "rgba(41, 112, 62, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(px, py, outer, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(120, 255, 134, 0.9)";
+    ctx.beginPath();
+    ctx.arc(px, py, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(238, 255, 231, 0.9)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(px, py, Math.max(1, radius - 1), 0, Math.PI * 2);
+    ctx.stroke();
   }
 }
 
@@ -770,6 +807,13 @@ export function drawEntitiesLayer({
     tileSize,
     (enemy) => isBehindPlayer((Number.isFinite(enemy?.y) ? enemy.y : 0) + tileSize)
   );
+  drawEnemyProjectiles(
+    ctx,
+    state,
+    canvas,
+    tileSize,
+    (projectile) => isBehindPlayer((Number.isFinite(projectile?.y) ? projectile.y : 0) + tileSize * 0.6)
+  );
   drawLeftovers(
     ctx,
     state,
@@ -803,6 +847,13 @@ export function drawEntitiesLayer({
     canvas,
     tileSize,
     (enemy) => isInFrontOfPlayer((Number.isFinite(enemy?.y) ? enemy.y : 0) + tileSize)
+  );
+  drawEnemyProjectiles(
+    ctx,
+    state,
+    canvas,
+    tileSize,
+    (projectile) => isInFrontOfPlayer((Number.isFinite(projectile?.y) ? projectile.y : 0) + tileSize * 0.6)
   );
   drawLeftovers(
     ctx,

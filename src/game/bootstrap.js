@@ -92,6 +92,11 @@ export function createGameRuntime() {
     questTrackerHintDismissed: false,
     hanamiDojoExitPending: false,
     hanamiLeftDojo: false,
+    hanamiBoglandExitPending: false,
+    hanamiLeftBogland: false,
+    brogIntroSeen: false,
+    brogIntroConfirmed: false,
+    brogDefeated: false,
     taikoHouseUnlocked: false,
     townRumorResolved: false,
     townProgress: {
