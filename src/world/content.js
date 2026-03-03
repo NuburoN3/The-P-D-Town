@@ -8,6 +8,7 @@
 // ============================================================================
 
 import { hanamiTown } from "./towns/hanamiTown.js";
+import { ovarunTown } from "./towns/ovarunTown.js";
 
 export const GAME_CONTENT = {
   training: {
@@ -99,6 +100,7 @@ export const GAME_CONTENT = {
     }
   },
   towns: {
-    hanamiTown
+    hanamiTown,
+    ovarunTown
   }
 };

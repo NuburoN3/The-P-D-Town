@@ -3714,6 +3714,7 @@ interactionSystem = createInteractionSystem({
   cameraZoom: CAMERA_ZOOM,
   gameFlags,
   playerInventory,
+  playerCurrency,
   playerEquipment,
   playerStats,
   trainingPopup,

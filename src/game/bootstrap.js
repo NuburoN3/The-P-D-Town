@@ -42,6 +42,9 @@ export function createGameRuntime() {
 
   const musicManager = new AudioManager({
     areaTracks: worldService.areaTracks,
+    areaAmbienceTracks: {
+      "ovarunTown:ovarun": "assets/audio/Ovarun_Crowd_Noise.ogg"
+    },
     areaTrackFallbacks: {
       "hanamiTown:bogland": ["assets/audio/Hanami_Game_Audio_BG.wav"]
     },

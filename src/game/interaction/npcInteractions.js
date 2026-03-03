@@ -150,6 +150,7 @@ export function createNPCInteractionHandler({
   tileSize,
   gameFlags,
   playerInventory,
+  playerCurrency,
   playerEquipment,
   playerStats,
   itemAlert,
@@ -639,6 +640,93 @@ export function createNPCInteractionHandler({
     });
   }
 
+  function getTotalSilverFromWallet() {
+    const gold = Number.isFinite(playerCurrency?.gold) ? Math.max(0, Math.floor(playerCurrency.gold)) : 0;
+    const silver = Number.isFinite(playerCurrency?.silver) ? Math.max(0, Math.floor(playerCurrency.silver)) : 0;
+    return gold * 100 + silver;
+  }
+
+  function setWalletFromTotalSilver(totalSilver) {
+    const clamped = Math.max(0, Math.floor(totalSilver));
+    if (!playerCurrency || typeof playerCurrency !== "object") return;
+    playerCurrency.gold = Math.floor(clamped / 100);
+    playerCurrency.silver = clamped % 100;
+  }
+
+  function handleMerchantInteraction(npc) {
+    const buyItemName = String(npc.merchantBuyItemName || "").trim();
+    const sellItemName = String(npc.merchantSellItemName || "").trim();
+    const buyCostSilver = Number.isFinite(npc.merchantBuyCostSilver) ? Math.max(0, Math.floor(npc.merchantBuyCostSilver)) : 0;
+    const sellPayoutSilver = Number.isFinite(npc.merchantSellPayoutSilver) ? Math.max(0, Math.floor(npc.merchantSellPayoutSilver)) : 0;
+
+    const askSellFlow = () => {
+      if (!sellItemName || sellPayoutSilver <= 0) {
+        showDialogue(npc.name, ["Anything else you need?"]);
+        return;
+      }
+
+      showDialogue(npc.name, [
+        `Sell 1 ${sellItemName} for ${sellPayoutSilver} silver?`
+      ], () => {
+        openYesNoChoice((selectedOption) => {
+          if (selectedOption !== "Yes") {
+            showDialogue(npc.name, ["No problem. Come back anytime."]);
+            return;
+          }
+
+          const owned = Number.isFinite(playerInventory?.[sellItemName]) ? Math.max(0, Math.floor(playerInventory[sellItemName])) : 0;
+          if (owned <= 0) {
+            showDialogue(npc.name, [`You do not have a ${sellItemName} to sell.`]);
+            return;
+          }
+
+          playerInventory[sellItemName] = owned - 1;
+          if (playerInventory[sellItemName] <= 0) {
+            delete playerInventory[sellItemName];
+          }
+          const totalSilver = getTotalSilverFromWallet() + sellPayoutSilver;
+          setWalletFromTotalSilver(totalSilver);
+          showDialogue(npc.name, [`Sold ${sellItemName}. +${sellPayoutSilver} silver.`]);
+          try {
+            musicManager.playSfx("menuConfirm");
+          } catch (_) { }
+        });
+      });
+    };
+
+    if (!buyItemName || buyCostSilver <= 0) {
+      askSellFlow();
+      return;
+    }
+
+    showDialogue(npc.name, [
+      `Buy 1 ${buyItemName} for ${buyCostSilver} silver?`
+    ], () => {
+      openYesNoChoice((selectedOption) => {
+        if (selectedOption !== "Yes") {
+          askSellFlow();
+          return;
+        }
+
+        const totalSilver = getTotalSilverFromWallet();
+        if (totalSilver < buyCostSilver) {
+          showDialogue(npc.name, [
+            `You need ${buyCostSilver} silver for ${buyItemName}.`,
+            "You can sell items here if you need extra coin."
+          ], () => askSellFlow());
+          return;
+        }
+
+        setWalletFromTotalSilver(totalSilver - buyCostSilver);
+        playerInventory[buyItemName] = (Number(playerInventory[buyItemName]) || 0) + 1;
+        showDialogue(npc.name, [`Purchased ${buyItemName}. -${buyCostSilver} silver.`], () => askSellFlow());
+        try {
+          musicManager.playSfx("itemUnlock");
+        } catch (_) { }
+      });
+    });
+  }
+
   return function handleNPCInteraction(npc) {
     const playerCenterX = player.x + tileSize / 2;
     const playerCenterY = player.y + tileSize / 2;
@@ -671,6 +759,11 @@ export function createNPCInteractionHandler({
 
     if (npc.id === "farmerElias") {
       handleFarmerEliasInteraction(npc, tp);
+      return;
+    }
+
+    if (npc.isMerchant) {
+      handleMerchantInteraction(npc);
       return;
     }
 

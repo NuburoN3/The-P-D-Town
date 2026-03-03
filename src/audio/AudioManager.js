@@ -1,6 +1,7 @@
 export class AudioManager {
   constructor({
     areaTracks = {},
+    areaAmbienceTracks = {},
     areaTrackFallbacks = {},
     sfxTracks = {},
     bgmVolume = 0.6,
@@ -8,14 +9,19 @@ export class AudioManager {
     fadeDurationMs = 600
   } = {}) {
     this.areaTracks = new Map(Object.entries(areaTracks));
+    this.areaAmbienceTracks = new Map(Object.entries(areaAmbienceTracks));
     this.areaTrackFallbacks = new Map(Object.entries(areaTrackFallbacks));
     this.sfxTracks = new Map(Object.entries(sfxTracks));
     this.bgmAudioBySrc = new Map();
+    this.ambientAudioBySrc = new Map();
     this.bgmAreaBySrc = new Map();
+    this.ambientAreaBySrc = new Map();
     this.sfxPrototypeBySrc = new Map();
     this.failedBgmSrc = new Set();
     this.currentArea = null;
     this.currentAudio = null;
+    this.currentAmbientArea = null;
+    this.currentAmbientAudio = null;
     this.bgmVolume = bgmVolume;
     this.bgmVolumeMultiplier = 1;
     this.sfxVolume = sfxVolume;
@@ -28,6 +34,7 @@ export class AudioManager {
     this._resumeMusicAfterPause = false;
     this._pausedSfxShots = new Set();
     this._autoplayRetryTimer = null;
+    this.ambientSfxGain = 1.3;
   }
 
   getResolvedBgmVolume() {
@@ -37,8 +44,9 @@ export class AudioManager {
   setBgmVolume(volume = this.bgmVolume, { fadeMs = this.bgmFadeMs } = {}) {
     const safe = Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : this.bgmVolume;
     this.bgmVolume = safe;
-    if (!this.currentAudio) return;
-    this._fadeAudio(this.currentAudio, this.getResolvedBgmVolume(), fadeMs).catch(() => {});
+    if (this.currentAudio) {
+      this._fadeAudio(this.currentAudio, this.getResolvedBgmVolume(), fadeMs).catch(() => {});
+    }
   }
 
   setSfxVolume(volume = this.sfxVolume) {
@@ -51,18 +59,87 @@ export class AudioManager {
       if (!shot || shot.ended) continue;
       try { shot.volume = safe; } catch (e) {}
     }
+    if (this.currentAmbientAudio) {
+      this._fadeAudio(this.currentAmbientAudio, this.getResolvedAmbientVolume(), this.bgmFadeMs).catch(() => {});
+    }
   }
 
   setBgmVolumeMultiplier(multiplier = 1, { fadeMs = this.bgmFadeMs } = {}) {
     const safe = Number.isFinite(multiplier) ? Math.max(0, multiplier) : 1;
     if (Math.abs(safe - this.bgmVolumeMultiplier) < 0.0001) return;
     this.bgmVolumeMultiplier = safe;
-    if (!this.currentAudio) return;
-    this._fadeAudio(this.currentAudio, this.getResolvedBgmVolume(), fadeMs).catch(() => {});
+    if (this.currentAudio) {
+      this._fadeAudio(this.currentAudio, this.getResolvedBgmVolume(), fadeMs).catch(() => {});
+    }
   }
 
   registerAreaTrack(areaName, src) {
     this.areaTracks.set(areaName, src);
+  }
+
+  registerAreaAmbienceTrack(areaName, src) {
+    this.areaAmbienceTracks.set(areaName, src);
+  }
+
+  getResolvedAmbientVolume() {
+    return Math.max(0, Math.min(1, this.sfxVolume * this.ambientSfxGain));
+  }
+
+  _syncAreaAmbience(areaName) {
+    const src = this.areaAmbienceTracks.get(areaName);
+    const fadeMs = this.bgmFadeMs;
+    if (!src) {
+      if (this.currentAmbientAudio) {
+        const prev = this.currentAmbientAudio;
+        this.currentAmbientAudio = null;
+        this.currentAmbientArea = null;
+        this._fadeAudio(prev, 0, fadeMs).then(() => {
+          try { prev.pause(); prev.currentTime = 0; } catch (e) {}
+        }).catch(() => {
+          try { prev.pause(); prev.currentTime = 0; } catch (e) {}
+        });
+      } else {
+        this.currentAmbientArea = null;
+      }
+      return;
+    }
+
+    this.ambientAreaBySrc.set(src, areaName);
+    const nextAudio = this._getOrCreateAmbientAudio(src);
+    const sameArea = this.currentAmbientArea === areaName && this.currentAmbientAudio === nextAudio;
+    if (sameArea && !nextAudio.paused) return;
+
+    if (this.currentAmbientAudio && this.currentAmbientAudio !== nextAudio) {
+      const prev = this.currentAmbientAudio;
+      try { nextAudio.volume = 0; } catch (e) {}
+      this._playBgmWithAutoplayFallback(nextAudio);
+      Promise.all([
+        this._fadeAudio(prev, 0, fadeMs).then(() => {
+          try { prev.pause(); prev.currentTime = 0; } catch (e) {}
+        }),
+        this._fadeAudio(nextAudio, this.getResolvedAmbientVolume(), fadeMs)
+      ]).catch(() => {});
+      this.currentAmbientAudio = nextAudio;
+      this.currentAmbientArea = areaName;
+      return;
+    }
+
+    if (!this.currentAmbientAudio) {
+      try { nextAudio.volume = 0; } catch (e) {}
+      this._playBgmWithAutoplayFallback(nextAudio);
+      this.currentAmbientAudio = nextAudio;
+      this.currentAmbientArea = areaName;
+      this._fadeAudio(nextAudio, this.getResolvedAmbientVolume(), fadeMs).catch(() => {});
+      return;
+    }
+
+    if (sameArea && nextAudio.paused) {
+      try { nextAudio.volume = 0; } catch (e) {}
+      this._playBgmWithAutoplayFallback(nextAudio);
+      this._fadeAudio(nextAudio, this.getResolvedAmbientVolume(), fadeMs).catch(() => {});
+      this.currentAmbientAudio = nextAudio;
+      this.currentAmbientArea = areaName;
+    }
   }
 
   registerAreaTrackFallbacks(areaName, fallbackSrcs = []) {
@@ -100,6 +177,7 @@ export class AudioManager {
   }
 
   playMusicForArea(areaName) {
+    this._syncAreaAmbience(areaName);
     const src = this._resolveAreaTrackSrc(areaName);
     if (!src) {
       // No music defined for this area -> continue current music
@@ -197,6 +275,16 @@ export class AudioManager {
     });
     this.currentAudio = null;
     this.currentArea = null;
+    if (this.currentAmbientAudio) {
+      const ambient = this.currentAmbientAudio;
+      this._fadeAudio(ambient, 0, fadeMs).then(() => {
+        try { ambient.pause(); ambient.currentTime = 0; } catch (e) {}
+      }).catch(() => {
+        try { ambient.pause(); ambient.currentTime = 0; } catch (e) {}
+      });
+    }
+    this.currentAmbientAudio = null;
+    this.currentAmbientArea = null;
     this._resumeMusicAfterPause = false;
     this._clearAutoplayRetryTimer();
   }
@@ -286,6 +374,20 @@ export class AudioManager {
     return audio;
   }
 
+  _getOrCreateAmbientAudio(src) {
+    if (this.ambientAudioBySrc.has(src)) return this.ambientAudioBySrc.get(src);
+
+    const audio = new Audio(src);
+    audio.loop = true;
+    audio.preload = "auto";
+    audio.volume = this.getResolvedAmbientVolume();
+    audio.addEventListener('error', (e) => {
+      console.warn('AudioManager: ambient load error for', src, e);
+    });
+    this.ambientAudioBySrc.set(src, audio);
+    return audio;
+  }
+
   _duckCurrentMusic() {
     if (!this.currentAudio) return;
 
@@ -321,6 +423,9 @@ export class AudioManager {
         this._resumeMusicAfterPause = true;
       } catch (e) {}
     }
+    if (this.currentAmbientAudio && !this.currentAmbientAudio.paused) {
+      try { this.currentAmbientAudio.pause(); } catch (e) {}
+    }
 
     this._pausedSfxShots.clear();
     for (const shot of this.activeSfxShots) {
@@ -338,6 +443,9 @@ export class AudioManager {
 
     if (this._resumeMusicAfterPause && this.currentAudio) {
       this._playBgmWithAutoplayFallback(this.currentAudio);
+    }
+    if (this.currentAmbientAudio) {
+      this._playBgmWithAutoplayFallback(this.currentAmbientAudio);
     }
     this._resumeMusicAfterPause = false;
 

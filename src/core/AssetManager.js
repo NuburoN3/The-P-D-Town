@@ -51,6 +51,9 @@ export const DEFAULT_SPRITE_MANIFEST = {
   controllerSkillWheel: "assets/sprites/Controller_Skill_Wheel.png",
   controllerSkillWheel2: "assets/sprites/Controller_Skill_Wheel2.png",
   ogre64: "assets/sprites/Ogre-64x64.png",
+  overrun_man_1_32: "assets/sprites/Overrun_Man_1_32.png",
+  overrun_woman_1_32: "assets/sprites/Overrun_Woman_1_32.png",
+  overrun_woman_2_32: "assets/sprites/Overrun_Woman_2_32.png",
   [ASSET_KEYS.TITLE_HERO_IMAGE]: ASSET_PATHS.TITLE_HERO_IMAGE
 };
 

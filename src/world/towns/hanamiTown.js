@@ -51,6 +51,7 @@ function generateOverworldBase(width, height) {
     paintPath(map, [{ x: 28, y: 34 }, { x: 28, y: 36 }, { x: 51, y: 36 }, { x: 51, y: 40 }], 2); // bed and breakfast lane
     paintPath(map, [{ x: 28, y: 14 }, { x: 34, y: 14 }, { x: 37, y: 12 }, { x: 41, y: 12 }, { x: 41, y: 10 }], 2); // hill path
     paintPath(map, [{ x: 28, y: 22 }, { x: 41, y: 22 }, { x: 48, y: 22 }, { x: 48, y: 21 }], 2); // taiko lane
+    paintPath(map, [{ x: 48, y: 22 }, { x: 55, y: 22 }], 2); // ovarun connector lane
 
     // Piazza blossom rings.
     const cherryBlossomPositions = [
@@ -93,6 +94,7 @@ function generateOverworldBase(width, height) {
     // Southern gate into Bogland.
     map[42][28] = TILE_TYPES.DOOR;
     paintPoints(map, [[27, 41], [28, 41], [29, 41]], TILE_TYPES.PATH);
+    paintPoints(map, [[55, 21], [55, 22], [55, 23]], TILE_TYPES.PATH);
 
     return map;
 }
@@ -470,7 +472,8 @@ export const hanamiTown = {
         bnbUpstairsEntry: { areaId: "patBnBUpstairs", x: 2, y: 8, dir: "right" },
         bnbUpstairsRespawn: { areaId: "patBnBUpstairs", x: 8, y: 4, dir: "down" },
         boglandTownGate: { areaId: "overworld", x: 28, y: 40, dir: "up" },
-        boglandEntry: { areaId: "bogland", x: 28, y: 3, dir: "down" }
+        boglandEntry: { areaId: "bogland", x: 28, y: 3, dir: "down" },
+        ovarunGate: { areaId: "overworld", x: 53, y: 22, dir: "left" }
     },
     doors: [
         {
@@ -564,6 +567,10 @@ export const hanamiTown = {
         {
             from: { areaId: "bogland", x: 28, y: 1 },
             to: { townId: "hanamiTown", spawnId: "boglandTownGate" }
+        },
+        {
+            from: { areaId: "overworld", x: 55, y: 22 },
+            to: { townId: "ovarunTown", spawnId: "gateEntry" }
         }
     ],
     npcs: [
