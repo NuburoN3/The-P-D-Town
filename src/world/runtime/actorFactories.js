@@ -102,7 +102,7 @@ export function createEnemiesForTown(town, tileSize, getSprite) {
       directionalSprites.right
     );
 
-    return {
+    const enemyEntity = {
       ...customFields,
       id: id || `enemy-${index + 1}`,
       name: enemy.name || `Enemy ${index + 1}`,
@@ -148,5 +148,17 @@ export function createEnemiesForTown(town, tileSize, getSprite) {
       recoverUntil: 0,
       pendingStrike: false
     };
+    if (String(enemyEntity.id || "").toLowerCase() === "thebrog") {
+      enemyEntity.brogAttackCycle = "venom";
+      enemyEntity.brogLeapCooldownUntil = 0;
+      enemyEntity.pendingAttackType = "";
+      enemyEntity.brogLeapStartAt = 0;
+      enemyEntity.brogLeapLandAt = 0;
+      enemyEntity.brogLeapStartX = enemyEntity.x;
+      enemyEntity.brogLeapStartY = enemyEntity.y;
+      enemyEntity.brogLeapTargetX = enemyEntity.x;
+      enemyEntity.brogLeapTargetY = enemyEntity.y;
+    }
+    return enemyEntity;
   });
 }

@@ -61,6 +61,7 @@ export function createGameRuntime() {
       playerAccurateHit1: "assets/audio/Player_Accurate_Hit.ogg",
       playerAccurateHit2: "assets/audio/Player_Accurate_Hit2.ogg",
       enemyTelegraph: "assets/audio/collision_sound.wav",
+      brogAttack: "assets/audio/The_Brog_Attack.ogg",
       ogreAttack: "assets/audio/Ogre_Attack_1.ogg",
       ogreHurt: "assets/audio/Ogre_Hurt_1.ogg",
       hitImpact: "assets/audio/collision_sound.wav",

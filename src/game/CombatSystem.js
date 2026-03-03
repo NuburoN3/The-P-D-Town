@@ -32,7 +32,8 @@ export function createCombatSystem({
     onPlayerAttackActive: eventHandlers.onPlayerAttackActive || (() => { }),
     onPlayerAttackHitFrame: eventHandlers.onPlayerAttackHitFrame || (() => { }),
     onHitConfirmed: eventHandlers.onHitConfirmed || (() => { }),
-    onEnemyProjectileSpawn: eventHandlers.onEnemyProjectileSpawn || (() => { })
+    onEnemyProjectileSpawn: eventHandlers.onEnemyProjectileSpawn || (() => { }),
+    onBrogLeapImpact: eventHandlers.onBrogLeapImpact || (() => { })
   };
 
   function canApplyHitForProfile(player, profile, now) {
@@ -421,7 +422,8 @@ export function createCombatSystem({
       if (!enemy.pendingStrike) continue;
 
       enemy.pendingStrike = false;
-      const enemyProfile = getAttackProfileForEntity(enemy, enemy.attackType || enemy.equippedAttackId || null);
+      const strikeAttackType = enemy.pendingAttackType || enemy.attackType || enemy.equippedAttackId || null;
+      const enemyProfile = getAttackProfileForEntity(enemy, strikeAttackType);
 
       const petTarget = findPetTarget(enemy);
       const strikeTarget = enemy.targetEntityType === "pet" && petTarget ? petTarget : player;
@@ -433,6 +435,100 @@ export function createCombatSystem({
       const strikeCenter = enemyProfile?.getAttackCenter
         ? enemyProfile.getAttackCenter(enemy)
         : { x: enemyCenterX, y: enemyCenterY };
+      if (strikeAttackType === "brogLeap") {
+        const landingX = Number.isFinite(enemy.brogLeapTargetX)
+          ? enemy.brogLeapTargetX
+          : (targetCenterX - enemy.width / 2);
+        const landingY = Number.isFinite(enemy.brogLeapTargetY)
+          ? enemy.brogLeapTargetY
+          : (targetCenterY - enemy.height / 2);
+        enemy.x = landingX;
+        enemy.y = landingY;
+        const landingCenterX = enemy.x + enemy.width / 2;
+        const landingCenterY = enemy.y + enemy.height / 2;
+        const splashRadius = Number.isFinite(enemyProfile?.hitRadius) ? enemyProfile.hitRadius : tileSize * 3;
+        const leapDamage = Number.isFinite(enemyProfile?.damage) ? Math.max(0, enemyProfile.damage) : 10;
+
+        handlers.onRequestVfx("warningRing", {
+          x: landingCenterX,
+          y: landingCenterY,
+          size: splashRadius,
+          durationMs: 260
+        });
+        handlers.onRequestVfx("hitSpark", {
+          x: landingCenterX,
+          y: landingCenterY,
+          size: 30,
+          durationMs: 320
+        });
+        handlers.onBrogLeapImpact({
+          source: enemy,
+          x: landingCenterX,
+          y: landingCenterY,
+          radius: splashRadius,
+          now
+        });
+
+        const playerCenterX = player.x + tileSize / 2;
+        const playerCenterY = player.y + tileSize / 2;
+        const playerDistance = distance(playerCenterX, playerCenterY, landingCenterX, landingCenterY);
+        if (playerDistance <= splashRadius && player.invulnerableUntil <= now) {
+          player.hp = Math.max(0, player.hp - leapDamage);
+          player.invulnerableUntil = now + player.invulnerableMs;
+          handlers.onPlayerDamaged({
+            source: enemy,
+            target: player,
+            damage: leapDamage,
+            now
+          });
+          handlers.onHitConfirmed({
+            type: "playerDamaged",
+            source: enemy,
+            target: player,
+            damage: leapDamage,
+            now
+          });
+          handlers.onRequestVfx("damageText", {
+            x: playerCenterX + 8,
+            y: playerCenterY - 18,
+            text: `-${leapDamage}`,
+            color: "#ff3b3b",
+            size: 32,
+            durationMs: 620
+          });
+          if (player.hp <= 0) {
+            if (typeof handlers.onPlayerDefeated === "function") {
+              handlers.onPlayerDefeated({ player, source: enemy, now });
+            } else {
+              player.hp = player.maxHp;
+            }
+          }
+        }
+
+        if (petTarget) {
+          const petCenterX = petTarget.x + (Number.isFinite(petTarget.width) ? petTarget.width : tileSize) / 2;
+          const petCenterY = petTarget.y + (Number.isFinite(petTarget.height) ? petTarget.height : tileSize) / 2;
+          const petDistance = distance(petCenterX, petCenterY, landingCenterX, landingCenterY);
+          if (petDistance <= splashRadius) {
+            const maxHp = Number.isFinite(petTarget.maxHp) ? Math.max(1, petTarget.maxHp) : 1;
+            const currentHp = Number.isFinite(petTarget.hp) ? Math.max(0, Math.min(maxHp, petTarget.hp)) : maxHp;
+            petTarget.hp = Math.max(0, currentHp - leapDamage);
+            if (petTarget.hp <= 0) {
+              petTarget.passedOut = true;
+              petTarget.passedOutAt = now;
+            }
+            handlers.onHitConfirmed({
+              type: "petDamaged",
+              source: enemy,
+              target: petTarget,
+              damage: leapDamage,
+              now
+            });
+          }
+        }
+        enemy.pendingAttackType = "";
+        continue;
+      }
       const projectileProfile = enemyProfile?.projectile && typeof enemyProfile.projectile === "object"
         ? enemyProfile.projectile
         : null;
@@ -468,6 +564,7 @@ export function createCombatSystem({
             ? Math.max(0, projectileProfile.poisonDurationMs)
             : 0
         });
+        enemy.pendingAttackType = "";
         continue;
       }
 
@@ -475,8 +572,14 @@ export function createCombatSystem({
         ? enemyProfile.hitRadius
         : (Number.isFinite(enemy.attackRange) ? enemy.attackRange : tileSize * 0.9);
       const d = distance(targetCenterX, targetCenterY, strikeCenter.x, strikeCenter.y);
-      if (d > strikeRadius + tileSize * 0.25) continue;
-      if (!targetIsPet && player.invulnerableUntil > now) continue;
+      if (d > strikeRadius + tileSize * 0.25) {
+        enemy.pendingAttackType = "";
+        continue;
+      }
+      if (!targetIsPet && player.invulnerableUntil > now) {
+        enemy.pendingAttackType = "";
+        continue;
+      }
 
       const fallbackDamage = Number.isFinite(enemyProfile?.damage)
         ? enemyProfile.damage
@@ -557,6 +660,7 @@ export function createCombatSystem({
           }
         }
       }
+      enemy.pendingAttackType = "";
     }
   }
 

@@ -441,6 +441,8 @@ const PLAYER_POISON_DAMAGE_PER_TICK = 1;
 const PLAYER_POISON_TICK_MS = 3000;
 const PLAYER_POISON_DEFAULT_DURATION_MS = 15000;
 const ENEMY_PROJECTILE_MAX_LIFETIME_MS = 8000;
+const VENOM_PUDDLE_DURATION_MS = 10000;
+const VENOM_PUDDLE_RADIUS = TILE * 0.6;
 
 const enemyProjectiles = [];
 const combatStatusState = {
@@ -448,7 +450,8 @@ const combatStatusState = {
   poisonedUntil: 0,
   poisonDurationMs: 0,
   poisonedAppliedAt: 0,
-  poisonLastTickAt: 0
+  poisonLastTickAt: 0,
+  poisonPuddles: []
 };
 
 function getSkillDefaults(skillId) {
@@ -1814,6 +1817,51 @@ function spawnEnemyProjectile({
   });
 }
 
+function spawnVenomImpactAndPuddle(projectile, now = performance.now()) {
+  if (!projectile || String(projectile.type || "") !== "venomGlob") return;
+  const x = Number.isFinite(projectile.x) ? projectile.x : player.x + TILE * 0.5;
+  const y = Number.isFinite(projectile.y) ? projectile.y : player.y + TILE * 0.5;
+  vfxSystem.spawn("hitSpark", {
+    x,
+    y,
+    size: Math.max(14, (Number(projectile.radius) || TILE * 0.2) * 2.8),
+    durationMs: 220
+  });
+  if (!Array.isArray(combatStatusState.poisonPuddles)) {
+    combatStatusState.poisonPuddles = [];
+  }
+  combatStatusState.poisonPuddles.push({
+    id: `venomPuddle-${Math.floor(now)}-${Math.random().toString(16).slice(2, 8)}`,
+    townId: currentTownId,
+    areaId: currentAreaId,
+    x,
+    y,
+    radius: VENOM_PUDDLE_RADIUS,
+    createdAt: now,
+    expiresAt: now + VENOM_PUDDLE_DURATION_MS
+  });
+}
+
+function updatePoisonPuddles(now = performance.now(), applyToPlayer = true) {
+  if (!Array.isArray(combatStatusState.poisonPuddles) || combatStatusState.poisonPuddles.length === 0) return;
+  combatStatusState.poisonPuddles = combatStatusState.poisonPuddles.filter((puddle) => (
+    puddle &&
+    Number.isFinite(puddle.expiresAt) &&
+    now < puddle.expiresAt
+  ));
+  if (combatStatusState.poisonPuddles.length === 0) return;
+  if (!applyToPlayer) return;
+  const playerCenterX = player.x + TILE * 0.5;
+  const playerCenterY = player.y + TILE * 0.5;
+  for (const puddle of combatStatusState.poisonPuddles) {
+    if (!puddle || puddle.townId !== currentTownId || puddle.areaId !== currentAreaId) continue;
+    const radius = Number.isFinite(puddle.radius) ? Math.max(4, puddle.radius) : VENOM_PUDDLE_RADIUS;
+    const d = Math.hypot(playerCenterX - puddle.x, playerCenterY - puddle.y);
+    if (d > radius + TILE * 0.28) continue;
+    applyPoisonToPlayer(now, PLAYER_POISON_DEFAULT_DURATION_MS);
+  }
+}
+
 function updateEnemyProjectiles(now) {
   const previousTick = Number.isFinite(combatStatusState.lastProjectileUpdateAt)
     ? combatStatusState.lastProjectileUpdateAt
@@ -1826,7 +1874,12 @@ function updateEnemyProjectiles(now) {
   const playerCenterY = player.y + TILE * 0.5;
   for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
     const projectile = enemyProjectiles[i];
-    if (!projectile || projectile.areaId !== currentAreaId || now >= projectile.expiresAt) {
+    if (!projectile || projectile.areaId !== currentAreaId) {
+      enemyProjectiles.splice(i, 1);
+      continue;
+    }
+    if (now >= projectile.expiresAt) {
+      spawnVenomImpactAndPuddle(projectile, now);
       enemyProjectiles.splice(i, 1);
       continue;
     }
@@ -1841,6 +1894,7 @@ function updateEnemyProjectiles(now) {
       projectile.x >= currentMapW * TILE ||
       projectile.y >= currentMapH * TILE;
     if (outOfBounds) {
+      spawnVenomImpactAndPuddle(projectile, now);
       enemyProjectiles.splice(i, 1);
       continue;
     }
@@ -1854,6 +1908,7 @@ function updateEnemyProjectiles(now) {
         currentMapH
       )
     ) {
+      spawnVenomImpactAndPuddle(projectile, now);
       enemyProjectiles.splice(i, 1);
       continue;
     }
@@ -1891,6 +1946,7 @@ function updateEnemyProjectiles(now) {
     if (projectile.poisonDurationMs > 0) {
       applyPoisonToPlayer(now, projectile.poisonDurationMs);
     }
+    spawnVenomImpactAndPuddle(projectile, now);
 
     enemyProjectiles.splice(i, 1);
 
@@ -2619,6 +2675,17 @@ function respawnEnemyAtSpawn(enemy) {
   enemy.hitStunUntil = 0;
   enemy.attackStrikeAt = 0;
   enemy.recoverUntil = 0;
+  if ("pendingAttackType" in enemy) enemy.pendingAttackType = "";
+  if (String(enemy?.id || "").toLowerCase() === "thebrog") {
+    enemy.brogAttackCycle = "venom";
+    enemy.brogLeapCooldownUntil = 0;
+    enemy.brogLeapStartAt = 0;
+    enemy.brogLeapLandAt = 0;
+    enemy.brogLeapStartX = enemy.spawnX;
+    enemy.brogLeapStartY = enemy.spawnY;
+    enemy.brogLeapTargetX = enemy.spawnX;
+    enemy.brogLeapTargetY = enemy.spawnY;
+  }
   enemy.challengeDefeatedCounted = false;
   enemy.bogDefeatedCounted = false;
   enemy.respawnAt = 0;
@@ -3527,6 +3594,7 @@ function updateRuntimeUi(now) {
   } else {
     combatStatusState.lastProjectileUpdateAt = now;
   }
+  updatePoisonPuddles(now, isFreeExploreState(simulationGameState) && !dialogue.isActive() && !choiceState.active && !doorSequence.active);
 
   const isMovementKeyHeldInInventory = () => {
     if (gameState !== GAME_STATES.INVENTORY) return false;
@@ -3892,6 +3960,13 @@ const combatSystem = createCombatSystem({
     onEntityDefeated: (enemy, now) => {
       handleEnemyDefeatRewards(enemy, now);
     },
+    onBrogLeapImpact: () => {
+      const now = performance.now();
+      if (userSettings.screenShake) {
+        combatFeedback.shakeUntil = Math.max(combatFeedback.shakeUntil, now + 320);
+        combatFeedback.shakeMagnitude = Math.max(combatFeedback.shakeMagnitude || 0, 3.4);
+      }
+    },
     onPlayerDefeated: ({ player: defeatedPlayer }) => {
       clearPlayerPoisonStatus();
       handlePlayerDefeated({ player: defeatedPlayer });
@@ -3905,8 +3980,13 @@ const enemyAiSystem = createEnemyAISystem({
     onEnemyAttackWindupStarted: ({ enemy, now }) => {
       const enemyId = typeof enemy?.id === "string" ? enemy.id.toLowerCase() : "";
       const enemyName = typeof enemy?.name === "string" ? enemy.name.toLowerCase() : "";
+      const pendingAttackType = String(enemy?.pendingAttackType || enemy?.attackType || "").toLowerCase();
+      const isBrog = enemyId === "thebrog" || enemyName === "the brog";
       const isOgre = enemyId.includes("ogre") || enemyName.includes("ogre");
       const isPossum = enemyId.includes("possum") || enemyName.includes("possum");
+      if (isBrog) {
+        musicManager.playSfx("brogAttack");
+      }
       if (isOgre) {
         musicManager.playSfx("ogreAttack");
       }
@@ -3921,7 +4001,9 @@ const enemyAiSystem = createEnemyAISystem({
         x: enemy.x + TILE * 0.5,
         y: enemy.y + TILE * 0.5,
         size: TILE * 0.8,
-        durationMs: Math.max(180, enemy.attackWindupMs)
+        durationMs: pendingAttackType === "brogleap"
+          ? 900
+          : Math.max(180, enemy.attackWindupMs)
       });
     }
   }
@@ -4297,6 +4379,15 @@ gameController = createGameController({
     updateFeatureState: (activeGameState) => featureCoordinator.updateForState(activeGameState),
     onAreaChanged: ({ previousTownId, previousAreaId, townId, areaId }) => {
       enemyProjectiles.length = 0;
+      if (Array.isArray(combatStatusState.poisonPuddles)) {
+        combatStatusState.poisonPuddles = combatStatusState.poisonPuddles.filter((puddle) => (
+          puddle &&
+          puddle.townId === townId &&
+          puddle.areaId === areaId &&
+          Number.isFinite(puddle.expiresAt) &&
+          performance.now() < puddle.expiresAt
+        ));
+      }
       if (previousTownId !== townId || previousAreaId !== areaId) {
         uiMotionState.minimapRevealAt = performance.now();
       }

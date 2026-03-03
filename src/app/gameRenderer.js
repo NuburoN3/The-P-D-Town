@@ -398,6 +398,7 @@ export function createGameRenderer({
         npcs,
         enemies,
         enemyProjectiles,
+        poisonPuddles: Array.isArray(combatStatusState?.poisonPuddles) ? combatStatusState.poisonPuddles : [],
         leftovers: leftoversState?.entries || [],
         leftoversSprite: assets.getSprite("leftovers"),
         mrHanamiDialogueOpenSprite: assets.getSprite("mrHanamiDialogueOpen"),

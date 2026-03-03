@@ -543,6 +543,7 @@ function drawEnemyHealthBar(ctx, enemy, ex, ey, drawWidth) {
 function drawEnemies(ctx, state, canvas, tileSize, shouldDrawEnemy = null) {
   const { currentAreaId, enemies, cam } = state;
   if (!Array.isArray(enemies) || enemies.length === 0) return;
+  const now = performance.now();
 
   for (const enemy of enemies) {
     if (!enemy || enemy.dead || enemy.world !== currentAreaId) continue;
@@ -577,6 +578,22 @@ function drawEnemies(ctx, state, canvas, tileSize, shouldDrawEnemy = null) {
       ey = Math.round(enemy.y - cam.y - (drawHeight - tileSize));
     }
 
+    const baseEy = ey;
+    if (String(enemy.id || "").toLowerCase() === "thebrog" && enemy.state === "brogLeap") {
+      const leapStartAt = Number.isFinite(enemy.brogLeapStartAt) ? enemy.brogLeapStartAt : now;
+      const leapLandAt = Number.isFinite(enemy.brogLeapLandAt) ? enemy.brogLeapLandAt : now;
+      const leapDuration = Math.max(1, leapLandAt - leapStartAt);
+      const t = Math.max(0, Math.min(1, (now - leapStartAt) / leapDuration));
+      const leapLift = Math.sin(t * Math.PI) * (tileSize * 2.6);
+      ey -= leapLift;
+
+      const shadowPulse = 0.18 + (1 - t) * t * 0.35;
+      ctx.fillStyle = `rgba(0,0,0,${shadowPulse.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.ellipse(ex + drawWidth * 0.5, baseEy + drawHeight - 3, Math.max(10, drawWidth * 0.18), Math.max(4, drawWidth * 0.07), 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     if (ex > canvas.width || ey > canvas.height || ex < -drawWidth || ey < -drawHeight) continue;
 
     if (enemySprite && enemySprite.width && enemySprite.height) {
@@ -590,6 +607,7 @@ function drawEnemies(ctx, state, canvas, tileSize, shouldDrawEnemy = null) {
       const totalWindup = Math.max(1, enemy.attackWindupMs || 1);
       const remaining = Math.max(0, (enemy.attackStrikeAt || now) - now);
       const windupProgress = Math.max(0, Math.min(1, 1 - remaining / totalWindup));
+      const enemyId = String(enemy.id || "").toLowerCase();
       const centerX = ex + drawWidth / 2;
       const centerY = ey + drawHeight / 2;
 
@@ -632,6 +650,33 @@ function drawEnemies(ctx, state, canvas, tileSize, shouldDrawEnemy = null) {
       ctx.fillText(String(countdown), centerX, ey - 8);
       ctx.textAlign = "start";
       ctx.textBaseline = "alphabetic";
+
+      if (enemyId === "thebrog") {
+        const barW = Math.max(120, Math.min(220, drawWidth * 0.62));
+        const barH = 8;
+        const barX = centerX - barW / 2;
+        const barY = ey + drawHeight + 8;
+        const label = "Venom Spit";
+        const fillW = Math.max(0, Math.min(barW, barW * windupProgress));
+        ctx.save();
+        ctx.fillStyle = "rgba(6, 16, 10, 0.88)";
+        ctx.fillRect(barX, barY, barW, barH);
+        const fill = ctx.createLinearGradient(barX, barY, barX + barW, barY);
+        fill.addColorStop(0, "rgba(157, 242, 123, 0.96)");
+        fill.addColorStop(0.5, "rgba(93, 196, 98, 0.96)");
+        fill.addColorStop(1, "rgba(56, 133, 67, 0.96)");
+        ctx.fillStyle = fill;
+        ctx.fillRect(barX, barY, fillW, barH);
+        ctx.strokeStyle = "rgba(222, 255, 213, 0.85)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
+        ctx.font = "bold 10px monospace";
+        ctx.fillStyle = "rgba(235, 255, 226, 0.95)";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.fillText(label, centerX, barY - 2);
+        ctx.restore();
+      }
     }
 
     drawEnemyHealthBar(ctx, enemy, ex, ey, drawWidth);
@@ -651,6 +696,66 @@ function drawEnemyProjectiles(ctx, state, canvas, tileSize, shouldDrawProjectile
     if (px + radius < 0 || py + radius < 0 || px - radius > canvas.width || py - radius > canvas.height) continue;
 
     const pulse = 0.5 + Math.sin((performance.now() + px * 0.2) * 0.02) * 0.5;
+    if (String(projectile.projectileType || "") === "venomGlob") {
+      const vx = Number.isFinite(projectile.vx) ? projectile.vx : 0;
+      const vy = Number.isFinite(projectile.vy) ? projectile.vy : 0;
+      const speed = Math.max(0.001, Math.hypot(vx, vy));
+      const nx = vx / speed;
+      const ny = vy / speed;
+      const tx = -ny;
+      const ty = nx;
+      const tailLen = radius * (1.9 + pulse * 0.5);
+      const tailX = px - nx * tailLen;
+      const tailY = py - ny * tailLen;
+      const smearW = Math.max(1, radius * 0.8);
+
+      ctx.save();
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "rgba(46, 122, 64, 0.72)";
+      ctx.lineWidth = smearW;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(tailX, tailY);
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(73, 168, 92, 0.92)";
+      ctx.beginPath();
+      ctx.ellipse(px, py, radius * 0.95, radius * 0.82, Math.atan2(vy, vx), 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(129, 208, 138, 0.4)";
+      ctx.beginPath();
+      ctx.ellipse(px - nx * radius * 0.16, py - ny * radius * 0.16, radius * 0.38, radius * 0.3, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "rgba(22, 79, 42, 0.85)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(px, py, radius * 0.95, radius * 0.82, Math.atan2(vy, vx), 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Tiny deterministic drip particles for a more liquid-looking venom trail.
+      const now = performance.now();
+      const phase = now * 0.014 + px * 0.03 + py * 0.021;
+      const dripCount = 3;
+      for (let i = 0; i < dripCount; i++) {
+        const t = (i + 1) / (dripCount + 0.3);
+        const spineX = px - nx * (tailLen * (0.45 + t * 0.75));
+        const spineY = py - ny * (tailLen * (0.45 + t * 0.75));
+        const sway = Math.sin(phase + i * 1.37) * radius * (0.18 + t * 0.18);
+        const dripX = spineX + tx * sway;
+        const dripY = spineY + ty * sway;
+        const dripR = Math.max(0.8, radius * (0.16 + (1 - t) * 0.1));
+
+        ctx.fillStyle = "rgba(66, 153, 86, 0.68)";
+        ctx.beginPath();
+        ctx.arc(dripX, dripY, dripR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+      continue;
+    }
+
     const outer = radius * (2 + pulse * 0.6);
     const glow = ctx.createRadialGradient(px, py, radius * 0.2, px, py, outer);
     glow.addColorStop(0, "rgba(170, 255, 165, 0.95)");
@@ -671,6 +776,61 @@ function drawEnemyProjectiles(ctx, state, canvas, tileSize, shouldDrawProjectile
     ctx.beginPath();
     ctx.arc(px, py, Math.max(1, radius - 1), 0, Math.PI * 2);
     ctx.stroke();
+  }
+}
+
+function drawPoisonPuddles(ctx, state, canvas, tileSize, shouldDrawPuddle = null) {
+  const { currentTownId, currentAreaId, poisonPuddles, cam } = state;
+  if (!Array.isArray(poisonPuddles) || poisonPuddles.length === 0) return;
+  const now = performance.now();
+
+  for (const puddle of poisonPuddles) {
+    if (!puddle || puddle.townId !== currentTownId || puddle.areaId !== currentAreaId) continue;
+    if (typeof shouldDrawPuddle === "function" && !shouldDrawPuddle(puddle)) continue;
+    const expiresAt = Number.isFinite(puddle.expiresAt) ? puddle.expiresAt : now;
+    if (now >= expiresAt) continue;
+    const createdAt = Number.isFinite(puddle.createdAt) ? puddle.createdAt : now;
+    const life = Math.max(1, expiresAt - createdAt);
+    const t = Math.max(0, Math.min(1, (now - createdAt) / life));
+    const fade = 1 - Math.max(0, Math.min(1, (now - (expiresAt - 1200)) / 1200));
+    const px = (Number.isFinite(puddle.x) ? puddle.x : 0) - cam.x;
+    const py = (Number.isFinite(puddle.y) ? puddle.y : 0) - cam.y;
+    const baseR = Number.isFinite(puddle.radius) ? Math.max(5, puddle.radius) : tileSize * 0.6;
+    const radius = baseR * (0.88 + Math.sin(now * 0.006 + px * 0.03) * 0.03);
+    if (px + radius < 0 || py + radius < 0 || px - radius > canvas.width || py - radius > canvas.height) continue;
+
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, fade);
+    const pool = ctx.createRadialGradient(px - radius * 0.2, py - radius * 0.15, radius * 0.2, px, py, radius);
+    pool.addColorStop(0, "rgba(96, 177, 105, 0.78)");
+    pool.addColorStop(0.65, "rgba(58, 126, 71, 0.88)");
+    pool.addColorStop(1, "rgba(36, 88, 49, 0.7)");
+    ctx.fillStyle = pool;
+    ctx.beginPath();
+    ctx.ellipse(px, py, radius, radius * 0.62, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const dripCount = 4;
+    for (let i = 0; i < dripCount; i++) {
+      const angle = (i / dripCount) * Math.PI * 2 + now * 0.0015;
+      const dx = Math.cos(angle) * radius * (0.45 + (i % 2) * 0.24);
+      const dy = Math.sin(angle) * radius * 0.26;
+      const dripR = Math.max(1, radius * 0.11 - i * 0.12);
+      ctx.fillStyle = "rgba(71, 152, 82, 0.72)";
+      ctx.beginPath();
+      ctx.arc(px + dx, py + dy, dripR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (t < 0.35) {
+      const splashPulse = 1 - t / 0.35;
+      ctx.strokeStyle = `rgba(140, 214, 118, ${(0.42 * splashPulse).toFixed(3)})`;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.ellipse(px, py, radius * (1.15 + splashPulse * 0.2), radius * 0.72, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 }
 
@@ -814,6 +974,13 @@ export function drawEntitiesLayer({
     tileSize,
     (projectile) => isBehindPlayer((Number.isFinite(projectile?.y) ? projectile.y : 0) + tileSize * 0.6)
   );
+  drawPoisonPuddles(
+    ctx,
+    state,
+    canvas,
+    tileSize,
+    (puddle) => isBehindPlayer(Number.isFinite(puddle?.y) ? puddle.y : 0)
+  );
   drawLeftovers(
     ctx,
     state,
@@ -854,6 +1021,13 @@ export function drawEntitiesLayer({
     canvas,
     tileSize,
     (projectile) => isInFrontOfPlayer((Number.isFinite(projectile?.y) ? projectile.y : 0) + tileSize * 0.6)
+  );
+  drawPoisonPuddles(
+    ctx,
+    state,
+    canvas,
+    tileSize,
+    (puddle) => isInFrontOfPlayer(Number.isFinite(puddle?.y) ? puddle.y : 0)
   );
   drawLeftovers(
     ctx,

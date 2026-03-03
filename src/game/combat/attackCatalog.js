@@ -102,16 +102,16 @@ export function createDefaultAttackCatalog(tileSize) {
   const venomSpit = {
     id: "venomSpit",
     cooldownMs: 1450,
-    windupMs: 520,
+    windupMs: 3000,
     activeMs: 120,
     recoveryMs: 420,
     range: tileSize * 7.2,
     hitRadius: tileSize * 0.5,
-    damage: 10,
+    damage: 2,
     hitstopMs: 30,
     projectile: {
       type: "venomGlob",
-      speedPxPerFrame: 2.9,
+      speedPxPerFrame: 8.7,
       radius: tileSize * 0.2,
       poisonDurationMs: 15000
     },
@@ -136,11 +136,29 @@ export function createDefaultAttackCatalog(tileSize) {
     }
   };
 
+  const brogLeap = {
+    id: "brogLeap",
+    cooldownMs: 6000,
+    windupMs: 0,
+    activeMs: 1,
+    recoveryMs: 420,
+    range: tileSize * 3,
+    hitRadius: tileSize * 3,
+    damage: 10,
+    hitstopMs: 40,
+    vfx: {
+      type: "warningRing",
+      durationMs: 220,
+      sizeOffset: 12
+    }
+  };
+
   return {
     [lightSlash.id]: lightSlash,
     [heavySlash.id]: heavySlash,
     [chiBolt.id]: chiBolt,
-    [venomSpit.id]: venomSpit
+    [venomSpit.id]: venomSpit,
+    [brogLeap.id]: brogLeap
   };
 }
 

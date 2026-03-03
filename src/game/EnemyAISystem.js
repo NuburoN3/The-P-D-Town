@@ -45,6 +45,17 @@ function resetEnemy(enemy) {
   enemy.recoverUntil = 0;
   enemy.challengeDefeatedCounted = false;
   enemy.bogDefeatedCounted = false;
+  if ("pendingAttackType" in enemy) enemy.pendingAttackType = "";
+  if (String(enemy?.id || "").toLowerCase() === "thebrog") {
+    enemy.brogAttackCycle = "venom";
+    enemy.brogLeapCooldownUntil = 0;
+    enemy.brogLeapStartAt = 0;
+    enemy.brogLeapLandAt = 0;
+    enemy.brogLeapStartX = enemy.spawnX;
+    enemy.brogLeapStartY = enemy.spawnY;
+    enemy.brogLeapTargetX = enemy.spawnX;
+    enemy.brogLeapTargetY = enemy.spawnY;
+  }
 }
 
 function beginEnemyWindup(enemy, now, toPlayerX, toPlayerY, onWindupStarted) {
@@ -287,11 +298,58 @@ function createZoneKeeperBehavior({ tileSize, onWindupStarted }) {
     const toPlayerX = target.toTargetX;
     const toPlayerY = target.toTargetY;
     const distanceToPlayer = target.distanceToTarget;
+    const enemyId = String(enemy?.id || "").toLowerCase();
+    const isBrog = enemyId === "thebrog";
+    if (isBrog) {
+      if (enemy.brogAttackCycle !== "venom" && enemy.brogAttackCycle !== "leap") {
+        enemy.brogAttackCycle = "venom";
+      }
+      if (!Number.isFinite(enemy.brogLeapCooldownUntil)) {
+        enemy.brogLeapCooldownUntil = 0;
+      }
+    }
+
+    if (
+      isBrog &&
+      enemy.brogAttackCycle === "leap" &&
+      now >= enemy.brogLeapCooldownUntil &&
+      distanceToPlayer <= enemy.aggroRange * 1.2 &&
+      now - enemy.lastAttackAt >= enemy.attackCooldownMs
+    ) {
+      updateEnemyDirection(enemy, toPlayerX, toPlayerY);
+      enemy.pendingAttackType = "brogLeap";
+      enemy.pendingStrike = false;
+      enemy.state = "brogLeap";
+      enemy.brogLeapStartAt = now;
+      enemy.brogLeapLandAt = now + 900;
+      enemy.brogLeapStartX = enemy.x;
+      enemy.brogLeapStartY = enemy.y;
+      // Leap lands where the player was standing when the leap began.
+      enemy.brogLeapTargetX = player.x;
+      enemy.brogLeapTargetY = player.y;
+      enemy.lastAttackAt = now;
+      enemy.attackStrikeAt = enemy.brogLeapLandAt;
+      enemy.brogLeapCooldownUntil = now + 6000;
+      enemy.brogAttackCycle = "venom";
+      if (typeof onWindupStarted === "function") {
+        onWindupStarted({ enemy, now, toPlayerX, toPlayerY });
+      }
+      return;
+    }
 
     if (
       distanceToPlayer <= enemy.attackRange &&
       now - enemy.lastAttackAt >= enemy.attackCooldownMs
     ) {
+      if (isBrog && enemy.brogAttackCycle === "leap" && now < enemy.brogLeapCooldownUntil) {
+        // Hold for leap availability so The Brog alternates venom and leap.
+        enemy.state = "strafe";
+        return;
+      }
+      if (isBrog) {
+        enemy.pendingAttackType = "venomSpit";
+        enemy.brogAttackCycle = "leap";
+      }
       beginEnemyWindup(enemy, now, toPlayerX, toPlayerY, onWindupStarted);
       return;
     }
@@ -433,6 +491,27 @@ export function createEnemyAISystem({
         enemy.pendingStrike = true;
         enemy.state = "recover";
         enemy.recoverUntil = now + enemy.attackRecoveryMs;
+      }
+      return false;
+    }
+
+    if (enemy.state === "brogLeap") {
+      const startAt = Number.isFinite(enemy.brogLeapStartAt) ? enemy.brogLeapStartAt : now;
+      const landAt = Number.isFinite(enemy.brogLeapLandAt) ? enemy.brogLeapLandAt : now;
+      const totalMs = Math.max(1, landAt - startAt);
+      const t = Math.max(0, Math.min(1, (now - startAt) / totalMs));
+      const startX = Number.isFinite(enemy.brogLeapStartX) ? enemy.brogLeapStartX : enemy.x;
+      const startY = Number.isFinite(enemy.brogLeapStartY) ? enemy.brogLeapStartY : enemy.y;
+      const targetX = Number.isFinite(enemy.brogLeapTargetX) ? enemy.brogLeapTargetX : enemy.x;
+      const targetY = Number.isFinite(enemy.brogLeapTargetY) ? enemy.brogLeapTargetY : enemy.y;
+      enemy.x = startX + (targetX - startX) * t;
+      enemy.y = startY + (targetY - startY) * t;
+      if (now >= landAt) {
+        enemy.x = targetX;
+        enemy.y = targetY;
+        enemy.pendingStrike = true;
+        enemy.state = "recover";
+        enemy.recoverUntil = now + Math.max(180, enemy.attackRecoveryMs);
       }
       return false;
     }
