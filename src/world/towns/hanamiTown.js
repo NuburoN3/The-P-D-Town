@@ -938,9 +938,9 @@ export const hanamiTown = {
             y: 33,
             dir: "down",
             dialogue: [
-                "Oh, you're Adrian aren't you? Pat's new guest.",
-                "I'm Elias, and I love animals.",
-                "Do you love animals too?"
+                "Well now, hello there, stranger. I've not seen your face round 'ere before",
+                "Oh, you're Pat's new guest? I'm Elias and I'm not sure if you can tell, but I blimmin' love animals I does! Tell me, what do I call you?",
+                "Hello to you, Adrian... hmm, Adrian, tell me, do you love animals too?"
             ],
             hasTrainingChoice: false
         },

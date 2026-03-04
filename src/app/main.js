@@ -331,6 +331,8 @@ const questUpdateNoticeState = {
 const questTrackerState = {
   quests: [],
   collapsedById: Object.create(null),
+  preferredOpenQuestId: "",
+  activeQuestId: "",
   updatedAt: 0
 };
 const questCompletionState = {
@@ -545,6 +547,27 @@ function openBasicTrainingQuestCompletionPanel(sourceNpcName = "Mr. Hanami") {
   return true;
 }
 
+function openEliasSideQuestCompletionPanel(sourceNpcName = "Farmer Elias") {
+  const tp = getTownProgressForCurrentTown();
+  ensureEliasSideQuestProgress(tp);
+  if (!tp.eliasQuestRewardReady || tp.eliasQuestClaimed) return false;
+  if (!isFreeExploreState(gameState)) return false;
+  setPreviousWorldState(gameState);
+  questCompletionState.active = true;
+  questCompletionState.questId = ELIAS_SIDE_QUEST_ID;
+  questCompletionState.questName = "Farmer Elias' Venom Request";
+  questCompletionState.summary = "You accepted Farmer Elias's side quest, defeated The Brog, and recovered a Venom Sac from the leftovers. Elias thanked you for helping protect his animals.";
+  questCompletionState.rewards = [
+    { id: "silver", label: "150 Silver", sprite: "silverCoins" },
+    { id: "xp", label: "100 XP", sprite: "" },
+    { id: "obey", label: "Obey Skill", sprite: "obey" }
+  ];
+  questCompletionState.requestComplete = false;
+  questCompletionState.sourceNpcName = String(sourceNpcName || "Farmer Elias");
+  gameState = GAME_STATES.QUEST_COMPLETION;
+  return true;
+}
+
 function closeQuestCompletionPanel() {
   if (gameState !== GAME_STATES.QUEST_COMPLETION) return;
   questCompletionState.active = false;
@@ -570,7 +593,9 @@ const HANAMI_BOGLAND_EXIT_Y = 0;
 const HANAMI_BOGLAND_SIGN_TILE_X = 28;
 const HANAMI_BOGLAND_SIGN_TILE_Y = 5;
 const BROG_BOSS_ID = "theBrog";
-const BROG_GUARANTEED_DROP_ITEM_NAME = "Brog Trophy";
+const BROG_GUARANTEED_DROP_ITEM_NAME = "Venom Sac";
+const ELIAS_SIDE_QUEST_ID = "elias-venom-side-quest";
+const ELIAS_VENOM_SAC_ITEM_NAME = "Venom Sac";
 const BASE_COMBAT_XP_NEEDED = 150;
 const COMBAT_XP_GROWTH_MULTIPLIER = 1.25;
 const patInnIntroState = {
@@ -2054,6 +2079,7 @@ function getTownProgressForCurrentTown() {
     normalized.rumorQuestActive = true;
   }
   ensureBogQuestRewardProgress(normalized);
+  ensureEliasSideQuestProgress(normalized);
   gameFlags.townProgress[townId] = normalized;
   return normalized;
 }
@@ -2066,10 +2092,16 @@ function getBogQuestRewardItemName() {
   return String(trainingContent?.bogQuest?.rewardItemName || "Kendo Stick");
 }
 
+function hasInventoryItem(itemName) {
+  const name = String(itemName || "").trim();
+  if (!name) return false;
+  const quantity = Number(playerInventory?.[name] || 0);
+  return Number.isFinite(quantity) && quantity > 0;
+}
+
 function hasBogQuestRewardItem() {
   const rewardItemName = getBogQuestRewardItemName();
-  const quantity = Number(playerInventory?.[rewardItemName] || 0);
-  if (Number.isFinite(quantity) && quantity > 0) return true;
+  if (hasInventoryItem(rewardItemName)) return true;
   const equippedWeaponName = String(playerEquipment?.weapon || "").trim();
   return equippedWeaponName.length > 0 && equippedWeaponName === rewardItemName;
 }
@@ -2078,6 +2110,39 @@ function ensureBogQuestRewardProgress(tp) {
   if (!tp || typeof tp !== "object") return;
   if (!tp.bogQuestRewardAwarded && hasBogQuestRewardItem()) {
     tp.bogQuestRewardAwarded = true;
+  }
+}
+
+function ensureEliasSideQuestProgress(tp) {
+  if (!tp || typeof tp !== "object") return;
+  if (!tp.eliasVenomSacCollected && hasInventoryItem(ELIAS_VENOM_SAC_ITEM_NAME)) {
+    tp.eliasVenomSacCollected = true;
+  }
+  if (tp.eliasQuestClaimed) {
+    tp.eliasQuestOffered = true;
+    tp.eliasQuestActive = false;
+    tp.eliasVenomSacCollected = true;
+    tp.eliasVenomSacTurnedIn = true;
+    tp.eliasQuestRewardReady = false;
+    tp.obeySkillAwarded = true;
+    return;
+  }
+  if (tp.eliasQuestRewardReady) {
+    tp.eliasQuestOffered = true;
+    tp.eliasQuestActive = false;
+    tp.eliasVenomSacCollected = true;
+    tp.eliasVenomSacTurnedIn = true;
+    return;
+  }
+  if (tp.eliasVenomSacTurnedIn) {
+    tp.eliasQuestOffered = true;
+    tp.eliasQuestActive = false;
+    tp.eliasVenomSacCollected = true;
+    tp.eliasQuestRewardReady = true;
+    return;
+  }
+  if (tp.eliasQuestOffered && !tp.eliasVenomSacTurnedIn) {
+    tp.eliasQuestActive = true;
   }
 }
 
@@ -2113,15 +2178,13 @@ function getNextMissingRumorClue(tp) {
   return null;
 }
 
-function deriveObjective() {
-  normalizeGlobalStoryFlags(gameFlags);
+function deriveBasicTrainingObjective(tp) {
   if (!gameFlags.basicTrainingStarted) {
     return {
       id: "",
       text: ""
     };
   }
-  const tp = getTownProgressForCurrentTown();
   if (tp.basicTrainingQuestClaimed) {
     return {
       id: "",
@@ -2247,6 +2310,78 @@ function deriveObjective() {
   };
 }
 
+function deriveEliasSideQuestObjective(tp) {
+  const started = Boolean(
+    tp.eliasQuestOffered ||
+    tp.eliasQuestActive ||
+    tp.eliasVenomSacCollected ||
+    tp.eliasVenomSacTurnedIn ||
+    tp.eliasQuestRewardReady ||
+    tp.eliasQuestClaimed
+  );
+  if (!started || tp.eliasQuestClaimed) {
+    return {
+      id: "",
+      text: ""
+    };
+  }
+  if (!tp.eliasQuestOffered) {
+    return {
+      id: "elias-side-accept",
+      text: "Objective: Speak to Farmer Elias and accept his side quest."
+    };
+  }
+  if (tp.eliasQuestRewardReady) {
+    return {
+      id: "elias-side-claim",
+      text: "Objective: Speak to Farmer Elias and claim your reward."
+    };
+  }
+  if (tp.eliasQuestActive && !tp.eliasVenomSacCollected) {
+    return {
+      id: "elias-side-collect",
+      text: "Objective: Defeat The Brog and loot a Venom Sac from its leftovers."
+    };
+  }
+  if (tp.eliasQuestActive && tp.eliasVenomSacCollected && !tp.eliasVenomSacTurnedIn) {
+    return {
+      id: "elias-side-turn-in",
+      text: "Objective: Return the Venom Sac to Farmer Elias."
+    };
+  }
+  if (tp.eliasVenomSacTurnedIn && !tp.eliasQuestClaimed) {
+    return {
+      id: "elias-side-claim",
+      text: "Objective: Speak to Farmer Elias and claim your reward."
+    };
+  }
+  return {
+    id: "elias-side-collect",
+    text: "Objective: Defeat The Brog and loot a Venom Sac from its leftovers."
+  };
+}
+
+function deriveObjective() {
+  normalizeGlobalStoryFlags(gameFlags);
+  const tp = getTownProgressForCurrentTown();
+  const activeQuestId = String(questTrackerState.activeQuestId || "");
+  if (activeQuestId === ELIAS_SIDE_QUEST_ID) {
+    return deriveEliasSideQuestObjective(tp);
+  }
+  if (activeQuestId === "basic-training") {
+    return deriveBasicTrainingObjective(tp);
+  }
+
+  const basicObjective = deriveBasicTrainingObjective(tp);
+  if (basicObjective.id || basicObjective.text) return basicObjective;
+  const eliasObjective = deriveEliasSideQuestObjective(tp);
+  if (eliasObjective.id || eliasObjective.text) return eliasObjective;
+  return {
+    id: "",
+    text: ""
+  };
+}
+
 function buildBasicTrainingQuest() {
   normalizeGlobalStoryFlags(gameFlags);
   if (!gameFlags.basicTrainingStarted) return null;
@@ -2330,23 +2465,121 @@ function buildBasicTrainingQuest() {
   };
 }
 
+function buildEliasSideQuest() {
+  normalizeGlobalStoryFlags(gameFlags);
+  const tp = getTownProgressForCurrentTown();
+  const started = Boolean(
+    tp.eliasQuestOffered ||
+    tp.eliasQuestActive ||
+    tp.eliasVenomSacCollected ||
+    tp.eliasVenomSacTurnedIn ||
+    tp.eliasQuestRewardReady ||
+    tp.eliasQuestClaimed
+  );
+  if (!started) return null;
+  const steps = [
+    {
+      id: "elias-side-accept",
+      text: "Accept Farmer Elias's side quest.",
+      done: Boolean(tp.eliasQuestOffered)
+    },
+    {
+      id: "elias-side-collect",
+      text: "Defeat The Brog and collect a Venom Sac from its leftovers.",
+      done: Boolean(tp.eliasVenomSacCollected || tp.eliasVenomSacTurnedIn || tp.eliasQuestClaimed)
+    },
+    {
+      id: "elias-side-turn-in",
+      text: "Return the Venom Sac to Farmer Elias.",
+      done: Boolean(tp.eliasVenomSacTurnedIn || tp.eliasQuestClaimed)
+    },
+    {
+      id: "elias-side-claim",
+      text: "Speak to Farmer Elias and claim your reward.",
+      done: Boolean(tp.eliasQuestClaimed)
+    }
+  ];
+  let currentStepIndex = steps.findIndex((step) => !step.done);
+  if (currentStepIndex < 0) currentStepIndex = steps.length - 1;
+  return {
+    id: ELIAS_SIDE_QUEST_ID,
+    name: "Farmer Elias (Side Quest)",
+    steps,
+    currentStepIndex,
+    completed: steps.every((step) => step.done)
+  };
+}
+
 function syncQuestTrackerState(now = performance.now()) {
   const basicTraining = buildBasicTrainingQuest();
-  if (basicTraining) {
-    const previousQuest = Array.isArray(questTrackerState.quests)
-      ? questTrackerState.quests.find((quest) => quest && quest.id === basicTraining.id)
-      : null;
-    const wasCompleted = Boolean(previousQuest?.completed);
-    if (!wasCompleted && basicTraining.completed) {
-      questTrackerState.collapsedById[basicTraining.id] = true;
+  const eliasSideQuest = buildEliasSideQuest();
+  const availableQuests = [];
+  if (basicTraining) availableQuests.push(basicTraining);
+  if (eliasSideQuest) availableQuests.push(eliasSideQuest);
+  const previousQuests = Array.isArray(questTrackerState.quests) ? questTrackerState.quests : [];
+  const previousById = new Map();
+  for (const quest of previousQuests) {
+    const id = String(quest?.id || "");
+    if (id) previousById.set(id, quest);
+  }
+  const availableIds = new Set();
+  for (const quest of availableQuests) {
+    const id = String(quest?.id || "");
+    if (id) availableIds.add(id);
+  }
+  const newlyStartedQuestIds = [];
+  for (const quest of availableQuests) {
+    const id = String(quest?.id || "");
+    if (id && !previousById.has(id)) newlyStartedQuestIds.push(id);
+  }
+  if (newlyStartedQuestIds.length > 0) {
+    questTrackerState.preferredOpenQuestId = newlyStartedQuestIds[newlyStartedQuestIds.length - 1];
+    questTrackerState.activeQuestId = questTrackerState.preferredOpenQuestId;
+  } else if (!availableIds.has(questTrackerState.preferredOpenQuestId)) {
+    questTrackerState.preferredOpenQuestId = "";
+  }
+  if (!availableIds.has(questTrackerState.activeQuestId)) {
+    if (availableIds.has(questTrackerState.preferredOpenQuestId)) {
+      questTrackerState.activeQuestId = questTrackerState.preferredOpenQuestId;
+    } else {
+      const firstQuest = availableQuests[0];
+      questTrackerState.activeQuestId = String(firstQuest?.id || "");
     }
-    const collapsed = Boolean(questTrackerState.collapsedById[basicTraining.id]);
-    questTrackerState.quests = [{
-      ...basicTraining,
+  }
+  for (const id of Object.keys(questTrackerState.collapsedById)) {
+    if (!availableIds.has(id)) delete questTrackerState.collapsedById[id];
+  }
+  questTrackerState.quests = availableQuests.map((quest) => {
+    const id = String(quest?.id || "");
+    const previousQuest = previousById.get(id);
+    const wasCompleted = Boolean(previousQuest?.completed);
+    const isNowCompleted = Boolean(quest?.completed);
+    if (id && !wasCompleted && isNowCompleted) {
+      questTrackerState.collapsedById[id] = true;
+      if (questTrackerState.preferredOpenQuestId === id) questTrackerState.preferredOpenQuestId = "";
+    }
+    const hasCollapsedState = Object.prototype.hasOwnProperty.call(questTrackerState.collapsedById, id);
+    let collapsed = hasCollapsedState ? Boolean(questTrackerState.collapsedById[id]) : true;
+    if (id && questTrackerState.preferredOpenQuestId === id) {
+      collapsed = false;
+    }
+    if (id) questTrackerState.collapsedById[id] = collapsed;
+    return {
+      ...quest,
       collapsed
-    }];
+    };
+  });
+  const expandedQuestIds = questTrackerState.quests
+    .filter((quest) => quest && !quest.collapsed)
+    .map((quest) => String(quest.id || ""))
+    .filter(Boolean);
+  if (expandedQuestIds.length === 1) {
+    questTrackerState.activeQuestId = expandedQuestIds[0];
   } else {
-    questTrackerState.quests = [];
+    const activeIsExpanded = expandedQuestIds.includes(questTrackerState.activeQuestId);
+    if (!activeIsExpanded && expandedQuestIds.length > 0) {
+      questTrackerState.activeQuestId = expandedQuestIds[0];
+    }
   }
   questTrackerState.updatedAt = now;
 }
@@ -2407,6 +2640,19 @@ function resolveObjectiveMarker(objectiveId) {
     "taiko-preparation": [
       { townId: "hanamiTown", areaId: "hanamiDojo", tileX: 7, tileY: 4, label: "Mr. Hanami" }
     ],
+    "elias-side-accept": [
+      { townId: "hanamiTown", areaId: "overworld", tileX: 15, tileY: 33, label: "Farmer Elias" }
+    ],
+    "elias-side-collect": [
+      { townId: "hanamiTown", areaId: "overworld", tileX: 28, tileY: 42, label: "Bogland gate" },
+      { townId: "hanamiTown", areaId: "bogland", tileX: 48, tileY: 38, label: "The Brog" }
+    ],
+    "elias-side-turn-in": [
+      { townId: "hanamiTown", areaId: "overworld", tileX: 15, tileY: 33, label: "Farmer Elias" }
+    ],
+    "elias-side-claim": [
+      { townId: "hanamiTown", areaId: "overworld", tileX: 15, tileY: 33, label: "Farmer Elias" }
+    ],
     "town-discipline": [
       { townId: "hanamiTown", areaId: "overworld", tileX: 28, tileY: 29, label: "Town center" }
     ]
@@ -2427,6 +2673,15 @@ function resolveObjectiveMarkerArea(objectiveId) {
       tileW: 18,
       tileH: 12,
       label: "Ogre territory"
+    },
+    "elias-side-collect": {
+      townId: "hanamiTown",
+      areaId: "bogland",
+      tileX: 42,
+      tileY: 31,
+      tileW: 14,
+      tileH: 12,
+      label: "The Brog's bog"
     }
   };
   const area = areas[objectiveId];
@@ -2605,9 +2860,17 @@ function resolveEnemyLootDrop(enemy) {
   };
 }
 
-function spawnEnemyLeftovers(enemy, now = performance.now()) {
-  const loot = resolveEnemyLootDrop(enemy);
-  if (!loot) return null;
+function spawnEnemyLeftovers(enemy, now = performance.now(), guaranteedItems = []) {
+  const loot = resolveEnemyLootDrop(enemy) || { items: [], silver: 0, gold: 0 };
+  const normalizedGuaranteedItems = normalizeLootEntries(guaranteedItems);
+  for (const guaranteedItem of normalizedGuaranteedItems) {
+    const existing = loot.items.find((item) => item?.name === guaranteedItem.name);
+    if (existing) {
+      existing.amount = (Number(existing.amount) || 0) + guaranteedItem.amount;
+    } else {
+      loot.items.push({ name: guaranteedItem.name, amount: guaranteedItem.amount });
+    }
+  }
 
   const enemyWidth = Number.isFinite(enemy?.width) ? enemy.width : TILE;
   const enemyHeight = Number.isFinite(enemy?.height) ? enemy.height : TILE;
@@ -2751,8 +3014,9 @@ function grantCombatXpAndCollectSummary(enemy, now) {
   }
   const enemyId = typeof enemy?.id === "string" ? enemy.id.toLowerCase() : "";
   const enemyName = typeof enemy?.name === "string" ? enemy.name.toLowerCase() : "";
+  const isBrog = enemyId === BROG_BOSS_ID.toLowerCase() || enemyName === "the brog";
   const isOgre = enemyId.includes("ogre") || enemyName.includes("ogre");
-  const xpGained = isOgre ? 9 : (enemy?.countsForChallenge ? 3 : 2);
+  const xpGained = isBrog ? 28 : (isOgre ? 9 : (enemy?.countsForChallenge ? 3 : 2));
   const levelsGained = applyCombatXpGain(xpGained, now);
 
   return {
@@ -2833,6 +3097,30 @@ function completeBasicTrainingQuestRewards(now = performance.now()) {
   itemAlert.startedAt = now;
   gameFlags.hanamiBoglandExitPending = true;
   gameFlags.hanamiLeftBogland = false;
+  questCompletionState.active = false;
+  questCompletionState.requestComplete = false;
+  mouseUiState.questCompletionClickRequest = false;
+  gameState = resolveReturnWorldState();
+  syncObjectiveState(now);
+}
+
+function completeEliasSideQuestRewards(now = performance.now()) {
+  const tp = getTownProgressForCurrentTown();
+  ensureEliasSideQuestProgress(tp);
+  if (tp.eliasQuestClaimed) {
+    closeQuestCompletionPanel();
+    return;
+  }
+  tp.eliasQuestClaimed = true;
+  tp.eliasQuestRewardReady = false;
+  tp.eliasQuestActive = false;
+  tp.obeySkillAwarded = true;
+  playerCurrency.silver = (Number.isFinite(playerCurrency.silver) ? playerCurrency.silver : 0) + 150;
+  applyCombatXpGain(100, now);
+  unlockPlayerSkill(OBEY_SKILL_ID);
+  itemAlert.active = true;
+  itemAlert.text = "Side quest complete: Farmer Elias' Venom Request. Rewards claimed.";
+  itemAlert.startedAt = now;
   questCompletionState.active = false;
   questCompletionState.requestComplete = false;
   mouseUiState.questCompletionClickRequest = false;
@@ -2922,18 +3210,20 @@ function handleEnemyDefeatRewards(enemy, now) {
   handleChallengeEnemyDefeat(enemy, now);
   const reward = grantCombatXpAndCollectSummary(enemy, now);
   grantPetCombatXpFromEnemyDefeat(reward.xpGained);
-  spawnEnemyLeftovers(enemy, now);
   const enemyId = typeof enemy?.id === "string" ? enemy.id.toLowerCase() : "";
+  const guaranteedItems = enemyId === BROG_BOSS_ID.toLowerCase()
+    ? [{ name: BROG_GUARANTEED_DROP_ITEM_NAME, amount: 1 }]
+    : [];
+  spawnEnemyLeftovers(enemy, now, guaranteedItems);
   if (enemyId === BROG_BOSS_ID.toLowerCase()) {
-    playerInventory[BROG_GUARANTEED_DROP_ITEM_NAME] = (Number(playerInventory[BROG_GUARANTEED_DROP_ITEM_NAME]) || 0) + 1;
     gameFlags.brogDefeated = true;
     itemAlert.active = true;
-    itemAlert.text = `Boss drop acquired: ${BROG_GUARANTEED_DROP_ITEM_NAME}`;
+    itemAlert.text = `Boss drop added to leftovers: ${BROG_GUARANTEED_DROP_ITEM_NAME}`;
     itemAlert.startedAt = now;
     queueCombatReward({
       title: "Boss Defeated: The Brog",
       lines: [
-        `Guaranteed drop: ${BROG_GUARANTEED_DROP_ITEM_NAME}`,
+        `Leftovers contain: ${BROG_GUARANTEED_DROP_ITEM_NAME}`,
         "The Bog Frog has been slain."
       ],
       durationMs: 3600
@@ -3741,7 +4031,11 @@ function updateRuntimeUi(now) {
   if (gameState === GAME_STATES.QUEST_COMPLETION) {
     if (questCompletionState.requestComplete) {
       questCompletionState.requestComplete = false;
-      completeBasicTrainingQuestRewards(now);
+      if (questCompletionState.questId === ELIAS_SIDE_QUEST_ID) {
+        completeEliasSideQuestRewards(now);
+      } else {
+        completeBasicTrainingQuestRewards(now);
+      }
     }
     return;
   }
@@ -4234,8 +4528,9 @@ interactionSystem = createInteractionSystem({
   clearInteractPressed: () => input.clearInteractPressed(),
   syncObjectiveState: () => syncObjectiveState(performance.now()),
   openQuestCompletionPanel: (questId, npcName) => {
-    if (questId !== "basic-training") return false;
-    return openBasicTrainingQuestCompletionPanel(npcName);
+    if (questId === "basic-training") return openBasicTrainingQuestCompletionPanel(npcName);
+    if (questId === ELIAS_SIDE_QUEST_ID) return openEliasSideQuestCompletionPanel(npcName);
+    return false;
   },
   spawnVisualEffect: (type, options) => vfxSystem.spawn(type, options),
   canEnterDoor: ({ doorTile, destination, townId, areaId, playerEquipment: equipment }) => {

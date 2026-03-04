@@ -2028,20 +2028,53 @@ function drawQuestTrackerOverlay(ctx, state, canvas, ui, colors) {
 
   let cursorY = questListY + 10;
   for (const quest of quests) {
+    const id = String(quest?.id || "");
+    const isActiveQuest = id.length > 0 && id === String(state.questTrackerState?.activeQuestId || "");
     const rowX = questListX + 8;
     const rowW = questListW - 16;
     const rowH = 32;
+    const setActiveLabel = isActiveQuest ? "Active" : "Set Active";
+    ctx.font = FONT_12;
+    const setActiveW = Math.ceil(ctx.measureText(setActiveLabel).width) + 14;
+    const setActiveH = 18;
+    const setActiveX = rowX + rowW - setActiveW - 8;
+    const setActiveY = cursorY + 7;
     const isHeaderHovered = wasInsideCanvas &&
       mouseX >= rowX && mouseX <= rowX + rowW &&
       mouseY >= cursorY && mouseY <= cursorY + rowH;
+    const isSetActiveHovered = wasInsideCanvas &&
+      mouseX >= setActiveX && mouseX <= setActiveX + setActiveW &&
+      mouseY >= setActiveY && mouseY <= setActiveY + setActiveH;
+    if (isActiveQuest) {
+      ctx.fillStyle = "rgba(140, 220, 255, 0.12)";
+      ctx.fillRect(rowX, cursorY, rowW, rowH);
+    }
     if (isHeaderHovered) {
       ctx.fillStyle = "rgba(255, 238, 190, 0.12)";
       ctx.fillRect(rowX, cursorY, rowW, rowH);
     }
-    if (clickRequested && isHeaderHovered) {
-      const id = String(quest?.id || "");
+    if (clickRequested && isSetActiveHovered) {
+      if (id && state.questTrackerState) {
+        state.questTrackerState.activeQuestId = id;
+      }
+      clickRequested = false;
+    } else if (clickRequested && isHeaderHovered) {
       if (id && state.questTrackerState?.collapsedById) {
-        state.questTrackerState.collapsedById[id] = !state.questTrackerState.collapsedById[id];
+        state.questTrackerState.activeQuestId = id;
+        const wasCollapsed = Boolean(state.questTrackerState.collapsedById[id]);
+        if (wasCollapsed) {
+          for (const otherQuest of quests) {
+            const otherId = String(otherQuest?.id || "");
+            if (!otherId) continue;
+            state.questTrackerState.collapsedById[otherId] = otherId !== id;
+          }
+          state.questTrackerState.preferredOpenQuestId = id;
+        } else {
+          state.questTrackerState.collapsedById[id] = true;
+          if (state.questTrackerState.preferredOpenQuestId === id) {
+            state.questTrackerState.preferredOpenQuestId = "";
+          }
+        }
       }
       clickRequested = false;
     }
@@ -2061,6 +2094,21 @@ function drawQuestTrackerOverlay(ctx, state, canvas, ui, colors) {
     ctx.font = FONT_20;
     drawUiText(ctx, caret, rowX + 4, cursorY + 20, colors);
     drawUiText(ctx, questName, rowX + 26, cursorY + 20, questTitleColors);
+    ctx.fillStyle = isActiveQuest
+      ? "rgba(114, 201, 245, 0.3)"
+      : (isSetActiveHovered ? "rgba(255, 236, 194, 0.2)" : "rgba(255, 236, 194, 0.12)");
+    ctx.fillRect(setActiveX, setActiveY, setActiveW, setActiveH);
+    ctx.strokeStyle = isActiveQuest
+      ? "rgba(114, 201, 245, 0.9)"
+      : "rgba(255, 236, 194, 0.7)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(setActiveX + 0.5, setActiveY + 0.5, setActiveW - 1, setActiveH - 1);
+    ctx.font = FONT_12;
+    drawUiText(ctx, setActiveLabel, setActiveX + 7, setActiveY + 13, colors);
+    if (isActiveQuest) {
+      ctx.font = FONT_12;
+      drawUiText(ctx, "[Active]", Math.max(rowX + 26, setActiveX - 72), cursorY + 20, colors);
+    }
     if (questCompleted) {
       const questNameWidth = Math.ceil(ctx.measureText(questName).width);
       const strikeY = cursorY + 13;

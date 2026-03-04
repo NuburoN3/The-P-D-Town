@@ -13,6 +13,12 @@ const DEFAULT_TOWN_PROGRESS = Object.freeze({
   rumorClueChapel: false,
   rumorClueBar: false,
   obeySkillAwarded: false,
+  eliasQuestOffered: false,
+  eliasQuestActive: false,
+  eliasVenomSacCollected: false,
+  eliasVenomSacTurnedIn: false,
+  eliasQuestRewardReady: false,
+  eliasQuestClaimed: false,
   bogQuestOffered: false,
   bogQuestActive: false,
   bogQuestKills: 0,
@@ -45,6 +51,43 @@ export function normalizeTownProgress(progress = {}) {
   next.bogQuestKills = Number.isFinite(next.bogQuestKills)
     ? Math.max(0, Math.min(next.bogQuestTarget, Math.round(next.bogQuestKills)))
     : 0;
+
+  const hasAnyEliasQuestState = (
+    next.eliasQuestOffered ||
+    next.eliasQuestActive ||
+    next.eliasVenomSacCollected ||
+    next.eliasVenomSacTurnedIn ||
+    next.eliasQuestRewardReady ||
+    next.eliasQuestClaimed
+  );
+  if (next.obeySkillAwarded && !hasAnyEliasQuestState) {
+    next.eliasQuestOffered = true;
+    next.eliasQuestActive = false;
+    next.eliasVenomSacCollected = true;
+    next.eliasVenomSacTurnedIn = true;
+    next.eliasQuestRewardReady = false;
+    next.eliasQuestClaimed = true;
+  }
+  if (next.eliasQuestClaimed) {
+    next.eliasQuestOffered = true;
+    next.eliasQuestActive = false;
+    next.eliasVenomSacCollected = true;
+    next.eliasVenomSacTurnedIn = true;
+    next.eliasQuestRewardReady = false;
+    next.obeySkillAwarded = true;
+  } else if (next.eliasQuestRewardReady) {
+    next.eliasQuestOffered = true;
+    next.eliasQuestActive = false;
+    next.eliasVenomSacCollected = true;
+    next.eliasVenomSacTurnedIn = true;
+  } else if (next.eliasVenomSacTurnedIn) {
+    next.eliasQuestOffered = true;
+    next.eliasQuestActive = false;
+    next.eliasVenomSacCollected = true;
+    next.eliasQuestRewardReady = true;
+  } else if (next.eliasQuestActive) {
+    next.eliasQuestOffered = true;
+  }
 
   return next;
 }

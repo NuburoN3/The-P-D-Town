@@ -26,7 +26,8 @@ const FALLBACK_RUMOR_CLUE_GROUPS = Object.freeze([
     ]
   }
 ]);
-const SKILL_SLOT_COUNT = 8;
+const ELIAS_SIDE_QUEST_ID = "elias-venom-side-quest";
+const ELIAS_VENOM_SAC_ITEM_NAME = "Venom Sac";
 
 function getRumorCluesFound(tp) {
   return Number(tp.rumorCluePiazza) + Number(tp.rumorClueChapel) + Number(tp.rumorClueBar);
@@ -44,6 +45,13 @@ function getBogQuestTarget(tp, trainingContent) {
 
 function getBogQuestRewardItemName(trainingContent) {
   return String(trainingContent?.bogQuest?.rewardItemName || "Kendo Stick");
+}
+
+function hasInventoryItem(playerInventory, itemName) {
+  const normalizedName = String(itemName || "").trim();
+  if (!normalizedName) return false;
+  const count = Number(playerInventory?.[normalizedName] || 0);
+  return Number.isFinite(count) && count > 0;
 }
 
 function formatBogProgressText(tp, trainingContent) {
@@ -78,72 +86,6 @@ function getRumorLeadLabel(clueKey) {
   if (clueKey === "rumorClueChapel") return "chapel";
   if (clueKey === "rumorClueBar") return "bar";
   return "next witness";
-}
-
-function ensurePlayerUnlockedSkill(player, skillId) {
-  if (!player || typeof player !== "object") return false;
-  const normalized = String(skillId || "").trim().toLowerCase();
-  if (!normalized) return false;
-  if (!Array.isArray(player.unlockedSkills)) {
-    player.unlockedSkills = [];
-  }
-  if (player.unlockedSkills.includes(normalized)) return false;
-  player.unlockedSkills.push(normalized);
-  return true;
-}
-
-function getSkillDefaults(skillId) {
-  const normalized = String(skillId || "").trim().toLowerCase();
-  if (normalized === "obey") return { manaCost: 5, cooldownMs: 0 };
-  if (normalized === "bonk") return { manaCost: 2, cooldownMs: 8000 };
-  return { manaCost: 0, cooldownMs: 0 };
-}
-
-function getSkillDisplayName(skillId) {
-  const normalized = String(skillId || "").trim().toLowerCase();
-  if (normalized === "obey") return "Obey";
-  if (normalized === "bonk") return "Bonk";
-  return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : "";
-}
-
-function grantSkillToFirstEmptySlot(player, skillId) {
-  if (!player || typeof player !== "object") return -1;
-  const normalized = String(skillId || "").trim().toLowerCase();
-  if (!normalized) return -1;
-  ensurePlayerUnlockedSkill(player, normalized);
-  if (!Array.isArray(player.skillSlots)) {
-    player.skillSlots = [];
-  }
-  const requiredLength = Math.max(SKILL_SLOT_COUNT, player.skillSlots.length);
-  while (player.skillSlots.length < requiredLength) {
-    player.skillSlots.push({
-      slot: player.skillSlots.length + 1,
-      id: null,
-      name: "",
-      manaCost: 0,
-      cooldownMs: 0,
-      lastUsedAt: -Infinity
-    });
-  }
-  const existingIndex = player.skillSlots.findIndex((slot) => String(slot?.id || "").trim().toLowerCase() === normalized);
-  if (existingIndex >= 0) return existingIndex;
-  for (let i = 0; i < player.skillSlots.length; i++) {
-    const slot = player.skillSlots[i] && typeof player.skillSlots[i] === "object"
-      ? player.skillSlots[i]
-      : {};
-    if (slot.id) continue;
-    const defaults = getSkillDefaults(normalized);
-    player.skillSlots[i] = {
-      slot: Number.isFinite(slot.slot) ? slot.slot : (i + 1),
-      id: normalized,
-      name: String(slot.name || getSkillDisplayName(normalized)),
-      manaCost: defaults.manaCost,
-      cooldownMs: defaults.cooldownMs,
-      lastUsedAt: Number.isFinite(slot.lastUsedAt) ? slot.lastUsedAt : -Infinity
-    };
-    return i;
-  }
-  return -1;
 }
 
 export function createNPCInteractionHandler({
@@ -185,6 +127,38 @@ export function createNPCInteractionHandler({
         gameFlags.completedTraining = false;
       }
     };
+    const ensureEliasQuestConsistency = (progress) => {
+      if (!progress || typeof progress !== "object") return;
+      if (!progress.eliasVenomSacCollected && hasInventoryItem(playerInventory, ELIAS_VENOM_SAC_ITEM_NAME)) {
+        progress.eliasVenomSacCollected = true;
+      }
+      if (progress.eliasQuestClaimed) {
+        progress.eliasQuestOffered = true;
+        progress.eliasQuestActive = false;
+        progress.eliasVenomSacCollected = true;
+        progress.eliasVenomSacTurnedIn = true;
+        progress.eliasQuestRewardReady = false;
+        progress.obeySkillAwarded = true;
+        return;
+      }
+      if (progress.eliasQuestRewardReady) {
+        progress.eliasQuestOffered = true;
+        progress.eliasQuestActive = false;
+        progress.eliasVenomSacCollected = true;
+        progress.eliasVenomSacTurnedIn = true;
+        return;
+      }
+      if (progress.eliasVenomSacTurnedIn) {
+        progress.eliasQuestOffered = true;
+        progress.eliasQuestActive = false;
+        progress.eliasVenomSacCollected = true;
+        progress.eliasQuestRewardReady = true;
+        return;
+      }
+      if (progress.eliasQuestOffered && !progress.eliasVenomSacTurnedIn) {
+        progress.eliasQuestActive = true;
+      }
+    };
     if (tp && typeof tp === "object") {
       Object.assign(tp, normalized);
       ensureTrainingCompletionConsistency(tp);
@@ -201,12 +175,12 @@ export function createNPCInteractionHandler({
         tp.rumorQuestActive = true;
       }
       const rewardItemName = getBogQuestRewardItemName(trainingContent);
-      const rewardCount = Number(playerInventory?.[rewardItemName] || 0);
       const equippedWeaponName = String(playerEquipment?.weapon || "").trim();
       const hasRewardEquipped = equippedWeaponName.length > 0 && equippedWeaponName === rewardItemName;
-      if (!tp.bogQuestRewardAwarded && ((Number.isFinite(rewardCount) && rewardCount > 0) || hasRewardEquipped)) {
+      if (!tp.bogQuestRewardAwarded && (hasInventoryItem(playerInventory, rewardItemName) || hasRewardEquipped)) {
         tp.bogQuestRewardAwarded = true;
       }
+      ensureEliasQuestConsistency(tp);
       return tp;
     }
     ensureTrainingCompletionConsistency(normalized);
@@ -223,12 +197,12 @@ export function createNPCInteractionHandler({
       normalized.rumorQuestActive = true;
     }
     const rewardItemName = getBogQuestRewardItemName(trainingContent);
-    const rewardCount = Number(playerInventory?.[rewardItemName] || 0);
     const equippedWeaponName = String(playerEquipment?.weapon || "").trim();
     const hasRewardEquipped = equippedWeaponName.length > 0 && equippedWeaponName === rewardItemName;
-    if (!normalized.bogQuestRewardAwarded && ((Number.isFinite(rewardCount) && rewardCount > 0) || hasRewardEquipped)) {
+    if (!normalized.bogQuestRewardAwarded && (hasInventoryItem(playerInventory, rewardItemName) || hasRewardEquipped)) {
       normalized.bogQuestRewardAwarded = true;
     }
+    ensureEliasQuestConsistency(normalized);
     return normalized;
   }
 
@@ -594,48 +568,76 @@ export function createNPCInteractionHandler({
   }
 
   function handleFarmerEliasInteraction(npc, tp) {
-    if (tp.obeySkillAwarded) {
+    if (tp.eliasQuestClaimed || tp.obeySkillAwarded) {
       showDialogue(npc.name, [
+        "Thanks again for your help with that Venom Sac.",
         "'Obey' will keep an animal companion close to you at all times."
       ]);
       return;
     }
 
+    if (tp.eliasQuestRewardReady) {
+      const opened = openQuestCompletionPanel(ELIAS_SIDE_QUEST_ID, npc.name);
+      if (!opened) {
+        showDialogue(npc.name, ["Speak with me when you're ready to claim your side quest reward."]);
+      }
+      return;
+    }
+
+    if (tp.eliasQuestActive) {
+      const venomCount = Number(playerInventory?.[ELIAS_VENOM_SAC_ITEM_NAME] || 0);
+      const hasVenomSac = Number.isFinite(venomCount) && venomCount > 0;
+      if (!hasVenomSac) {
+        showDialogue(npc.name, [
+          "Please bring me a Venom Sac from the bog.",
+          "You can collect it from the leftovers of the frog after you defeat it."
+        ]);
+        return;
+      }
+      const remaining = Math.max(0, Math.floor(venomCount) - 1);
+      if (remaining > 0) {
+        playerInventory[ELIAS_VENOM_SAC_ITEM_NAME] = remaining;
+      } else {
+        delete playerInventory[ELIAS_VENOM_SAC_ITEM_NAME];
+      }
+      tp.eliasQuestOffered = true;
+      tp.eliasQuestActive = false;
+      tp.eliasVenomSacCollected = true;
+      tp.eliasVenomSacTurnedIn = true;
+      tp.eliasQuestRewardReady = true;
+      syncObjectiveState();
+      showDialogue(npc.name, [
+        "You've got it! What took you so long? It was only a little frog.",
+        "Thank you, Adrian. For your efforts I'm going to share with you the 'Obey' skill, which turns wild animals into your friendly companion!"
+      ]);
+      return;
+    }
+
     showDialogue(npc.name, [
-      "Oh, you're Adrian aren't you? Pat's new guest.",
-      "I'm Elias, and I love animals.",
-      "Do you love animals too?"
+      "Well now, hello there, stranger. I've not seen your face round 'ere before",
+      "Oh, you're Pat's new guest? I'm Elias and I'm not sure if you can tell, but I blimmin' love animals I does! Tell me, what do I call you?",
+      "Hello to you, Adrian... hmm, Adrian, tell me, do you love animals too?"
     ], () => {
       openYesNoChoice((selectedOption) => {
         if (selectedOption !== "Yes") {
           showDialogue(npc.name, [
-            "That's alright. Animals still like patient people.",
-            "Come back if you change your mind."
+            "Alright. Come back if you change your mind.",
+            "The animals and I would appreciate it."
           ]);
           return;
         }
-
-        const slotIndex = grantSkillToFirstEmptySlot(player, "obey");
-
-        tp.obeySkillAwarded = true;
-        itemAlert.active = true;
-        itemAlert.text = slotIndex >= 0
-          ? `Learned skill: Obey (slot ${slotIndex + 1}).`
-          : "Learned skill: Obey (all skill slots are currently full).";
-        itemAlert.startedAt = performance.now();
-        spawnVisualEffect("pickupGlow", {
-          x: player.x + tileSize / 2,
-          y: player.y + tileSize * 0.4,
-          size: 30
+        tp.eliasQuestOffered = true;
+        tp.eliasQuestActive = true;
+        tp.eliasQuestRewardReady = false;
+        tp.eliasQuestClaimed = false;
+        syncObjectiveState();
+        showDialogue(npc.name, ["I need your help. These dark clouds are gettin' my animals on edge."], () => {
+          showDialogue(npc.name, ["I was going to get the local witch to brew a little potion for me which would chill the animals out, but she can't make it without a venom sac."], () => {
+            showDialogue(npc.name, ["She told me I can obtain a venom sac in the south east of the Bog, but I'm too scared of the Ogres!"], () => {
+              showDialogue(npc.name, ["I'm pretty sure you'd only have to defeat a little frog to find the Venom Sac, it should be easy work for a strong fella like you."]);
+            });
+          });
         });
-        try {
-          musicManager.playSfx("itemUnlock");
-        } catch (_) { }
-
-        showDialogue(npc.name, [
-          "Fantastic! You might find this useful then.",
-          "'Obey' will keep an animal companion close to you at all times. Try using it on one of those Possums over there."
-        ]);
       });
     });
   }

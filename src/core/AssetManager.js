@@ -39,6 +39,7 @@ export const DEFAULT_SPRITE_MANIFEST = {
   trainingHeadband: "assets/sprites/TrainingHeadband.png",
   equipTrainingHeadband: "assets/sprites/Equip_TrainingHeadband.png",
   leftovers: "assets/sprites/Leftovers.png",
+  venomSac: "assets/sprites/VenomSac.png",
   silverCoins: "assets/sprites/SilverCoins.png",
   dojoMembership: "assets/sprites/DojoMembership.png",
   kendoStick: "assets/sprites/Kendo_Stick.png",

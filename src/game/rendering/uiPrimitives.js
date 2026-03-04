@@ -26,7 +26,8 @@ export function getItemSpriteName(itemName) {
   const spriteMap = {
     "Training Headband": "trainingHeadband",
     "Dojo Membership Card": "dojoMembership",
-    "Kendo Stick": "kendoStick"
+    "Kendo Stick": "kendoStick",
+    "Venom Sac": "venomSac"
   };
   return spriteMap[itemName] || null;
 }
@@ -35,7 +36,8 @@ export function getItemSpriteScale(spriteName) {
   const defaultScale = 1.2;
   const scaleOverrides = {
     trainingHeadband: 1.5,
-    dojoMembership: 1.0
+    dojoMembership: 1.0,
+    venomSac: 0.9
   };
   return scaleOverrides[spriteName] ?? defaultScale;
 }

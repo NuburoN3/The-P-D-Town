@@ -14,6 +14,7 @@ const BONK_ATTACK_ID = "bonkStrike";
 const BONK_IMPACT_FRAME_INDEX = 4; // 5th frame across (0-based)
 const FINAL_REWARD_OBJECTIVE_ID = "basic-training-claim-reward";
 const FINAL_REWARD_NPC_IDS = new Set(["mrhanami", "mrhanamibogland"]);
+const ELIAS_REWARD_NPC_ID = "farmerelias";
 
 function drawPlayer(
   ctx,
@@ -352,10 +353,16 @@ function drawNpcOwBubble(ctx, npc, drawX, drawY, drawWidth) {
 }
 
 function shouldDrawFinalRewardGlow(state, npc) {
-  const objectiveId = String(state?.objectiveState?.id || "");
-  if (objectiveId !== FINAL_REWARD_OBJECTIVE_ID) return false;
   const npcId = String(npc?.id || "").toLowerCase();
-  return FINAL_REWARD_NPC_IDS.has(npcId);
+  const objectiveId = String(state?.objectiveState?.id || "");
+  if (objectiveId === FINAL_REWARD_OBJECTIVE_ID && FINAL_REWARD_NPC_IDS.has(npcId)) {
+    return true;
+  }
+  if (npcId !== ELIAS_REWARD_NPC_ID) return false;
+  const townId = String(state?.currentTownId || "");
+  if (!townId) return false;
+  const townProgress = state?.gameFlags?.townProgress?.[townId];
+  return Boolean(townProgress?.eliasQuestRewardReady && !townProgress?.eliasQuestClaimed);
 }
 
 function drawFinalRewardGlow(ctx, drawX, drawY, drawWidth, drawHeight, now) {
