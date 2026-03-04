@@ -364,6 +364,13 @@ const OBEY_CANCEL_REVERT_DISTANCE_TILES = 6;
 const OBEY_PET_ASSIST_RADIUS_TILES = 6;
 const OBEY_PET_ASSIST_ATTACK_RANGE_TILES = 1.05;
 const OBEY_PET_ASSIST_ATTACK_COOLDOWN_MS = 700;
+const BROG_DEATH_BURST_DURATION_MS = 1500;
+const BROG_DEATH_BURST_POP_AT_MS = 980;
+const BROG_FROG_SPAWN_COUNT = 3;
+const FROG_PET_ATTACK_DAMAGE = 1;
+const FROG_PET_POISON_CHANCE = 0.25;
+const FROG_PET_POISON_DURATION_MS = 4500;
+const FROG_PET_POISON_TICK_MS = 1000;
 
 const obeyState = {
   active: false,
@@ -416,6 +423,7 @@ const leftoversUiState = {
   openedFromInteraction: false,
   requestCloseInventory: false
 };
+const brogDeathBursts = [];
 
 const minimapDiscoveryState = {
   discoveredDoors: {}
@@ -783,6 +791,43 @@ function buildGeneratedWildAnimalId(baseName = "animal") {
   return `wild:${safe || "animal"}:${Math.floor(performance.now())}:${Math.floor(Math.random() * 10000)}`;
 }
 
+function isFrogLikeEntity(entity) {
+  const name = String(entity?.name || "").toLowerCase();
+  const spriteName = String(entity?.spriteName || "").toLowerCase();
+  return name.includes("frog") || spriteName.includes("frog");
+}
+
+function createBrogSpawnedFrogNpc({ world, x, y, dir = "down" }) {
+  return {
+    id: buildGeneratedWildAnimalId("frog"),
+    name: "Frog",
+    world,
+    x,
+    y,
+    dir,
+    width: TILE,
+    height: TILE,
+    canRoam: true,
+    blocking: true,
+    obeyAnimal: true,
+    isPlayerPet: false,
+    petOwner: "",
+    wanderRadiusTiles: 4,
+    wanderSpeed: 0.86,
+    spriteName: "frog",
+    sprite: assets.getSprite("frog"),
+    spriteWidth: 25,
+    spriteHeight: 16,
+    level: 1,
+    maxHp: 15,
+    hp: 15,
+    dialogue: [
+      "*The frog blinks, then lets out a soft ribbit.*"
+    ],
+    hasTrainingChoice: false
+  };
+}
+
 function createWildNpcFromAnimalTemplate(templateNpc, overrides = {}) {
   if (!templateNpc || typeof templateNpc !== "object") return null;
   const sourceName = String(templateNpc.name || "Animal");
@@ -992,12 +1037,14 @@ function createObeyHostileEnemyFromNpc(targetNpc) {
   const level = Number.isFinite(targetNpc.level) ? Math.max(1, Math.floor(targetNpc.level)) : 1;
   const isPossum = String(targetNpc?.name || "").toLowerCase().includes("possum")
     || String(targetNpc?.spriteName || "").toLowerCase().includes("possum");
+  const isFrog = isFrogLikeEntity(targetNpc);
   const possumDamageRollTable = [
     { value: 1, weight: 2 },
     { value: 2, weight: 6 },
     { value: 3, weight: 2 },
     { value: 4, weight: 1 }
   ];
+  const frogDamageRollTable = [{ value: 1, weight: 1 }];
   const hostileEnemy = {
     id: enemyId,
     obeyHostile: true,
@@ -1019,16 +1066,20 @@ function createObeyHostileEnemyFromNpc(targetNpc) {
     level,
     maxHp,
     hp,
-    damage: isPossum ? 2 : Math.max(4, 3 + level * 2),
-    damageRollTable: isPossum ? possumDamageRollTable : undefined,
+    damage: isFrog ? 1 : (isPossum ? 2 : Math.max(4, 3 + level * 2)),
+    damageRollTable: isFrog ? frogDamageRollTable : (isPossum ? possumDamageRollTable : undefined),
     speed: Math.max(0.9, Number.isFinite(targetNpc.wanderSpeed) ? targetNpc.wanderSpeed * 1.25 : 1.15),
     aggroRange: TILE * 7,
-    attackRange: TILE * 0.95,
-    attackCooldownMs: 1500,
-    attackWindupMs: 480,
-    attackRecoveryMs: 290,
-    attackType: "lightSlash",
-    behaviorType: "meleeChaser",
+    attackRange: isFrog ? (TILE * 1.15) : (TILE * 0.95),
+    attackCooldownMs: isFrog ? 1800 : 1500,
+    attackWindupMs: isFrog ? 560 : 480,
+    attackRecoveryMs: isFrog ? 320 : 290,
+    attackType: isFrog ? "brogLeap" : "lightSlash",
+    behaviorType: isFrog ? "leapStriker" : "meleeChaser",
+    leapDamage: isFrog ? 1 : undefined,
+    leapHitRadius: isFrog ? TILE * 1.05 : undefined,
+    leapPoisonChance: isFrog ? 0.25 : undefined,
+    leapPoisonDurationMs: isFrog ? PLAYER_POISON_DEFAULT_DURATION_MS : undefined,
     respawnEnabled: false,
     countsForChallenge: false,
     countsForBogTrial: false,
@@ -1281,10 +1332,11 @@ function applyPetAssistDamageToEnemy(enemy, now) {
   if (!pet) return;
   const petIsPossum = String(pet.name || "").toLowerCase().includes("possum")
     || String(pet.spriteName || "").toLowerCase().includes("possum");
+  const petIsFrog = isFrogLikeEntity(pet);
   if (petIsPossum) {
     musicManager.playSfx("possumAttack");
   }
-  const petDamage = 2;
+  const petDamage = petIsFrog ? FROG_PET_ATTACK_DAMAGE : 2;
   enemy.hp = Math.max(0, (Number.isFinite(enemy.hp) ? enemy.hp : enemy.maxHp) - petDamage);
   enemy.invulnerableUntil = now + 120;
   enemy.hitStunUntil = now + 160;
@@ -1302,6 +1354,17 @@ function applyPetAssistDamageToEnemy(enemy, now) {
   const damageTextOffset = TILE * 0.62;
   const damageTextX = enemyCenterX + fromPetDirX * damageTextOffset;
   const damageTextY = enemyCenterY + fromPetDirY * (damageTextOffset * 0.45) - TILE * 0.18;
+  if (petIsFrog) {
+    const leapOffset = TILE * 0.55;
+    pet.x = enemyCenterX - fromPetDirX * leapOffset - (Number(pet.width) || TILE) * 0.5;
+    pet.y = enemyCenterY - fromPetDirY * leapOffset - (Number(pet.height) || TILE) * 0.5;
+    vfxSystem.spawn("warningRing", {
+      x: enemyCenterX,
+      y: enemyCenterY,
+      size: TILE * 0.65,
+      durationMs: 220
+    });
+  }
   vfxSystem.spawn("hitSpark", {
     x: enemyCenterX,
     y: enemy.y + (Number(enemy.height) || TILE) * 0.45,
@@ -1316,12 +1379,59 @@ function applyPetAssistDamageToEnemy(enemy, now) {
     size: 24,
     durationMs: 560
   });
+  if (petIsFrog && Math.random() < FROG_PET_POISON_CHANCE) {
+    enemy.frogPoisonedUntil = now + FROG_PET_POISON_DURATION_MS;
+    enemy.frogPoisonTickAt = now + FROG_PET_POISON_TICK_MS;
+    vfxSystem.spawn("damageText", {
+      x: damageTextX + 8,
+      y: damageTextY - 12,
+      text: "Poison!",
+      color: "#7dff8d",
+      size: 18,
+      durationMs: 680
+    });
+  }
   if (enemy.hp <= 0) {
     enemy.dead = true;
     enemy.state = "dead";
     enemy.pendingStrike = false;
     enemy.respawnAt = now + (Number.isFinite(enemy.respawnDelayMs) ? enemy.respawnDelayMs : 5000);
     handleEnemyDefeatRewards(enemy, now);
+  }
+}
+
+function updateEnemyPoisonStatus(now = performance.now()) {
+  if (!Array.isArray(enemies) || enemies.length === 0) return;
+  for (const enemy of enemies) {
+    if (!enemy || enemy.dead) continue;
+    if (enemy.world !== currentAreaId) continue;
+    const poisonedUntil = Number.isFinite(enemy.frogPoisonedUntil) ? enemy.frogPoisonedUntil : 0;
+    if (poisonedUntil <= now) {
+      enemy.frogPoisonedUntil = 0;
+      enemy.frogPoisonTickAt = 0;
+      continue;
+    }
+    const nextTickAt = Number.isFinite(enemy.frogPoisonTickAt) ? enemy.frogPoisonTickAt : now;
+    if (now < nextTickAt) continue;
+    enemy.frogPoisonTickAt = now + FROG_PET_POISON_TICK_MS;
+    enemy.hp = Math.max(0, (Number.isFinite(enemy.hp) ? enemy.hp : enemy.maxHp) - 1);
+    const ex = enemy.x + (Number(enemy.width) || TILE) * 0.5;
+    const ey = enemy.y + (Number(enemy.height) || TILE) * 0.3;
+    vfxSystem.spawn("damageText", {
+      x: ex + 4,
+      y: ey - 8,
+      text: "1",
+      color: "#8fff9e",
+      size: 18,
+      durationMs: 460
+    });
+    if (enemy.hp <= 0) {
+      enemy.dead = true;
+      enemy.state = "dead";
+      enemy.pendingStrike = false;
+      enemy.respawnAt = now + (Number.isFinite(enemy.respawnDelayMs) ? enemy.respawnDelayMs : 5000);
+      handleEnemyDefeatRewards(enemy, now);
+    }
   }
 }
 
@@ -2926,6 +3036,66 @@ function spawnEnemyLeftovers(enemy, now = performance.now(), guaranteedItems = [
   return leftover;
 }
 
+function queueBrogDeathBurst(enemy, now = performance.now()) {
+  if (!enemy) return;
+  const width = Number.isFinite(enemy.width) ? enemy.width : TILE;
+  const height = Number.isFinite(enemy.height) ? enemy.height : TILE;
+  brogDeathBursts.push({
+    id: `brog-burst-${Math.floor(now)}-${Math.random().toString(16).slice(2, 8)}`,
+    townId: currentTownId,
+    areaId: currentAreaId,
+    x: (Number.isFinite(enemy.x) ? enemy.x : player.x) + width * 0.5,
+    y: (Number.isFinite(enemy.y) ? enemy.y : player.y) + height * 0.5,
+    startedAt: now,
+    popAt: now + BROG_DEATH_BURST_POP_AT_MS,
+    endsAt: now + BROG_DEATH_BURST_DURATION_MS,
+    frogsSpawned: false
+  });
+}
+
+function spawnFrogsFromBrogBurst(burst, now = performance.now()) {
+  if (!burst || burst.frogsSpawned) return;
+  const radius = TILE * 0.9;
+  for (let i = 0; i < BROG_FROG_SPAWN_COUNT; i++) {
+    const angle = (-Math.PI * 0.5) + ((Math.PI * 2) / BROG_FROG_SPAWN_COUNT) * i;
+    const x = burst.x + Math.cos(angle) * radius - TILE * 0.5;
+    const y = burst.y + Math.sin(angle) * radius - TILE * 0.5;
+    const frog = createBrogSpawnedFrogNpc({
+      world: burst.areaId,
+      x,
+      y,
+      dir: i % 2 === 0 ? "left" : "right"
+    });
+    npcs.push(frog);
+  }
+  burst.frogsSpawned = true;
+  vfxSystem.spawn("hitSpark", {
+    x: burst.x,
+    y: burst.y,
+    size: TILE * 1.2,
+    durationMs: 240
+  });
+  itemAlert.active = true;
+  itemAlert.text = "Three Frogs burst out of The Brog.";
+  itemAlert.startedAt = now;
+}
+
+function updateBrogDeathBursts(now = performance.now()) {
+  if (!Array.isArray(brogDeathBursts) || brogDeathBursts.length === 0) return;
+  for (const burst of brogDeathBursts) {
+    if (!burst || burst.frogsSpawned) continue;
+    if (now >= burst.popAt) {
+      spawnFrogsFromBrogBurst(burst, now);
+    }
+  }
+  for (let i = brogDeathBursts.length - 1; i >= 0; i--) {
+    const burst = brogDeathBursts[i];
+    if (!burst || now >= burst.endsAt) {
+      brogDeathBursts.splice(i, 1);
+    }
+  }
+}
+
 function respawnEnemyAtSpawn(enemy) {
   if (!enemy || typeof enemy !== "object") return;
   enemy.dead = false;
@@ -3181,7 +3351,11 @@ function handleEnemyDefeatRewards(enemy, now) {
       enemyId.includes("possum") ||
       enemyName.includes("possum") ||
       enemySpriteName.includes("possum");
-    if (isWildPossum) {
+    const isWildFrog =
+      enemyId.includes("frog") ||
+      enemyName.includes("frog") ||
+      enemySpriteName.includes("frog");
+    if (isWildPossum || isWildFrog) {
       const levelsGained = applyCombatXpGain(2, now);
       const ex = Number.isFinite(enemy?.x) ? enemy.x + (Number(enemy?.width) || TILE) * 0.5 : player.x + TILE * 0.5;
       const ey = Number.isFinite(enemy?.y) ? enemy.y + (Number(enemy?.height) || TILE) * 0.25 : player.y;
@@ -3216,6 +3390,7 @@ function handleEnemyDefeatRewards(enemy, now) {
     : [];
   spawnEnemyLeftovers(enemy, now, guaranteedItems);
   if (enemyId === BROG_BOSS_ID.toLowerCase()) {
+    queueBrogDeathBurst(enemy, now);
     gameFlags.brogDefeated = true;
     itemAlert.active = true;
     itemAlert.text = `Boss drop added to leftovers: ${BROG_GUARANTEED_DROP_ITEM_NAME}`;
@@ -3224,7 +3399,8 @@ function handleEnemyDefeatRewards(enemy, now) {
       title: "Boss Defeated: The Brog",
       lines: [
         `Leftovers contain: ${BROG_GUARANTEED_DROP_ITEM_NAME}`,
-        "The Bog Frog has been slain."
+        "The Bog Frog has been slain.",
+        "Its belly swells and something inside begins to stir..."
       ],
       durationMs: 3600
     });
@@ -3881,6 +4057,7 @@ function updateRuntimeUi(now) {
   ) {
     updateEnemyProjectiles(now);
     updatePlayerPoisonStatus(now);
+    updateEnemyPoisonStatus(now);
   } else {
     combatStatusState.lastProjectileUpdateAt = now;
   }
@@ -4013,6 +4190,7 @@ function updateRuntimeUi(now) {
 
   updateHanamiDojoExitSequence(now);
   updateHanamiBoglandExitSequence(now);
+  updateBrogDeathBursts(now);
   updateBrogBossEncounterIntro(now);
   updatePatInnIntroSequence(now);
   syncObjectiveState(now);
@@ -4222,6 +4400,9 @@ const combatSystem = createCombatSystem({
     onRequestVfx: (type, options) => vfxSystem.spawn(type, options),
     onEnemyProjectileSpawn: (payload) => {
       spawnEnemyProjectile(payload);
+    },
+    onPlayerPoisoned: ({ now, durationMs }) => {
+      applyPoisonToPlayer(now, durationMs);
     },
     onPlayerAttackStarted: ({ profile }) => {
       player.requestedAttackId = null;
@@ -4716,6 +4897,10 @@ combatSystem.registerAttackProfile(BONK_ATTACK_ID, {
   damageBonusFlat: BONK_SKILL_DAMAGE,
   useProfileDamageOnly: false,
   ignoreWeaponBonus: false,
+  lockOnDuringAttack: true,
+  lockOnMoveSpeed: 3.6,
+  lockOnMaxDistance: TILE * 2.4,
+  lockOnStopDistance: TILE * 0.82,
   hitCueAtActiveStart: true,
   damageOnlyOnHitCue: true,
   hitWindowMs: 90,
@@ -4725,7 +4910,7 @@ combatSystem.registerAttackProfile(BONK_ATTACK_ID, {
     sizeOffset: 16
   },
   getAttackCenter(attacker) {
-    const dir = attacker?.dir;
+    const dir = attacker?.attackLockedDir || attacker?.dir;
     const facingX = dir === "left" ? -1 : (dir === "right" ? 1 : 0);
     const facingY = dir === "up" ? -1 : (dir === "down" ? 1 : 0);
     return {
@@ -4734,7 +4919,7 @@ combatSystem.registerAttackProfile(BONK_ATTACK_ID, {
     };
   },
   getVfxOrigin(attacker) {
-    const dir = attacker?.dir;
+    const dir = attacker?.attackLockedDir || attacker?.dir;
     const facingX = dir === "left" ? -1 : (dir === "right" ? 1 : 0);
     const facingY = dir === "up" ? -1 : (dir === "down" ? 1 : 0);
     return {
@@ -4927,6 +5112,7 @@ const { render } = createGameRenderer({
   enemies,
   enemyProjectiles,
   leftoversState,
+  brogDeathBursts,
   gameFlags,
   input,
   settingsUiState,

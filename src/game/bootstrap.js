@@ -201,6 +201,8 @@ export function createGameRuntime() {
     attackActiveAt: 0,
     attackActiveUntil: 0,
     attackRecoveryUntil: 0,
+    attackLockedDir: null,
+    attackLockedTargetId: null,
     lastAttackAt: -Infinity,
     attackCooldownMs: 170,
     attackWindupMs: 45,

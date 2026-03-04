@@ -84,7 +84,14 @@ export function createGameLoop({
           playerEquipment,
           enemies,
           npcs,
-          currentAreaId: getCurrentAreaId()
+          currentAreaId: getCurrentAreaId(),
+          collidesAt: (nx, ny) => collisionService.collides(
+            nx,
+            ny,
+            getCurrentMap(),
+            getCurrentMapW(),
+            getCurrentMapH()
+          )
         });
 
         updateFountainHealing(now, simulationGameState);

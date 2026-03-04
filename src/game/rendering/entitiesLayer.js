@@ -547,6 +547,76 @@ function drawEnemyHealthBar(ctx, enemy, ex, ey, drawWidth) {
   ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
 }
 
+function drawBrogDeathBursts(ctx, state, canvas, tileSize) {
+  const bursts = Array.isArray(state?.brogDeathBursts) ? state.brogDeathBursts : [];
+  if (bursts.length === 0) return;
+  const now = performance.now();
+  const cam = state?.cam || { x: 0, y: 0 };
+  const townId = String(state?.currentTownId || "");
+  const areaId = String(state?.currentAreaId || "");
+
+  for (const burst of bursts) {
+    if (!burst) continue;
+    if (String(burst.townId || "") !== townId || String(burst.areaId || "") !== areaId) continue;
+    const startedAt = Number.isFinite(burst.startedAt) ? burst.startedAt : now;
+    const popAt = Number.isFinite(burst.popAt) ? burst.popAt : startedAt + 980;
+    const endsAt = Number.isFinite(burst.endsAt) ? burst.endsAt : startedAt + 1500;
+    if (now >= endsAt) continue;
+
+    const worldX = Number.isFinite(burst.x) ? burst.x : 0;
+    const worldY = Number.isFinite(burst.y) ? burst.y : 0;
+    const x = worldX - cam.x;
+    const y = worldY - cam.y;
+    if (x < -tileSize * 3 || y < -tileSize * 3 || x > canvas.width + tileSize * 3 || y > canvas.height + tileSize * 3) {
+      continue;
+    }
+
+    const prePopDuration = Math.max(1, popAt - startedAt);
+    const prePopT = Math.max(0, Math.min(1, (now - startedAt) / prePopDuration));
+    const postPopDuration = Math.max(1, endsAt - popAt);
+    const postPopT = Math.max(0, Math.min(1, (now - popAt) / postPopDuration));
+
+    ctx.save();
+    if (now < popAt) {
+      const bellyScale = 0.8 + prePopT * 1.15;
+      const wobble = Math.sin(now * 0.04) * tileSize * 0.06;
+      const rx = tileSize * 0.5 * bellyScale;
+      const ry = tileSize * 0.34 * bellyScale;
+      const belly = ctx.createRadialGradient(x - rx * 0.15, y - ry * 0.22, rx * 0.18, x, y, rx);
+      belly.addColorStop(0, "rgba(174, 230, 116, 0.92)");
+      belly.addColorStop(1, "rgba(72, 148, 58, 0.82)");
+      ctx.fillStyle = belly;
+      ctx.beginPath();
+      ctx.ellipse(x + wobble, y + wobble * 0.4, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(237, 255, 210, 0.9)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    } else {
+      const ringR = tileSize * (0.8 + postPopT * 1.7);
+      const alpha = Math.max(0, 1 - postPopT);
+      ctx.strokeStyle = `rgba(171, 255, 143, ${(0.88 * alpha).toFixed(3)})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(x, y, ringR, 0, Math.PI * 2);
+      ctx.stroke();
+
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + postPopT * 3.2;
+        const dist = tileSize * (0.35 + postPopT * (0.5 + (i % 3) * 0.18));
+        const px = x + Math.cos(a) * dist;
+        const py = y + Math.sin(a) * dist * 0.6;
+        const pr = Math.max(1.2, tileSize * (0.08 + (1 - postPopT) * 0.03));
+        ctx.fillStyle = `rgba(147, 235, 122, ${(0.76 * alpha).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(px, py, pr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+}
+
 function drawEnemies(ctx, state, canvas, tileSize, shouldDrawEnemy = null) {
   const { currentAreaId, enemies, cam } = state;
   if (!Array.isArray(enemies) || enemies.length === 0) return;
@@ -586,12 +656,14 @@ function drawEnemies(ctx, state, canvas, tileSize, shouldDrawEnemy = null) {
     }
 
     const baseEy = ey;
-    if (String(enemy.id || "").toLowerCase() === "thebrog" && enemy.state === "brogLeap") {
+    if (enemy.state === "brogLeap") {
       const leapStartAt = Number.isFinite(enemy.brogLeapStartAt) ? enemy.brogLeapStartAt : now;
       const leapLandAt = Number.isFinite(enemy.brogLeapLandAt) ? enemy.brogLeapLandAt : now;
       const leapDuration = Math.max(1, leapLandAt - leapStartAt);
       const t = Math.max(0, Math.min(1, (now - leapStartAt) / leapDuration));
-      const leapLift = Math.sin(t * Math.PI) * (tileSize * 2.6);
+      const enemyId = String(enemy.id || "").toLowerCase();
+      const leapHeightTiles = enemyId === "thebrog" ? 2.6 : 0.95;
+      const leapLift = Math.sin(t * Math.PI) * (tileSize * leapHeightTiles);
       ey -= leapLift;
 
       const shadowPulse = 0.18 + (1 - t) * t * 0.35;
@@ -957,6 +1029,7 @@ export function drawEntitiesLayer({
   const playerFootY = (state?.player?.y || 0) + tileSize;
   const isBehindPlayer = (footY) => footY <= playerFootY;
   const isInFrontOfPlayer = (footY) => footY > playerFootY;
+  drawBrogDeathBursts(ctx, state, canvas, tileSize);
 
   drawNPCs(
     ctx,

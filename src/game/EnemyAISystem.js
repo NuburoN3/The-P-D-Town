@@ -276,6 +276,87 @@ function createOrbitStrikerBehavior({ tileSize, onWindupStarted }) {
   };
 }
 
+function createLeapStrikerBehavior({ tileSize, onWindupStarted }) {
+  return function updateLeapStrikerEnemy({
+    now,
+    enemy,
+    player,
+    pet = null,
+    canFight,
+    collidesAt,
+    currentMap,
+    currentMapW,
+    currentMapH,
+    dtScale = 1
+  }) {
+    if (!canFight) {
+      if (enemy.state !== "idle") enemy.state = "idle";
+      return;
+    }
+
+    const target = resolvePreferredTarget(enemy, player, pet, tileSize);
+    const toTargetX = target.toTargetX;
+    const toTargetY = target.toTargetY;
+    const distanceToTarget = target.distanceToTarget;
+
+    if (
+      distanceToTarget <= enemy.aggroRange &&
+      now - enemy.lastAttackAt >= enemy.attackCooldownMs
+    ) {
+      updateEnemyDirection(enemy, toTargetX, toTargetY);
+      enemy.pendingAttackType = "brogLeap";
+      enemy.pendingStrike = false;
+      enemy.state = "brogLeap";
+      enemy.brogLeapStartAt = now;
+      enemy.brogLeapLandAt = now + Math.max(420, Number.isFinite(enemy.attackWindupMs) ? enemy.attackWindupMs : 700);
+      enemy.brogLeapStartX = enemy.x;
+      enemy.brogLeapStartY = enemy.y;
+      enemy.brogLeapTargetX = target.entity.x;
+      enemy.brogLeapTargetY = target.entity.y;
+      enemy.lastAttackAt = now;
+      enemy.attackStrikeAt = enemy.brogLeapLandAt;
+      if (typeof onWindupStarted === "function") {
+        onWindupStarted({ enemy, now, toPlayerX: toTargetX, toPlayerY: toTargetY });
+      }
+      return;
+    }
+
+    if (distanceToTarget <= enemy.aggroRange && distanceToTarget > enemy.attackRange * 0.8) {
+      enemy.state = "chase";
+      moveEnemy(
+        enemy,
+        target.entity.x,
+        target.entity.y,
+        clamp(enemy.speed * 1.06, 0.75, 2.6) * dtScale,
+        collidesAt,
+        currentMap,
+        currentMapW,
+        currentMapH
+      );
+      return;
+    }
+
+    const spawnDx = enemy.spawnX - enemy.x;
+    const spawnDy = enemy.spawnY - enemy.y;
+    if (Math.hypot(spawnDx, spawnDy) > tileSize * 0.35) {
+      enemy.state = "return";
+      moveEnemy(
+        enemy,
+        enemy.spawnX,
+        enemy.spawnY,
+        clamp(enemy.speed * 0.9, 0.7, 2.2) * dtScale,
+        collidesAt,
+        currentMap,
+        currentMapW,
+        currentMapH
+      );
+      return;
+    }
+
+    enemy.state = "idle";
+  };
+}
+
 function createZoneKeeperBehavior({ tileSize, onWindupStarted }) {
   return function updateZoneKeeperEnemy({
     now,
@@ -451,6 +532,10 @@ export function createEnemyAISystem({
       onWindupStarted: handlers.onEnemyAttackWindupStarted
     }),
     orbitStriker: createOrbitStrikerBehavior({
+      tileSize,
+      onWindupStarted: handlers.onEnemyAttackWindupStarted
+    }),
+    leapStriker: createLeapStrikerBehavior({
       tileSize,
       onWindupStarted: handlers.onEnemyAttackWindupStarted
     }),

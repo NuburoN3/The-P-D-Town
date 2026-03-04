@@ -5,6 +5,14 @@ function directionToVector(dir) {
   return { x: 0, y: 1 };
 }
 
+function resolveAttackerFacingDir(attacker) {
+  const locked = String(attacker?.attackLockedDir || "").toLowerCase();
+  if (locked === "up" || locked === "down" || locked === "left" || locked === "right") {
+    return locked;
+  }
+  return String(attacker?.dir || "down").toLowerCase();
+}
+
 export function createDefaultAttackCatalog(tileSize) {
   const lightSlash = {
     id: "lightSlash",
@@ -22,14 +30,14 @@ export function createDefaultAttackCatalog(tileSize) {
       sizeOffset: 8
     },
     getAttackCenter(attacker) {
-      const facing = directionToVector(attacker.dir);
+      const facing = directionToVector(resolveAttackerFacingDir(attacker));
       return {
         x: attacker.x + tileSize / 2 + facing.x * this.range,
         y: attacker.y + tileSize / 2 + facing.y * this.range
       };
     },
     getVfxOrigin(attacker) {
-      const facing = directionToVector(attacker.dir);
+      const facing = directionToVector(resolveAttackerFacingDir(attacker));
       return {
         x: attacker.x + tileSize / 2 + facing.x * (this.range * 0.55),
         y: attacker.y + tileSize / 2 + facing.y * (this.range * 0.55)
@@ -53,14 +61,14 @@ export function createDefaultAttackCatalog(tileSize) {
       sizeOffset: 14
     },
     getAttackCenter(attacker) {
-      const facing = directionToVector(attacker.dir);
+      const facing = directionToVector(resolveAttackerFacingDir(attacker));
       return {
         x: attacker.x + tileSize / 2 + facing.x * this.range,
         y: attacker.y + tileSize / 2 + facing.y * this.range
       };
     },
     getVfxOrigin(attacker) {
-      const facing = directionToVector(attacker.dir);
+      const facing = directionToVector(resolveAttackerFacingDir(attacker));
       return {
         x: attacker.x + tileSize / 2 + facing.x * (this.range * 0.58),
         y: attacker.y + tileSize / 2 + facing.y * (this.range * 0.58)
@@ -84,14 +92,14 @@ export function createDefaultAttackCatalog(tileSize) {
       sizeOffset: 6
     },
     getAttackCenter(attacker) {
-      const facing = directionToVector(attacker.dir);
+      const facing = directionToVector(resolveAttackerFacingDir(attacker));
       return {
         x: attacker.x + tileSize / 2 + facing.x * this.range,
         y: attacker.y + tileSize / 2 + facing.y * this.range
       };
     },
     getVfxOrigin(attacker) {
-      const facing = directionToVector(attacker.dir);
+      const facing = directionToVector(resolveAttackerFacingDir(attacker));
       return {
         x: attacker.x + tileSize / 2 + facing.x * (this.range * 0.4),
         y: attacker.y + tileSize / 2 + facing.y * (this.range * 0.4)
@@ -121,14 +129,14 @@ export function createDefaultAttackCatalog(tileSize) {
       sizeOffset: 8
     },
     getAttackCenter(attacker) {
-      const facing = directionToVector(attacker.dir);
+      const facing = directionToVector(resolveAttackerFacingDir(attacker));
       return {
         x: attacker.x + tileSize / 2 + facing.x * this.range,
         y: attacker.y + tileSize / 2 + facing.y * this.range
       };
     },
     getVfxOrigin(attacker) {
-      const facing = directionToVector(attacker.dir);
+      const facing = directionToVector(resolveAttackerFacingDir(attacker));
       return {
         x: attacker.x + tileSize / 2 + facing.x * (tileSize * 0.4),
         y: attacker.y + tileSize * 0.25 + facing.y * (tileSize * 0.25)

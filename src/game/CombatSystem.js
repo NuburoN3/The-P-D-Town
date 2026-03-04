@@ -22,11 +22,13 @@ export function createCombatSystem({
   const hitIdsInCurrentSwing = new Set();
   const npcHitIdsInCurrentSwing = new Set();
   let playerAttackHitFrameCuePlayed = false;
+  let lastCombatUpdateAt = 0;
   const handlers = {
     onRequestVfx: eventHandlers.onRequestVfx || spawnVisualEffect,
     onEntityDamaged: eventHandlers.onEntityDamaged || (() => { }),
     onEntityDefeated: eventHandlers.onEntityDefeated || onEnemyDefeated,
     onPlayerDamaged: eventHandlers.onPlayerDamaged || (() => { }),
+    onPlayerPoisoned: eventHandlers.onPlayerPoisoned || (() => { }),
     onPlayerDefeated: eventHandlers.onPlayerDefeated || null,
     onPlayerAttackStarted: eventHandlers.onPlayerAttackStarted || (() => { }),
     onPlayerAttackActive: eventHandlers.onPlayerAttackActive || (() => { }),
@@ -35,6 +37,72 @@ export function createCombatSystem({
     onEnemyProjectileSpawn: eventHandlers.onEnemyProjectileSpawn || (() => { }),
     onBrogLeapImpact: eventHandlers.onBrogLeapImpact || (() => { })
   };
+  const FACING_DOT_MIN = Math.cos((70 * Math.PI) / 180);
+
+  function directionToVector(dir) {
+    switch (String(dir || "").toLowerCase()) {
+      case "left":
+        return { x: -1, y: 0 };
+      case "right":
+        return { x: 1, y: 0 };
+      case "up":
+        return { x: 0, y: -1 };
+      case "down":
+      default:
+        return { x: 0, y: 1 };
+    }
+  }
+
+  function resolveCardinalDirection(dx, dy, fallbackDir = "down") {
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (absX > absY) return dx < 0 ? "left" : "right";
+    if (absY > 0) return dy < 0 ? "up" : "down";
+    return fallbackDir;
+  }
+
+  function findBestFacingEnemy({ player, enemies, currentAreaId, pressedFacingDir }) {
+    if (!player || !Array.isArray(enemies) || enemies.length === 0) return null;
+    const playerCenterX = player.x + tileSize / 2;
+    const playerCenterY = player.y + tileSize / 2;
+    const facing = directionToVector(pressedFacingDir);
+    let best = null;
+
+    for (const enemy of enemies) {
+      if (!enemy || enemy.dead || enemy.world !== currentAreaId) continue;
+      const enemyCenterX = enemy.x + enemy.width / 2;
+      const enemyCenterY = enemy.y + enemy.height / 2;
+      const toEnemyX = enemyCenterX - playerCenterX;
+      const toEnemyY = enemyCenterY - playerCenterY;
+      const dist = Math.hypot(toEnemyX, toEnemyY);
+      if (dist <= 0.001) continue;
+
+      const normX = toEnemyX / dist;
+      const normY = toEnemyY / dist;
+      const facingDot = normX * facing.x + normY * facing.y;
+      if (facingDot < FACING_DOT_MIN) continue;
+
+      // Prioritize enemies closest to the pressed facing ray, then shortest actual distance.
+      const perpendicularDistance = Math.abs(toEnemyX * facing.y - toEnemyY * facing.x);
+      if (
+        !best ||
+        perpendicularDistance < best.perpendicularDistance ||
+        (
+          perpendicularDistance === best.perpendicularDistance &&
+          dist < best.dist
+        )
+      ) {
+        best = {
+          enemy,
+          dist,
+          perpendicularDistance,
+          dir: resolveCardinalDirection(toEnemyX, toEnemyY, pressedFacingDir)
+        };
+      }
+    }
+
+    return best;
+  }
 
   function canApplyHitForProfile(player, profile, now) {
     if (!profile?.damageOnlyOnHitCue) return true;
@@ -162,6 +230,94 @@ export function createCombatSystem({
     });
   }
 
+  function resolveAttackDtScale(now) {
+    if (!Number.isFinite(lastCombatUpdateAt) || lastCombatUpdateAt <= 0) {
+      lastCombatUpdateAt = now;
+      return 1;
+    }
+    const dt = Math.max(0, now - lastCombatUpdateAt);
+    lastCombatUpdateAt = now;
+    return Math.max(0.25, Math.min(3.5, dt / 16.667));
+  }
+
+  function updatePlayerLockOnMovement({
+    now,
+    player,
+    enemies,
+    currentAreaId,
+    profile,
+    collidesAt = null
+  }) {
+    if (!player || !Array.isArray(enemies) || !profile?.lockOnDuringAttack) return;
+    if (player.attackState === "idle" || player.attackState === "recovery") return;
+    const targetId = player.attackLockedTargetId;
+    if (!targetId) return;
+
+    const enemy = enemies.find((candidate) => (
+      candidate &&
+      candidate.id === targetId &&
+      !candidate.dead &&
+      candidate.world === currentAreaId
+    )) || null;
+    if (!enemy) {
+      player.attackLockedTargetId = null;
+      return;
+    }
+
+    const playerCenterX = player.x + tileSize / 2;
+    const playerCenterY = player.y + tileSize / 2;
+    const enemyCenterX = enemy.x + enemy.width / 2;
+    const enemyCenterY = enemy.y + enemy.height / 2;
+    const toEnemyX = enemyCenterX - playerCenterX;
+    const toEnemyY = enemyCenterY - playerCenterY;
+    const dist = Math.hypot(toEnemyX, toEnemyY);
+    if (dist <= 0.001) return;
+
+    const targetDir = resolveCardinalDirection(
+      toEnemyX,
+      toEnemyY,
+      player.attackLockedDir || player.dir || "down"
+    );
+    player.attackLockedDir = targetDir;
+    player.dir = targetDir;
+
+    const maxLockDistance = Number.isFinite(profile.lockOnMaxDistance)
+      ? Math.max(tileSize * 0.75, profile.lockOnMaxDistance)
+      : (profile.range + tileSize * 1.1);
+    if (dist > maxLockDistance) return;
+
+    const stopDistance = Number.isFinite(profile.lockOnStopDistance)
+      ? Math.max(tileSize * 0.3, profile.lockOnStopDistance)
+      : Math.max(tileSize * 0.5, profile.range * 0.85);
+    const gap = dist - stopDistance;
+    if (gap <= 0) return;
+
+    const dtScale = resolveAttackDtScale(now);
+    const moveSpeed = Number.isFinite(profile.lockOnMoveSpeed)
+      ? Math.max(0.4, profile.lockOnMoveSpeed)
+      : 3.2;
+    const step = Math.min(gap, moveSpeed * dtScale);
+    if (step <= 0.001) return;
+
+    const moveX = (toEnemyX / dist) * step;
+    const moveY = (toEnemyY / dist) * step;
+    const targetX = player.x + moveX;
+    const targetY = player.y + moveY;
+
+    if (typeof collidesAt === "function") {
+      if (!collidesAt(targetX, player.y)) {
+        player.x = targetX;
+      }
+      if (!collidesAt(player.x, targetY)) {
+        player.y = targetY;
+      }
+      return;
+    }
+
+    player.x = targetX;
+    player.y = targetY;
+  }
+
   function updatePlayerAttackState(player, now) {
     if (player.attackState === "windup" && now >= player.attackActiveAt) {
       player.attackState = "active";
@@ -187,6 +343,8 @@ export function createCombatSystem({
 
     if (player.attackState === "recovery" && now >= player.attackRecoveryUntil) {
       player.attackState = "idle";
+      player.attackLockedDir = null;
+      player.attackLockedTargetId = null;
       player.attackHitWindowUntil = 0;
       playerAttackHitFrameCuePlayed = false;
       hitIdsInCurrentSwing.clear();
@@ -446,8 +604,18 @@ export function createCombatSystem({
         enemy.y = landingY;
         const landingCenterX = enemy.x + enemy.width / 2;
         const landingCenterY = enemy.y + enemy.height / 2;
-        const splashRadius = Number.isFinite(enemyProfile?.hitRadius) ? enemyProfile.hitRadius : tileSize * 3;
-        const leapDamage = Number.isFinite(enemyProfile?.damage) ? Math.max(0, enemyProfile.damage) : 10;
+        const splashRadius = Number.isFinite(enemy?.leapHitRadius)
+          ? Math.max(tileSize * 0.5, enemy.leapHitRadius)
+          : (Number.isFinite(enemyProfile?.hitRadius) ? enemyProfile.hitRadius : tileSize * 3);
+        const leapDamage = Number.isFinite(enemy?.leapDamage)
+          ? Math.max(0, enemy.leapDamage)
+          : (Number.isFinite(enemyProfile?.damage) ? Math.max(0, enemyProfile.damage) : 10);
+        const leapPoisonChance = Number.isFinite(enemy?.leapPoisonChance)
+          ? Math.max(0, Math.min(1, enemy.leapPoisonChance))
+          : 0;
+        const leapPoisonDurationMs = Number.isFinite(enemy?.leapPoisonDurationMs)
+          ? Math.max(0, enemy.leapPoisonDurationMs)
+          : 0;
 
         handlers.onRequestVfx("warningRing", {
           x: landingCenterX,
@@ -488,6 +656,14 @@ export function createCombatSystem({
             damage: leapDamage,
             now
           });
+          if (leapPoisonChance > 0 && leapPoisonDurationMs > 0 && Math.random() < leapPoisonChance) {
+            handlers.onPlayerPoisoned({
+              source: enemy,
+              target: player,
+              now,
+              durationMs: leapPoisonDurationMs
+            });
+          }
           handlers.onRequestVfx("damageText", {
             x: playerCenterX + 8,
             y: playerCenterY - 18,
@@ -675,9 +851,11 @@ export function createCombatSystem({
     enemies,
     npcs = null,
     currentAreaId,
-    playerEquipment = null
+    playerEquipment = null,
+    collidesAt = null
   }) {
     if (!player || !Array.isArray(enemies)) return;
+    resolveAttackDtScale(now);
 
     if (
       !isFreeExploreState(gameState) ||
@@ -686,7 +864,10 @@ export function createCombatSystem({
     ) {
       player.attackState = "idle";
       player.activeAttackId = null;
+      player.attackLockedDir = null;
+      player.attackLockedTargetId = null;
       player.attackHitWindowUntil = 0;
+      lastCombatUpdateAt = now;
       hitIdsInCurrentSwing.clear();
       npcHitIdsInCurrentSwing.clear();
       return;
@@ -700,11 +881,24 @@ export function createCombatSystem({
       player.attackState === "idle" &&
       now - player.lastAttackAt >= (equippedProfile?.cooldownMs || 0)
     ) {
+      const pressedFacingDir = String(player.dir || "down").toLowerCase();
+      const facingEnemy = findBestFacingEnemy({
+        player,
+        enemies,
+        currentAreaId,
+        pressedFacingDir
+      });
+      player.attackLockedDir = facingEnemy?.dir || pressedFacingDir;
+      player.attackLockedTargetId = facingEnemy?.enemy?.id || null;
+      player.dir = player.attackLockedDir;
+
       const isBasicAttack = equippedProfile?.id === defaultAttackId;
       const basicManaCost = Number.isFinite(basicAttackManaCost) ? Math.max(0, basicAttackManaCost) : 0;
       if (isBasicAttack && basicManaCost > 0) {
         const currentMana = Number.isFinite(player.mana) ? Math.max(0, player.mana) : 0;
         if (currentMana < basicManaCost) {
+          player.attackLockedDir = null;
+          player.attackLockedTargetId = null;
           return;
         }
         player.mana = Math.max(0, currentMana - basicManaCost);
@@ -715,6 +909,14 @@ export function createCombatSystem({
     updatePlayerAttackState(player, now);
     updatePlayerAttackHitFrameCue(player, now);
     const activeProfile = getAttackProfileForEntity(player, player.activeAttackId);
+    updatePlayerLockOnMovement({
+      now,
+      player,
+      enemies,
+      currentAreaId,
+      profile: activeProfile,
+      collidesAt
+    });
     processPlayerHits({
       now,
       player,

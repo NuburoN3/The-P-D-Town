@@ -47,6 +47,7 @@ export const DEFAULT_SPRITE_MANIFEST = {
   insideDojoSideWall: "assets/sprites/Inside_Dojo_Side_Wall.png",
   insideDojoExitWall: "assets/sprites/Dojo Exit wall.png",
   possum: "assets/sprites/Possum.png",
+  frog: "assets/sprites/Frog.png",
   obey: "assets/sprites/Obey.png",
   bonk: "assets/sprites/Bonk.png",
   controllerSkillWheel: "assets/sprites/Controller_Skill_Wheel.png",
