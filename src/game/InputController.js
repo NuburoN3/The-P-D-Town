@@ -524,6 +524,9 @@ export function createInputController({
             }
 
             if (direction !== 0 && (direction !== gamepadMenuState.heldDirection || now >= gamepadMenuState.nextMoveAt)) {
+                if (typeof pauseMenuSystem.setControllerFocusArea === "function") {
+                    pauseMenuSystem.setControllerFocusArea("title", "menu");
+                }
                 titleScreenSystem.handleKeyDown(direction === 1 ? "arrowdown" : "arrowup", actions.titleCallbacks);
                 gamepadMenuState.heldDirection = direction;
                 gamepadMenuState.nextMoveAt = now + 170;
@@ -537,6 +540,9 @@ export function createInputController({
                     now >= gamepadMenuState.nextHorizontalMoveAt
                 )
             ) {
+                if (typeof pauseMenuSystem.setControllerFocusArea === "function") {
+                    pauseMenuSystem.setControllerFocusArea("title", "menu");
+                }
                 titleScreenSystem.handleKeyDown(
                     horizontalMenuDirection === 1 ? "arrowright" : "arrowleft",
                     actions.titleCallbacks
@@ -548,7 +554,11 @@ export function createInputController({
             }
 
             if (confirmPressed && !gamepadMenuState.confirmHeld) {
-                titleScreenSystem.handleKeyDown("enter", actions.titleCallbacks);
+                const handledBySoundControl = typeof pauseMenuSystem.activateSoundControlSelection === "function"
+                    && pauseMenuSystem.activateSoundControlSelection({ layoutMode: "title" });
+                if (!handledBySoundControl) {
+                    titleScreenSystem.handleKeyDown("enter", actions.titleCallbacks);
+                }
             }
             if (startPressed && !gamepadMenuState.startHeld) {
                 titleScreenSystem.handleKeyDown("enter", actions.titleCallbacks);
@@ -579,6 +589,9 @@ export function createInputController({
             };
 
             if (direction !== 0 && (direction !== gamepadMenuState.heldDirection || now >= gamepadMenuState.nextMoveAt)) {
+                if (typeof pauseMenuSystem.setControllerFocusArea === "function") {
+                    pauseMenuSystem.setControllerFocusArea("pause", "menu");
+                }
                 // PauseMenuSystem handles keydown for navigation?
                 // pauseMenuSystem.moveSelection(direction)?
                 // Previous code called movePauseMenuSelection(direction).
@@ -593,7 +606,11 @@ export function createInputController({
             }
 
             if (confirmPressed && !gamepadMenuState.confirmHeld) {
-                pauseMenuSystem.handleKeyDown(getMenuConfirmKey(), pauseActions);
+                const handledBySoundControl = typeof pauseMenuSystem.activateSoundControlSelection === "function"
+                    && pauseMenuSystem.activateSoundControlSelection({ layoutMode: "pause" });
+                if (!handledBySoundControl) {
+                    pauseMenuSystem.handleKeyDown(getMenuConfirmKey(), pauseActions);
+                }
             }
             if (
                 typeof pauseMenuSystem.adjustSoundControlByController === "function" &&
@@ -656,6 +673,9 @@ export function createInputController({
             };
 
             if (direction !== 0 && (direction !== gamepadMenuState.heldDirection || now >= gamepadMenuState.nextMoveAt)) {
+                if (typeof pauseMenuSystem.setControllerFocusArea === "function") {
+                    pauseMenuSystem.setControllerFocusArea("pause", "menu");
+                }
                 pauseMenuSystem.handleKeyDown(direction === 1 ? "arrowdown" : "arrowup", settingsActions);
                 gamepadMenuState.heldDirection = direction;
                 gamepadMenuState.nextMoveAt = now + 145;
@@ -664,7 +684,11 @@ export function createInputController({
             }
 
             if (confirmPressed && !gamepadMenuState.confirmHeld) {
-                pauseMenuSystem.handleKeyDown(getMenuConfirmKey(), settingsActions);
+                const handledBySoundControl = typeof pauseMenuSystem.activateSoundControlSelection === "function"
+                    && pauseMenuSystem.activateSoundControlSelection({ layoutMode: "pause" });
+                if (!handledBySoundControl) {
+                    pauseMenuSystem.handleKeyDown(getMenuConfirmKey(), settingsActions);
+                }
             }
             if (
                 typeof pauseMenuSystem.adjustSoundControlByController === "function" &&

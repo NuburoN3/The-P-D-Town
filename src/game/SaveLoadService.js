@@ -1,4 +1,4 @@
-import { TILE, AREA_KINDS, GAME_STATES } from "../core/constants.js";
+import { TILE, AREA_KINDS, GAME_STATES, SILVER_PER_GOLD } from "../core/constants.js";
 
 /**
  * Creates a serializable snapshot of the current game state.
@@ -274,8 +274,8 @@ export function applyGameSnapshot(snapshot, context) {
             : {};
         const safeGold = Number.isFinite(nextCurrency.gold) ? Math.max(0, Math.floor(nextCurrency.gold)) : 0;
         const safeSilver = Number.isFinite(nextCurrency.silver) ? Math.max(0, Math.floor(nextCurrency.silver)) : 0;
-        playerCurrency.gold = safeGold + Math.floor(safeSilver / 100);
-        playerCurrency.silver = safeSilver % 100;
+        playerCurrency.gold = safeGold + Math.floor(safeSilver / SILVER_PER_GOLD);
+        playerCurrency.silver = safeSilver % SILVER_PER_GOLD;
     }
 
     if (playerEquipment && typeof playerEquipment === "object") {

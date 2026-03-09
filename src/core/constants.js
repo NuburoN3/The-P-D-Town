@@ -51,6 +51,8 @@ export const AUDIO_TRACKS = Object.freeze({
   OVARUN: "assets/audio/Ovarun_Music.ogg"
 });
 
+export const SILVER_PER_GOLD = 1000;
+
 export function isFreeExploreState(gameState) {
   return gameState === GAME_STATES.OVERWORLD || gameState === GAME_STATES.INTERIOR;
 }

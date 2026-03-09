@@ -157,9 +157,12 @@ function drawSoundControlPanel(ctx, {
   boxX,
   boxY,
   boxW = 340,
-  boxH = 108,
+  boxH = 148,
   highContrast = false,
-  soundControls
+  soundControls,
+  inputPromptMode = "keyboard",
+  layoutMode = "pause",
+  showControllerHint = true
 }) {
   const sliderX = boxX + 118;
   const sliderW = boxW - 184;
@@ -168,7 +171,17 @@ function drawSoundControlPanel(ctx, {
   const musicVolume = clamp01(soundControls?.musicVolume);
   const sfxVolume = clamp01(soundControls?.sfxVolume);
   const hoveredSlider = soundControls?.hoveredSlider || "";
+  const hoveredButton = soundControls?.hoveredButton || "";
   const draggingSlider = soundControls?.draggingSlider || "";
+  const controllerFocusArea = layoutMode === "title"
+    ? (soundControls?.controllerFocusTitle || "sound")
+    : (soundControls?.controllerFocusPause || "menu");
+  const controllerSelectedSlider = layoutMode === "title"
+    ? (soundControls?.controllerSelectedTitle || "music")
+    : (soundControls?.controllerSelectedPause || "music");
+  const activeSlider = draggingSlider
+    || hoveredSlider
+    || (controllerFocusArea === "sound" ? controllerSelectedSlider : "");
 
   const soundAura = ctx.createRadialGradient(
     boxX + boxW * 0.45,
@@ -222,10 +235,56 @@ function drawSoundControlPanel(ctx, {
   ctx.fillStyle = highContrast ? "#f7fdff" : "#fff2ca";
   ctx.fillText("Sound Control", boxX + 19, boxY + 27);
 
+  const resetButtonW = 144;
+  const resetButtonH = 20;
+  const resetButtonX = Math.round(boxX + (boxW - resetButtonW) * 0.5);
+  const resetButtonY = boxY + 100;
+  const resetHovered = hoveredButton === "resetDefaults"
+    || (controllerFocusArea === "sound" && controllerSelectedSlider === "resetDefaults");
+  ctx.fillStyle = resetHovered
+    ? (highContrast ? "rgba(156, 226, 255, 0.28)" : "rgba(126, 198, 108, 0.26)")
+    : (highContrast ? "rgba(214, 240, 255, 0.12)" : "rgba(130, 88, 41, 0.12)");
+  ctx.fillRect(resetButtonX, resetButtonY, resetButtonW, resetButtonH);
+  ctx.strokeStyle = resetHovered
+    ? (highContrast ? "#9dddff" : "#7fd86b")
+    : (highContrast ? "rgba(214, 240, 255, 0.66)" : "rgba(126, 88, 41, 0.58)");
+  ctx.lineWidth = resetHovered ? 2 : 1;
+  ctx.strokeRect(resetButtonX + 0.5, resetButtonY + 0.5, resetButtonW - 1, resetButtonH - 1);
+  ctx.font = FONT_12;
+  ctx.textAlign = "center";
+  ctx.fillStyle = resetHovered
+    ? (highContrast ? "#f3fdff" : "#285d25")
+    : (highContrast ? "#e8f8ff" : "#6b4520");
+  ctx.fillText("Reset to Default", resetButtonX + resetButtonW * 0.5, resetButtonY + 14);
+  ctx.textAlign = "left";
+
+  if (showControllerHint) {
+    const hintText = "R Stick: Vertical select  Horizontal adjust";
+    ctx.font = FONT_12;
+    ctx.fillStyle = highContrast ? "rgba(211,238,251,0.95)" : "rgba(88, 56, 26, 0.9)";
+    ctx.textAlign = "center";
+    ctx.fillText(hintText, boxX + boxW * 0.5, boxY + boxH - 10);
+    ctx.textAlign = "left";
+  }
+
   const drawPauseSlider = (label, value, centerY, isActive) => {
     const trackH = 6;
     const knobRadius = isActive ? 8 : 7;
     const fillW = Math.max(0, Math.min(sliderW, sliderW * value));
+    if (isActive) {
+      const activeGlow = ctx.createLinearGradient(boxX + 10, centerY - 13, boxX + boxW - 10, centerY + 13);
+      if (highContrast) {
+        activeGlow.addColorStop(0, "rgba(124, 213, 255, 0.08)");
+        activeGlow.addColorStop(0.5, "rgba(166, 232, 255, 0.2)");
+        activeGlow.addColorStop(1, "rgba(124, 213, 255, 0.08)");
+      } else {
+        activeGlow.addColorStop(0, "rgba(128, 219, 114, 0.08)");
+        activeGlow.addColorStop(0.5, "rgba(160, 237, 145, 0.22)");
+        activeGlow.addColorStop(1, "rgba(128, 219, 114, 0.08)");
+      }
+      ctx.fillStyle = activeGlow;
+      ctx.fillRect(boxX + 10, centerY - 13, boxW - 20, 26);
+    }
     const trackGradient = ctx.createLinearGradient(sliderX, centerY - 1, sliderX + sliderW, centerY + 1);
     if (highContrast) {
       trackGradient.addColorStop(0, "rgba(95, 138, 171, 0.85)");
@@ -258,11 +317,15 @@ function drawSoundControlPanel(ctx, {
     ctx.stroke();
 
     ctx.font = FONT_16;
-    ctx.fillStyle = highContrast ? "#e8f8ff" : "#4b2d12";
+    ctx.fillStyle = isActive
+      ? (highContrast ? "#f3fdff" : "#285d25")
+      : (highContrast ? "#e8f8ff" : "#4b2d12");
     ctx.fillText(label, boxX + 20, centerY + 5);
     ctx.font = FONT_12;
     const pct = `${Math.round(value * 100)}%`;
-    ctx.fillStyle = highContrast ? "rgba(211,238,251,0.95)" : "rgba(88, 56, 26, 0.9)";
+    ctx.fillStyle = isActive
+      ? (highContrast ? "#dff7ff" : "#2f6b2c")
+      : (highContrast ? "rgba(211,238,251,0.95)" : "rgba(88, 56, 26, 0.9)");
     const prevAlign = ctx.textAlign;
     const pctX = boxX + boxW - 20;
     ctx.textAlign = "right";
@@ -270,8 +333,8 @@ function drawSoundControlPanel(ctx, {
     ctx.textAlign = prevAlign;
   };
 
-  drawPauseSlider("Music", musicVolume, musicSliderY, hoveredSlider === "music" || draggingSlider === "music");
-  drawPauseSlider("SFX", sfxVolume, sfxSliderY, hoveredSlider === "sfx" || draggingSlider === "sfx");
+  drawPauseSlider("Music", musicVolume, musicSliderY, activeSlider === "music");
+  drawPauseSlider("SFX", sfxVolume, sfxSliderY, activeSlider === "sfx");
 }
 
 function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
@@ -308,11 +371,14 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
   const menuH = Math.max(minMenuH, requiredMenuH);
   const slideOffset = (1 - visibility) * 34;
   const menuX = canvas.width - menuW - 24 + slideOffset;
-  const menuY = (canvas.height - menuH) / 2;
+  const soundBoxH = 148;
+  const soundStackGap = 14;
+  const soundStackH = soundBoxH + soundStackGap + menuH;
+  const soundStackTop = Math.max(14, Math.round((canvas.height - soundStackH) * 0.5));
+  const menuY = soundStackTop + soundBoxH + soundStackGap;
   const soundBoxW = menuW;
-  const soundBoxH = 108;
   const soundBoxX = menuX;
-  const soundBoxY = Math.max(14, menuY - soundBoxH - 14);
+  const soundBoxY = soundStackTop;
   const soundControls = pauseMenuState?.soundControls || {};
 
   const aura = ctx.createRadialGradient(
@@ -334,7 +400,10 @@ function drawPauseMenuOverlay(ctx, state, canvas, ui, colors) {
     boxW: soundBoxW,
     boxH: soundBoxH,
     highContrast,
-    soundControls
+    soundControls,
+    inputPromptMode: state.inputPromptMode,
+    layoutMode: "pause",
+    showControllerHint: true
   });
 
   const parchment = ctx.createLinearGradient(menuX, menuY, menuX, menuY + menuH);
@@ -2060,15 +2129,9 @@ function drawQuestTrackerOverlay(ctx, state, canvas, ui, colors) {
       clickRequested = false;
     } else if (clickRequested && isHeaderHovered) {
       if (id && state.questTrackerState?.collapsedById) {
-        state.questTrackerState.activeQuestId = id;
         const wasCollapsed = Boolean(state.questTrackerState.collapsedById[id]);
         if (wasCollapsed) {
-          for (const otherQuest of quests) {
-            const otherId = String(otherQuest?.id || "");
-            if (!otherId) continue;
-            state.questTrackerState.collapsedById[otherId] = otherId !== id;
-          }
-          state.questTrackerState.preferredOpenQuestId = id;
+          state.questTrackerState.collapsedById[id] = false;
         } else {
           state.questTrackerState.collapsedById[id] = true;
           if (state.questTrackerState.preferredOpenQuestId === id) {
@@ -3218,9 +3281,12 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
     boxX: canvas.width - 340 - 24,
     boxY: 14,
     boxW: 340,
-    boxH: 108,
+    boxH: 148,
     highContrast,
-    soundControls: state.pauseMenuState?.soundControls || {}
+    soundControls: state.pauseMenuState?.soundControls || {},
+    inputPromptMode: state.inputPromptMode,
+    layoutMode: "title",
+    showControllerHint: true
   });
 
   const controlPickerLayout = getTitleControlPickerLayout(canvas);
@@ -3232,14 +3298,14 @@ function drawTitleScreenOverlay(ctx, canvas, state, colors) {
     rect: controlPickerLayout.keyboardMouse,
     label: "Mouse & Keyboard",
     iconType: "keyboardMouse",
-    isSelected: !useControllerAsDefault,
+    isActive: !useControllerAsDefault,
     isFocused: Boolean(titleState.controlPickerFocused && Number(titleState.controlPickerIndex) === 0)
   });
   drawTitleControlOptionCard(ctx, {
     rect: controlPickerLayout.controller,
     label: "Controller",
     iconType: "controller",
-    isSelected: useControllerAsDefault,
+    isActive: useControllerAsDefault,
     isFocused: Boolean(titleState.controlPickerFocused && Number(titleState.controlPickerIndex) === 1)
   });
 
@@ -3531,23 +3597,33 @@ function getTitleControlPickerLayout(canvas) {
   };
 }
 
-function drawTitleControlOptionCard(ctx, { rect, label, iconType, isSelected, isFocused = false }) {
-  const inset = isSelected ? 8 : 0;
+function drawTitleControlOptionCard(ctx, { rect, label, iconType, isActive = false, isFocused = false }) {
+  const isHighlighted = isFocused || (isActive && !isFocused);
+  const inset = isHighlighted ? 8 : 0;
   const x = rect.x + inset;
   const y = rect.y + inset;
   const w = rect.w - inset * 2;
   const h = rect.h - inset * 2;
 
   const bg = ctx.createLinearGradient(x, y, x, y + h);
-  bg.addColorStop(0, isSelected ? "rgba(255, 243, 206, 0.2)" : "rgba(236, 214, 176, 0.12)");
-  bg.addColorStop(1, isSelected ? "rgba(55, 76, 48, 0.22)" : "rgba(16, 19, 24, 0.3)");
+  bg.addColorStop(0, isFocused ? "rgba(233, 255, 214, 0.28)" : (isActive ? "rgba(255, 243, 206, 0.14)" : "rgba(236, 214, 176, 0.12)"));
+  bg.addColorStop(1, isFocused ? "rgba(43, 96, 44, 0.34)" : (isActive ? "rgba(55, 76, 48, 0.18)" : "rgba(16, 19, 24, 0.3)"));
   ctx.fillStyle = bg;
   ctx.fillRect(x, y, w, h);
 
-  ctx.lineWidth = isSelected ? 3 : 2;
-  ctx.strokeStyle = isSelected
+  if (isFocused) {
+    ctx.save();
+    ctx.shadowColor = "rgba(120, 235, 116, 0.5)";
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = "rgba(122, 222, 108, 0.12)";
+    ctx.fillRect(x - 5, y - 5, w + 10, h + 10);
+    ctx.restore();
+  }
+
+  ctx.lineWidth = isFocused ? 4 : (isActive ? 2.5 : 2);
+  ctx.strokeStyle = isFocused
     ? "#89d483"
-    : (isFocused ? "rgba(149, 206, 255, 0.9)" : "rgba(238, 215, 174, 0.62)");
+    : (isActive ? "rgba(190, 232, 168, 0.88)" : "rgba(238, 215, 174, 0.62)");
   ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
 
   if (iconType === "controller") {
@@ -3558,11 +3634,15 @@ function drawTitleControlOptionCard(ctx, { rect, label, iconType, isSelected, is
 
   ctx.font = FONT_16;
   ctx.textAlign = "center";
-  ctx.fillStyle = isSelected ? "#f5ffd8" : "rgba(248, 230, 201, 0.9)";
+  ctx.fillStyle = isFocused ? "#f5ffd8" : (isActive ? "rgba(236, 249, 214, 0.95)" : "rgba(248, 230, 201, 0.9)");
   ctx.fillText(label, x + w * 0.5, y + h - 18);
-  if (isSelected) {
+  if (isFocused) {
     ctx.font = FONT_12;
     ctx.fillStyle = "#67d96d";
+    ctx.fillText("highlighted", x + w * 0.5, y + h + 18);
+  } else if (isActive) {
+    ctx.font = FONT_12;
+    ctx.fillStyle = "rgba(190, 232, 168, 0.9)";
     ctx.fillText("selected", x + w * 0.5, y + h + 18);
   }
   ctx.textAlign = "left";

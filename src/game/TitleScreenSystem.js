@@ -36,6 +36,17 @@ export function createTitleScreenSystem({ tileSize, cameraZoom, musicManager, ca
     function handleMouseMove(mouseX, mouseY) {
         if (state.showHowTo) return false;
         state.pointerNavigation = true;
+
+        const controlChoice = getControlChoiceAtPosition(mouseX, mouseY);
+        if (controlChoice) {
+            const nextIndex = controlChoice === "controller" ? 1 : 0;
+            const changed = !state.controlPickerFocused || state.controlPickerIndex !== nextIndex;
+            state.controlPickerFocused = true;
+            state.controlPickerIndex = nextIndex;
+            state.hovered = -1;
+            return changed;
+        }
+
         state.controlPickerFocused = false;
 
         const hoverIndex = getTitleOptionIndexAtPosition(mouseX, mouseY);

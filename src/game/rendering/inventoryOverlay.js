@@ -1,4 +1,4 @@
-import { GAME_STATES } from "../../core/constants.js";
+import { GAME_STATES, SILVER_PER_GOLD } from "../../core/constants.js";
 import {
   FONT_12,
   FONT_16,
@@ -426,8 +426,8 @@ function normalizePlayerCurrency(playerCurrency) {
   }
   const gold = Number.isFinite(playerCurrency.gold) ? Math.max(0, Math.floor(playerCurrency.gold)) : 0;
   const silverRaw = Number.isFinite(playerCurrency.silver) ? Math.max(0, Math.floor(playerCurrency.silver)) : 0;
-  const carry = Math.floor(silverRaw / 100);
-  const silver = silverRaw % 100;
+  const carry = Math.floor(silverRaw / SILVER_PER_GOLD);
+  const silver = silverRaw % SILVER_PER_GOLD;
   playerCurrency.gold = gold + carry;
   playerCurrency.silver = silver;
   return {
@@ -522,8 +522,8 @@ function addCurrency(playerCurrency, goldAmount = 0, silverAmount = 0) {
   const addGold = Number.isFinite(goldAmount) ? Math.max(0, Math.floor(goldAmount)) : 0;
   const addSilver = Number.isFinite(silverAmount) ? Math.max(0, Math.floor(silverAmount)) : 0;
   const totalSilver = silver + addSilver;
-  playerCurrency.gold = gold + addGold + Math.floor(totalSilver / 100);
-  playerCurrency.silver = totalSilver % 100;
+  playerCurrency.gold = gold + addGold + Math.floor(totalSilver / SILVER_PER_GOLD);
+  playerCurrency.silver = totalSilver % SILVER_PER_GOLD;
 }
 
 function removeLeftoverById(leftovers, leftoverId) {
@@ -1462,6 +1462,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   const skillsPanelH = skillsGridH + 34;
   const skillsPanelGap = 20;
   const panelGap = 24;
+  const panelTitleH = 24;
   const equippedSkillsSlotSize = 38;
   const equippedSkillsGap = 5;
   const equippedSkillsCount = 8;
@@ -1499,7 +1500,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   const showPager = totalPages > 1;
   const inventoryPanelH = gridHeight + (showPager ? 68 : 42);
   const equipmentPanelH = projectedEquipmentPanelH;
-  const defaultSkillsPanelY = (panelY) => panelY + inventoryPanelH + skillsPanelGap;
+  const defaultSkillsPanelY = (panelY) => panelY + inventoryPanelH + skillsPanelGap + panelTitleH;
 
   const defaultClusterW = inventoryPanelW + panelGap + equipmentPanelW;
   const defaultClusterH = Math.max(inventoryPanelH + skillsPanelGap + skillsPanelH, equipmentPanelH);
@@ -1511,6 +1512,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   const defaultSkillsPanelYValue = defaultSkillsPanelY(defaultInventoryPanelY);
 
   const inventoryLayoutState = normalizeInventoryUiLayout(state?.inventoryUiLayout);
+  const usingDefaultSkillsPanelPosition = !Number.isFinite(inventoryLayoutState?.skillsPanelX) || !Number.isFinite(inventoryLayoutState?.skillsPanelY);
   let inventoryPanelX = Number.isFinite(inventoryLayoutState?.inventoryPanelX)
     ? inventoryLayoutState.inventoryPanelX
     : defaultInventoryPanelX;
@@ -1529,6 +1531,37 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   let skillsPanelY = Number.isFinite(inventoryLayoutState?.skillsPanelY)
     ? inventoryLayoutState.skillsPanelY
     : defaultSkillsPanelYValue;
+  ctx.font = FONT_12;
+  const resetLayoutText = "Restore Default Layout";
+  const resetLayoutW = Math.ceil(ctx.measureText(resetLayoutText).width) + 20;
+  const resetLayoutH = 20;
+  const resetLayoutX = canvas.width - resetLayoutW - 18;
+  const resetLayoutY = 18;
+  const resetLayoutHovered = mouseInsideCanvas && isPointInsideExpandedRect(
+    mouseX, mouseY, resetLayoutX, resetLayoutY, resetLayoutW, resetLayoutH, 0
+  );
+
+  if ((mouseUiState?.inventoryDragStartRequest || mouseUiState?.inventoryClickRequest) && resetLayoutHovered && inventoryLayoutState) {
+    inventoryPanelX = defaultInventoryPanelX;
+    inventoryPanelY = defaultInventoryPanelY;
+    equipmentPanelX = defaultEquipmentPanelX;
+    equipmentPanelY = defaultEquipmentPanelY;
+    skillsPanelX = defaultSkillsPanelX;
+    skillsPanelY = defaultSkillsPanelYValue;
+    inventoryLayoutState.inventoryPanelX = inventoryPanelX;
+    inventoryLayoutState.inventoryPanelY = inventoryPanelY;
+    inventoryLayoutState.equipmentPanelX = equipmentPanelX;
+    inventoryLayoutState.equipmentPanelY = equipmentPanelY;
+    inventoryLayoutState.skillsPanelX = skillsPanelX;
+    inventoryLayoutState.skillsPanelY = skillsPanelY;
+    mouseUiState.inventoryPanelDragTarget = "";
+    mouseUiState.inventoryDragStartRequest = false;
+    mouseUiState.inventoryClickRequest = false;
+    mouseUiState.inventoryDoubleClickRequest = false;
+    mouseUiState.inventoryLeftDown = false;
+    mouseUiState.inventorySuppressNextClick = true;
+    clearItemInspection(mouseUiState);
+  }
 
   if (mouseUiState && !mouseUiState.inventoryLeftDown) {
     mouseUiState.inventoryPanelDragTarget = "";
@@ -1558,6 +1591,25 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   const clampedSkillsPanel = clampPanelPosition(skillsPanelX, skillsPanelY, skillsPanelW, skillsPanelH, canvas);
   skillsPanelX = clampedSkillsPanel.x;
   skillsPanelY = clampedSkillsPanel.y;
+
+  const inventoryBottomY = inventoryPanelY + inventoryPanelH;
+  const skillsTitleTopY = skillsPanelY - panelTitleH + 1;
+  if (
+    usingDefaultSkillsPanelPosition &&
+    skillsPanelX < inventoryPanelX + inventoryPanelW &&
+    skillsPanelX + skillsPanelW > inventoryPanelX &&
+    skillsTitleTopY < inventoryBottomY + skillsPanelGap
+  ) {
+    const separatedSkills = clampPanelPosition(
+      skillsPanelX,
+      inventoryBottomY + skillsPanelGap + panelTitleH,
+      skillsPanelW,
+      skillsPanelH,
+      canvas
+    );
+    skillsPanelX = separatedSkills.x;
+    skillsPanelY = separatedSkills.y;
+  }
 
   if (inventoryLayoutState) {
     inventoryLayoutState.inventoryPanelX = inventoryPanelX;
@@ -1695,6 +1747,7 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
   addControllerSnapTarget(controllerSnapTargets, titlePlateX, titlePlateY, titlePlateW, titlePlateH);
   addControllerSnapTarget(controllerSnapTargets, equipmentTitleX, equipmentTitleY, equipmentTitleW, equipmentTitleH);
   addControllerSnapTarget(controllerSnapTargets, skillsTitleX, skillsTitleY, skillsTitleW, skillsTitleH);
+  addControllerSnapTarget(controllerSnapTargets, resetLayoutX, resetLayoutY, resetLayoutW, resetLayoutH);
   addControllerSnapTarget(
     controllerSnapTargets,
     previewRotateButtons.left.x,
@@ -1741,7 +1794,6 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     mouseUiState.inventoryClickRequest = false;
     mouseUiState.inventoryDoubleClickRequest = false;
   }
-
   if (
     mouseUiState?.inventoryClickRequest &&
     !mouseUiState.inventoryDragItemName &&
@@ -3024,6 +3076,22 @@ export function drawInventoryOverlay(ctx, state, canvas, ui, colors, getItemSpri
     }
     mouseUiState.inventoryClickRequest = false;
   }
+
+  ctx.font = FONT_12;
+  drawUiText(
+    ctx,
+    "Tip: Drag the Inventory, Skills, and Equipment tabs to reposition the panels.",
+    18,
+    Math.max(20, equippedSkillsY - 10),
+    colors
+  );
+  ctx.fillStyle = resetLayoutHovered ? "rgba(126, 198, 108, 0.26)" : "rgba(130, 88, 41, 0.18)";
+  ctx.fillRect(resetLayoutX, resetLayoutY, resetLayoutW, resetLayoutH);
+  ctx.strokeStyle = resetLayoutHovered ? "rgba(166, 236, 148, 0.95)" : "rgba(255, 231, 167, 0.72)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(resetLayoutX + 0.5, resetLayoutY + 0.5, resetLayoutW - 1, resetLayoutH - 1);
+  ctx.font = FONT_12;
+  drawUiText(ctx, resetLayoutText, resetLayoutX + 10, resetLayoutY + 14, colors);
 
   commitControllerSnapTargets(mouseUiState, controllerSnapTargets);
 

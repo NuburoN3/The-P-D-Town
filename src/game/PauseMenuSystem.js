@@ -1,5 +1,6 @@
 import { pointInRect } from "../core/mathUtils.js";
 import { InputManager } from "../core/InputManager.js";
+import { DEFAULT_USER_SETTINGS } from "../core/Persistence.js";
 
 function clamp01(value) {
     if (!Number.isFinite(value)) return 0;
@@ -45,8 +46,12 @@ export function createPauseMenuSystem({
             musicVolume: clamp01(userSettings.musicVolume),
             sfxVolume: clamp01(userSettings.sfxVolume),
             hoveredSlider: "",
+            hoveredButton: "",
             draggingSlider: "",
             pendingPersist: false,
+            lastSfxPreviewAt: 0,
+            controllerFocusPause: "menu",
+            controllerFocusTitle: "sound",
             controllerSelectedPause: "music",
             controllerSelectedTitle: "music"
         }
@@ -72,7 +77,9 @@ export function createPauseMenuSystem({
         state.selected = 0;
         state.soundControls.draggingSlider = "";
         state.soundControls.hoveredSlider = "";
+        state.soundControls.hoveredButton = "";
         state.soundControls.pendingPersist = false;
+        state.soundControls.controllerFocusPause = "menu";
         state.visibility = 0; // Will animate in
         musicManager.playSfx("menuOpen");
     }
@@ -84,7 +91,9 @@ export function createPauseMenuSystem({
         state.hovered = -1;
         state.soundControls.draggingSlider = "";
         state.soundControls.hoveredSlider = "";
+        state.soundControls.hoveredButton = "";
         state.soundControls.pendingPersist = false;
+        state.soundControls.controllerFocusPause = "menu";
         musicManager.playSfx("menuClose");
     }
 
@@ -124,6 +133,9 @@ export function createPauseMenuSystem({
             inputManager.matchesActionKey("pause", key)
         ) {
             state.hovered = -1;
+            setControllerFocusArea("pause", "menu");
+            state.soundControls.hoveredSlider = "";
+            state.soundControls.hoveredButton = "";
         }
 
         if (key === "escape" || inputManager.matchesActionKey("pause", key)) {
@@ -179,18 +191,26 @@ export function createPauseMenuSystem({
         const menuH = Math.max(minMenuH, requiredMenuH);
         const slideOffset = (1 - Math.max(0, Math.min(1, state.visibility))) * 34;
         const menuX = canvas.width - menuW - 24 + slideOffset;
-        const menuY = (canvas.height - menuH) / 2;
+        const soundBoxH = 148;
+        const stackGap = 14;
+        const stackH = soundBoxH + stackGap + menuH;
+        const stackTop = Math.max(14, Math.round((canvas.height - stackH) * 0.5));
+        const menuY = stackTop + soundBoxH + stackGap;
         return { menuW, menuH, menuX, menuY, optionStartY, optionStep };
     }
 
     function getSoundControlLayout() {
         const { menuW, menuX, menuY } = getPauseMenuLayout();
         const boxW = menuW;
-        const boxH = 108;
+        const boxH = 148;
         const boxX = menuX;
         const boxY = Math.max(14, menuY - boxH - 14);
         const sliderX = boxX + 118;
         const sliderW = boxW - 184;
+        const resetButtonW = 144;
+        const resetButtonH = 20;
+        const resetButtonX = Math.round(boxX + (boxW - resetButtonW) * 0.5);
+        const resetButtonY = boxY + 100;
         return {
             boxX,
             boxY,
@@ -200,17 +220,25 @@ export function createPauseMenuSystem({
             sliderW,
             musicCenterY: boxY + 44,
             sfxCenterY: boxY + 78,
-            rowHitH: 18
+            rowHitH: 18,
+            resetButtonX,
+            resetButtonY,
+            resetButtonW,
+            resetButtonH
         };
     }
 
     function getTitleSoundControlLayout() {
         const boxW = 340;
-        const boxH = 108;
+        const boxH = 148;
         const boxX = canvas.width - boxW - 24;
         const boxY = 14;
         const sliderX = boxX + 118;
         const sliderW = boxW - 184;
+        const resetButtonW = 144;
+        const resetButtonH = 20;
+        const resetButtonX = Math.round(boxX + (boxW - resetButtonW) * 0.5);
+        const resetButtonY = boxY + 100;
         return {
             boxX,
             boxY,
@@ -220,7 +248,11 @@ export function createPauseMenuSystem({
             sliderW,
             musicCenterY: boxY + 44,
             sfxCenterY: boxY + 78,
-            rowHitH: 18
+            rowHitH: 18,
+            resetButtonX,
+            resetButtonY,
+            resetButtonW,
+            resetButtonH
         };
     }
 
@@ -237,14 +269,37 @@ export function createPauseMenuSystem({
             : state.soundControls.controllerSelectedPause;
     }
 
+    function getControllerFocusArea(layoutMode = "pause") {
+        return layoutMode === "title"
+            ? state.soundControls.controllerFocusTitle
+            : state.soundControls.controllerFocusPause;
+    }
+
+    function setControllerFocusArea(layoutMode = "pause", focusArea = "sound") {
+        const normalized = focusArea === "menu" ? "menu" : "sound";
+        if (layoutMode === "title") {
+            state.soundControls.controllerFocusTitle = normalized;
+        } else {
+            state.soundControls.controllerFocusPause = normalized;
+        }
+    }
+
     function setControllerSelectedSlider(layoutMode = "pause", sliderId = "music") {
-        const normalized = sliderId === "sfx" ? "sfx" : "music";
+        const normalized = sliderId === "sfx" || sliderId === "resetDefaults"
+            ? sliderId
+            : "music";
         if (layoutMode === "title") {
             state.soundControls.controllerSelectedTitle = normalized;
         } else {
             state.soundControls.controllerSelectedPause = normalized;
         }
-        state.soundControls.hoveredSlider = normalized;
+        state.soundControls.hoveredSlider = normalized === "music" || normalized === "sfx"
+            ? normalized
+            : "";
+        state.soundControls.hoveredButton = normalized === "resetDefaults"
+            ? "resetDefaults"
+            : "";
+        setControllerFocusArea(layoutMode, "sound");
     }
 
     function getSliderValueForX(mouseX, sliderX, sliderW) {
@@ -268,18 +323,45 @@ export function createPauseMenuSystem({
     }
 
     function applySfxVolume(volume, { persist = false } = {}) {
+        const previous = state.soundControls.sfxVolume;
         const next = clamp01(volume);
         state.soundControls.sfxVolume = next;
         userSettings.sfxVolume = next;
         if (typeof musicManager.setSfxVolume === "function") {
             musicManager.setSfxVolume(next);
         }
+        maybePlaySfxPreview(previous, next);
         if (persist) {
             persistUserSettings();
             state.soundControls.pendingPersist = false;
         } else {
             state.soundControls.pendingPersist = true;
         }
+    }
+
+    function maybePlaySfxPreview(previousVolume, nextVolume) {
+        if (Math.abs(nextVolume - previousVolume) < 0.0001) return;
+        if (typeof musicManager.playSfx !== "function") return;
+        const now = performance.now();
+        const lastPreviewAt = Number.isFinite(state.soundControls.lastSfxPreviewAt)
+            ? state.soundControls.lastSfxPreviewAt
+            : 0;
+        if (now - lastPreviewAt < 120) return;
+        state.soundControls.lastSfxPreviewAt = now;
+        musicManager.playSfx("menuMove");
+    }
+
+    function resetSoundControls({ persist = true } = {}) {
+        applyMusicVolume(DEFAULT_USER_SETTINGS.musicVolume, { persist: false, fadeMs: 60 });
+        applySfxVolume(DEFAULT_USER_SETTINGS.sfxVolume, { persist: false });
+        state.soundControls.hoveredSlider = "";
+        state.soundControls.hoveredButton = "resetDefaults";
+        if (persist) {
+            persistUserSettings();
+            state.soundControls.pendingPersist = false;
+        }
+        musicManager.playSfx("menuConfirm");
+        return true;
     }
 
     function getHoveredSlider(mouseX, mouseY, layout = getSoundControlLayout()) {
@@ -292,6 +374,17 @@ export function createPauseMenuSystem({
             return "sfx";
         }
         return "";
+    }
+
+    function isResetButtonHovered(mouseX, mouseY, layout = getSoundControlLayout()) {
+        return pointInRect(
+            mouseX,
+            mouseY,
+            layout.resetButtonX,
+            layout.resetButtonY,
+            layout.resetButtonW,
+            layout.resetButtonH
+        );
     }
 
     function updateSliderFromPointer(sliderId, mouseX, { persist = false, layout = getSoundControlLayout() } = {}) {
@@ -312,23 +405,35 @@ export function createPauseMenuSystem({
         if (state.soundControls.draggingSlider) {
             updateSliderFromPointer(state.soundControls.draggingSlider, mouseX, { persist: false, layout });
             state.soundControls.hoveredSlider = state.soundControls.draggingSlider;
+            state.soundControls.hoveredButton = "";
             setControllerSelectedSlider(layoutMode, state.soundControls.draggingSlider);
             return true;
         }
         const hoveredSlider = getHoveredSlider(mouseX, mouseY, layout);
         state.soundControls.hoveredSlider = hoveredSlider;
+        state.soundControls.hoveredButton = hoveredSlider
+            ? ""
+            : (isResetButtonHovered(mouseX, mouseY, layout) ? "resetDefaults" : "");
+        if (hoveredSlider || state.soundControls.hoveredButton) {
+            setControllerFocusArea(layoutMode, "sound");
+        }
         if (hoveredSlider) {
             setControllerSelectedSlider(layoutMode, hoveredSlider);
         }
-        return Boolean(hoveredSlider);
+        return Boolean(hoveredSlider || state.soundControls.hoveredButton);
     }
 
     function handleSoundControlClick(mouseX, mouseY, { layoutMode = "pause" } = {}) {
         const layout = getSoundControlLayoutForMode(layoutMode);
+        if (isResetButtonHovered(mouseX, mouseY, layout)) {
+            setControllerFocusArea(layoutMode, "sound");
+            return resetSoundControls({ persist: true });
+        }
         const hoveredSlider = getHoveredSlider(mouseX, mouseY, layout);
         if (!hoveredSlider) return false;
         updateSliderFromPointer(hoveredSlider, mouseX, { persist: true, layout });
         state.soundControls.hoveredSlider = hoveredSlider;
+        state.soundControls.hoveredButton = "";
         setControllerSelectedSlider(layoutMode, hoveredSlider);
         return true;
     }
@@ -339,6 +444,7 @@ export function createPauseMenuSystem({
         if (!hoveredSlider) return false;
         state.soundControls.draggingSlider = hoveredSlider;
         state.soundControls.hoveredSlider = hoveredSlider;
+        state.soundControls.hoveredButton = "";
         setControllerSelectedSlider(layoutMode, hoveredSlider);
         updateSliderFromPointer(hoveredSlider, mouseX, { persist: false, layout });
         return true;
@@ -348,9 +454,10 @@ export function createPauseMenuSystem({
         const dir = Number(direction);
         if (!Number.isFinite(dir) || dir === 0) return false;
         const current = getControllerSelectedSlider(layoutMode);
-        const next = current === "music"
-            ? (dir > 0 ? "sfx" : "music")
-            : (dir < 0 ? "music" : "sfx");
+        const order = ["music", "sfx", "resetDefaults"];
+        const currentIndex = Math.max(0, order.indexOf(current));
+        const nextIndex = Math.max(0, Math.min(order.length - 1, currentIndex + (dir > 0 ? 1 : -1)));
+        const next = order[nextIndex];
         if (next === current) return false;
         setControllerSelectedSlider(layoutMode, next);
         musicManager.playSfx("menuMove");
@@ -361,7 +468,8 @@ export function createPauseMenuSystem({
         const dir = Number(direction);
         if (!Number.isFinite(dir) || dir === 0) return false;
         const sliderId = getControllerSelectedSlider(layoutMode);
-        const step = 0.03;
+        if (sliderId === "resetDefaults") return false;
+        const step = 0.01;
         if (sliderId === "music") {
             const next = clamp01(state.soundControls.musicVolume + (dir > 0 ? step : -step));
             applyMusicVolume(next, { persist, fadeMs: 45 });
@@ -370,6 +478,13 @@ export function createPauseMenuSystem({
         const next = clamp01(state.soundControls.sfxVolume + (dir > 0 ? step : -step));
         applySfxVolume(next, { persist });
         return true;
+    }
+
+    function activateSoundControlSelection({ layoutMode = "pause" } = {}) {
+        if (getControllerFocusArea(layoutMode) !== "sound") return false;
+        const selected = getControllerSelectedSlider(layoutMode);
+        if (selected !== "resetDefaults") return false;
+        return resetSoundControls({ persist: true });
     }
 
     function getSettingsIndexAtPosition(mouseX, mouseY) {
@@ -483,15 +598,17 @@ export function createPauseMenuSystem({
             updateSliderFromPointer(state.soundControls.draggingSlider, mouseX, { persist: false });
             state.soundControls.hoveredSlider = state.soundControls.draggingSlider;
             state.hovered = -1;
+            setControllerFocusArea("pause", "sound");
             return;
         }
 
-        const hoveredSlider = getHoveredSlider(mouseX, mouseY);
-        state.soundControls.hoveredSlider = hoveredSlider;
-        if (hoveredSlider) {
+        const hoveringSoundControls = handleSoundControlMouseMove(mouseX, mouseY, { layoutMode: "pause" });
+        if (hoveringSoundControls) {
             state.hovered = -1;
             return;
         }
+        state.soundControls.hoveredSlider = "";
+        state.soundControls.hoveredButton = "";
 
         const { menuW, menuX, menuY, optionStartY, optionStep } = getPauseMenuLayout();
 
@@ -512,6 +629,7 @@ export function createPauseMenuSystem({
             state.hovered = hovered;
             if (hovered >= 0) {
                 state.selected = hovered;
+                setControllerFocusArea("pause", "menu");
             }
         }
     }
@@ -528,10 +646,8 @@ export function createPauseMenuSystem({
             return true;
         }
 
-        const hoveredSlider = getHoveredSlider(mouseX, mouseY);
-        if (hoveredSlider) {
-            updateSliderFromPointer(hoveredSlider, mouseX, { persist: true });
-            state.soundControls.hoveredSlider = hoveredSlider;
+        if (handleSoundControlClick(mouseX, mouseY, { layoutMode: "pause" })) {
+            state.hovered = -1;
             return true;
         }
 
@@ -545,12 +661,7 @@ export function createPauseMenuSystem({
 
     function handlePointerDown(mouseX, mouseY) {
         if (state.mode !== "main") return false;
-        const hoveredSlider = getHoveredSlider(mouseX, mouseY);
-        if (!hoveredSlider) return false;
-        state.soundControls.draggingSlider = hoveredSlider;
-        state.soundControls.hoveredSlider = hoveredSlider;
-        updateSliderFromPointer(hoveredSlider, mouseX, { persist: false });
-        return true;
+        return handleSoundControlPointerDown(mouseX, mouseY, { layoutMode: "pause" });
     }
 
     function handlePointerUp() {
@@ -617,6 +728,9 @@ export function createPauseMenuSystem({
         handleSoundControlClick,
         cycleSoundControlSelectionByController,
         adjustSoundControlByController,
+        activateSoundControlSelection,
+        getControllerFocusArea,
+        setControllerFocusArea,
         handlePointerDown,
         handleSoundControlPointerDown,
         handlePointerUp,

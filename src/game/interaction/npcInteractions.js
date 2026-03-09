@@ -1,3 +1,4 @@
+import { SILVER_PER_GOLD } from "../../core/constants.js";
 import { normalizeGlobalStoryFlags, normalizeTownProgress } from "../progression/progressDefaults.js";
 
 const FALLBACK_RUMOR_CLUE_GROUPS = Object.freeze([
@@ -645,14 +646,14 @@ export function createNPCInteractionHandler({
   function getTotalSilverFromWallet() {
     const gold = Number.isFinite(playerCurrency?.gold) ? Math.max(0, Math.floor(playerCurrency.gold)) : 0;
     const silver = Number.isFinite(playerCurrency?.silver) ? Math.max(0, Math.floor(playerCurrency.silver)) : 0;
-    return gold * 100 + silver;
+    return gold * SILVER_PER_GOLD + silver;
   }
 
   function setWalletFromTotalSilver(totalSilver) {
     const clamped = Math.max(0, Math.floor(totalSilver));
     if (!playerCurrency || typeof playerCurrency !== "object") return;
-    playerCurrency.gold = Math.floor(clamped / 100);
-    playerCurrency.silver = clamped % 100;
+    playerCurrency.gold = Math.floor(clamped / SILVER_PER_GOLD);
+    playerCurrency.silver = clamped % SILVER_PER_GOLD;
   }
 
   function handleMerchantInteraction(npc) {

@@ -11,6 +11,7 @@ import {
   GAME_STATES,
   TILE_TYPES,
   AUDIO_TRACKS,
+  SILVER_PER_GOLD,
   SPRINT_UNLOCK_DISCIPLINE_LEVEL,
   isFreeExploreState
 } from "../core/constants.js";
@@ -2683,14 +2684,6 @@ function syncQuestTrackerState(now = performance.now()) {
     .filter((quest) => quest && !quest.collapsed)
     .map((quest) => String(quest.id || ""))
     .filter(Boolean);
-  if (expandedQuestIds.length === 1) {
-    questTrackerState.activeQuestId = expandedQuestIds[0];
-  } else {
-    const activeIsExpanded = expandedQuestIds.includes(questTrackerState.activeQuestId);
-    if (!activeIsExpanded && expandedQuestIds.length > 0) {
-      questTrackerState.activeQuestId = expandedQuestIds[0];
-    }
-  }
   questTrackerState.updatedAt = now;
 }
 
@@ -4101,9 +4094,9 @@ function updateRuntimeUi(now) {
   const normalizeCoins = () => {
     const safeGold = Number.isFinite(playerCurrency.gold) ? Math.max(0, Math.floor(playerCurrency.gold)) : 0;
     const safeSilver = Number.isFinite(playerCurrency.silver) ? Math.max(0, Math.floor(playerCurrency.silver)) : 0;
-    const gainedGold = Math.floor(safeSilver / 100);
+    const gainedGold = Math.floor(safeSilver / SILVER_PER_GOLD);
     playerCurrency.gold = safeGold + gainedGold;
-    playerCurrency.silver = safeSilver % 100;
+    playerCurrency.silver = safeSilver % SILVER_PER_GOLD;
   };
   const moveInventoryCoinItemsToCurrency = () => {
     const silverKeys = ["Silver Coin", "Silver Coins"];
@@ -4518,6 +4511,7 @@ function clearMenuHoverState() {
   pauseMenuState.hovered = -1;
   if (pauseMenuState.soundControls) {
     pauseMenuState.soundControls.hoveredSlider = "";
+    pauseMenuState.soundControls.hoveredButton = "";
   }
   titleState.hovered = -1;
 }
