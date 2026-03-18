@@ -97,7 +97,8 @@ export function createVfxSystem() {
       color: options.color || defaults.color,
       glowColor: options.glowColor || defaults.glowColor,
       text: options.text || "",
-      intensity: options.intensity ?? 1
+      intensity: options.intensity ?? 1,
+      variant: options.variant || ""
     });
   }
 

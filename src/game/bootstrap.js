@@ -84,6 +84,7 @@ export function createGameRuntime() {
     fadeDurationMs: 800
   });
   musicManager.attachUnlockHandlers();
+  musicManager.preloadAudio();
 
   const gameFlags = {
     basicTrainingStarted: false,

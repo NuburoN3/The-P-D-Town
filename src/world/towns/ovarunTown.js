@@ -39,6 +39,21 @@ const OVARUN_CROWD_POINTS = [
     [4, 22], [8, 22], [12, 22], [16, 22], [20, 22], [36, 22], [40, 22], [44, 22]
 ];
 
+function isInsideOvarunBuilding(tileX, tileY) {
+    return OVARUN_BUILDINGS.some((building) =>
+        tileX >= building.x &&
+        tileX < building.x + building.width &&
+        tileY >= building.y &&
+        tileY < building.y + building.height
+    );
+}
+
+function isValidOvarunCrowdTile(map, tileX, tileY) {
+    if (isInsideOvarunBuilding(tileX, tileY)) return false;
+    const tile = map[tileY]?.[tileX];
+    return tile === TILE_TYPES.PATH || tile === TILE_TYPES.HILL;
+}
+
 function generateOvarunBase(width, height) {
     const map = createFilledMap(width, height, TILE_TYPES.PATH);
 
@@ -103,8 +118,7 @@ function generateOvarunOfficeInteriorBase(width, height) {
 function buildOvarunCrowdNpcs() {
     const ovarunMap = generateOvarunBase(56, 44);
     const walkableSpawns = OVARUN_CROWD_POINTS.filter(([x, y]) => {
-        const tile = ovarunMap[y]?.[x];
-        return tile === TILE_TYPES.PATH || tile === TILE_TYPES.HILL;
+        return isValidOvarunCrowdTile(ovarunMap, x, y);
     });
     const usedKeys = new Set(walkableSpawns.map(([x, y]) => `${x},${y}`));
     if (walkableSpawns.length < 40) {
@@ -114,8 +128,7 @@ function buildOvarunCrowdNpcs() {
                 if (walkableSpawns.length >= 40) break;
                 const key = `${x},${y}`;
                 if (usedKeys.has(key)) continue;
-                const tile = ovarunMap[y][x];
-                if (tile !== TILE_TYPES.PATH && tile !== TILE_TYPES.HILL) continue;
+                if (!isValidOvarunCrowdTile(ovarunMap, x, y)) continue;
                 walkableSpawns.push([x, y]);
                 usedKeys.add(key);
             }

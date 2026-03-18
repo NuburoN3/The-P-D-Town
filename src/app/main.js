@@ -1539,21 +1539,18 @@ function ensurePetExistsInCurrentArea() {
   };
   ensurePetProgressionState(pet);
   if (pet.hp > pet.maxHp) pet.hp = pet.maxHp;
-  const safeSpawn = resolvePetSafePlacement(player.x - TILE, player.y);
+  const safeSpawn = resolveSafePlacement(player.x - TILE, player.y, {
+    fallbackCandidates: buildNearbyPlayerPlacementCandidates()
+  });
   pet.x = safeSpawn.x;
   pet.y = safeSpawn.y;
   npcs.push(pet);
   return pet;
 }
 
-function resolvePetSafePlacement(preferredX, preferredY) {
-  const canStandAt = (x, y) => !collisionService.collides(x, y, currentMap, currentMapW, currentMapH);
-  if (canStandAt(preferredX, preferredY)) {
-    return { x: preferredX, y: preferredY };
-  }
-
+function buildNearbyPlayerPlacementCandidates() {
   const step = TILE;
-  const aroundPlayer = [
+  return [
     { x: player.x - step, y: player.y },
     { x: player.x + step, y: player.y },
     { x: player.x, y: player.y - step },
@@ -1563,29 +1560,47 @@ function resolvePetSafePlacement(preferredX, preferredY) {
     { x: player.x - step, y: player.y + step },
     { x: player.x + step, y: player.y + step }
   ];
-  for (const candidate of aroundPlayer) {
-    if (canStandAt(candidate.x, candidate.y)) return candidate;
+}
+
+function resolveSafePlacement(preferredX, preferredY, { fallbackCandidates = [] } = {}) {
+  const maxX = Math.max(0, currentMapW * TILE - TILE);
+  const maxY = Math.max(0, currentMapH * TILE - TILE);
+  const clampPosition = (x, y) => ({
+    x: Math.max(0, Math.min(maxX, x)),
+    y: Math.max(0, Math.min(maxY, y))
+  });
+  const canStandAt = (x, y) => !collisionService.collides(x, y, currentMap, currentMapW, currentMapH);
+  const preferred = clampPosition(preferredX, preferredY);
+  if (canStandAt(preferred.x, preferred.y)) {
+    return preferred;
+  }
+
+  for (const candidate of fallbackCandidates) {
+    const clampedCandidate = clampPosition(candidate.x, candidate.y);
+    if (canStandAt(clampedCandidate.x, clampedCandidate.y)) return clampedCandidate;
   }
 
   // Spiral outward around requested point to avoid door tiles/walls on area transitions.
+  const step = TILE;
   for (let ring = 1; ring <= 4; ring++) {
     const r = ring * step;
     const candidates = [
-      { x: preferredX - r, y: preferredY },
-      { x: preferredX + r, y: preferredY },
-      { x: preferredX, y: preferredY - r },
-      { x: preferredX, y: preferredY + r },
-      { x: preferredX - r, y: preferredY - r },
-      { x: preferredX + r, y: preferredY - r },
-      { x: preferredX - r, y: preferredY + r },
-      { x: preferredX + r, y: preferredY + r }
+      { x: preferred.x - r, y: preferred.y },
+      { x: preferred.x + r, y: preferred.y },
+      { x: preferred.x, y: preferred.y - r },
+      { x: preferred.x, y: preferred.y + r },
+      { x: preferred.x - r, y: preferred.y - r },
+      { x: preferred.x + r, y: preferred.y - r },
+      { x: preferred.x - r, y: preferred.y + r },
+      { x: preferred.x + r, y: preferred.y + r }
     ];
     for (const candidate of candidates) {
-      if (canStandAt(candidate.x, candidate.y)) return candidate;
+      const clampedCandidate = clampPosition(candidate.x, candidate.y);
+      if (canStandAt(clampedCandidate.x, clampedCandidate.y)) return clampedCandidate;
     }
   }
 
-  return { x: preferredX, y: preferredY };
+  return preferred;
 }
 
 function updatePetFollow(now) {
@@ -1619,7 +1634,9 @@ function updatePetFollow(now) {
     return;
   }
   if (collisionService.collides(pet.x, pet.y, currentMap, currentMapW, currentMapH)) {
-    const safeSpot = resolvePetSafePlacement(player.x - TILE, player.y);
+    const safeSpot = resolveSafePlacement(player.x - TILE, player.y, {
+      fallbackCandidates: buildNearbyPlayerPlacementCandidates()
+    });
     pet.x = safeSpot.x;
     pet.y = safeSpot.y;
   }
@@ -1646,7 +1663,9 @@ function updatePetFollow(now) {
   if (distance <= 0.001) return;
 
   if (distance > OBEY_PET_TELEPORT_DISTANCE_TILES * TILE) {
-    const safeSpot = resolvePetSafePlacement(targetX, targetY);
+    const safeSpot = resolveSafePlacement(targetX, targetY, {
+      fallbackCandidates: buildNearbyPlayerPlacementCandidates()
+    });
     pet.x = safeSpot.x;
     pet.y = safeSpot.y;
     return;
@@ -4740,8 +4759,19 @@ interactionSystem = createInteractionSystem({
     vy /= length;
 
     const bounceDistance = TILE * 0.65;
-    player.x = Math.max(0, Math.min(currentMapW * TILE - TILE, player.x - vx * bounceDistance));
-    player.y = Math.max(0, Math.min(currentMapH * TILE - TILE, player.y - vy * bounceDistance));
+    const bouncedPosition = resolveSafePlacement(
+      player.x - vx * bounceDistance,
+      player.y - vy * bounceDistance,
+      {
+        fallbackCandidates: [
+          { x: player.x - vx * TILE, y: player.y - vy * TILE },
+          { x: player.x - vx * TILE * 1.5, y: player.y - vy * TILE * 1.5 },
+          { x: player.x, y: player.y }
+        ]
+      }
+    );
+    player.x = bouncedPosition.x;
+    player.y = bouncedPosition.y;
     player.walking = false;
 
     setDoorAccessNotice(message, 1800);

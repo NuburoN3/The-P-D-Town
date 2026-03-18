@@ -443,7 +443,8 @@ export function createCombatSystem({
       text: `${damage}`,
       color: "#ffffff",
       size: 32,
-      durationMs: 620
+      durationMs: 620,
+      variant: "playerAttack"
     });
     handlers.onEntityDamaged({
       source: player,
@@ -540,6 +541,7 @@ export function createCombatSystem({
 
     for (const npc of npcs) {
       if (!npc || npc.world !== currentAreaId) continue;
+      if (npc.isPlayerPet) continue;
       if (npcHitIdsInCurrentSwing.has(npc.id)) continue;
 
       const npcCenterX = npc.x + npc.width / 2;

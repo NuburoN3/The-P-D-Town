@@ -3170,16 +3170,59 @@ function drawWorldVfx(ctx, state) {
       ctx.stroke();
     } else if (effect.type === "damageText") {
       const fontPx = Math.max(16, Math.round(baseSize));
-      ctx.font = `bold ${fontPx}px Georgia`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       const floatY = y - t * Math.max(20, fontPx * 0.9);
-      ctx.fillStyle = effect.color || "rgba(255, 233, 190, 0.98)";
-      ctx.strokeStyle = "rgba(0,0,0,0.55)";
-      ctx.lineWidth = Math.max(2, Math.round(fontPx * 0.12));
       const text = String(effect.text || "");
-      ctx.strokeText(text, x, floatY);
-      ctx.fillText(text, x, floatY);
+      if (effect.variant === "playerAttack") {
+        const displayFontPx = Math.round(fontPx * 1.22);
+        const depthOffset = Math.max(3, Math.round(displayFontPx * 0.12));
+        const faceGradient = ctx.createLinearGradient(
+          x,
+          floatY - displayFontPx,
+          x,
+          floatY + displayFontPx * 0.35
+        );
+        faceGradient.addColorStop(0, "#fff8d6");
+        faceGradient.addColorStop(0.34, "#ffe66e");
+        faceGradient.addColorStop(0.7, "#f9c81f");
+        faceGradient.addColorStop(1, "#c88600");
+
+        ctx.font = `italic 900 ${displayFontPx}px Georgia`;
+        ctx.lineJoin = "round";
+        ctx.shadowColor = "rgba(255, 224, 102, 0.38)";
+        ctx.shadowBlur = Math.max(10, Math.round(displayFontPx * 0.28));
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+
+        ctx.fillStyle = "rgba(109, 63, 0, 0.9)";
+        ctx.fillText(text, x + depthOffset, floatY + depthOffset);
+
+        ctx.shadowBlur = Math.max(14, Math.round(displayFontPx * 0.34));
+        ctx.fillStyle = "rgba(255, 205, 70, 0.32)";
+        ctx.fillText(text, x + 1, floatY + 1);
+
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "rgba(79, 42, 0, 0.92)";
+        ctx.lineWidth = Math.max(3, Math.round(displayFontPx * 0.13));
+        ctx.strokeText(text, x, floatY);
+
+        ctx.fillStyle = faceGradient;
+        ctx.fillText(text, x, floatY);
+
+        ctx.lineWidth = Math.max(1.5, Math.round(displayFontPx * 0.05));
+        ctx.strokeStyle = "rgba(255, 248, 204, 0.9)";
+        ctx.strokeText(text, x, floatY - Math.max(1, Math.round(displayFontPx * 0.03)));
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = "transparent";
+      } else {
+        ctx.font = `bold ${fontPx}px Georgia`;
+        ctx.fillStyle = effect.color || "rgba(255, 233, 190, 0.98)";
+        ctx.strokeStyle = "rgba(0,0,0,0.55)";
+        ctx.lineWidth = Math.max(2, Math.round(fontPx * 0.12));
+        ctx.strokeText(text, x, floatY);
+        ctx.fillText(text, x, floatY);
+      }
       ctx.textAlign = "start";
       ctx.textBaseline = "alphabetic";
     } else if (effect.type === "xpGainText") {

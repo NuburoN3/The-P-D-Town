@@ -17,6 +17,7 @@ export class AudioManager {
     this.bgmAreaBySrc = new Map();
     this.ambientAreaBySrc = new Map();
     this.sfxPrototypeBySrc = new Map();
+    this.sfxPoolBySrc = new Map();
     this.failedBgmSrc = new Set();
     this.currentArea = null;
     this.currentAudio = null;
@@ -35,6 +36,7 @@ export class AudioManager {
     this._pausedSfxShots = new Set();
     this._autoplayRetryTimer = null;
     this.ambientSfxGain = 1.3;
+    this._pendingSfxReplay = [];
   }
 
   getResolvedBgmVolume() {
@@ -240,24 +242,9 @@ export class AudioManager {
       return;
     }
 
-    const prototype = this._getOrCreateSfxPrototype(src);
-    const shot = prototype.cloneNode(true);
-    shot.volume = this.sfxVolume;
-    shot.currentTime = 0;
-    this.activeSfxShots.add(shot);
-    shot.addEventListener("ended", () => {
-      this.activeSfxShots.delete(shot);
-      this._pausedSfxShots.delete(shot);
-    }, { once: true });
-
-    const playPromise = shot.play();
-    if (playPromise && typeof playPromise.catch === "function") {
-      playPromise.catch((err) => {
-        console.warn("AudioManager: failed to play SFX", src, err);
-        this.activeSfxShots.delete(shot);
-        this._pausedSfxShots.delete(shot);
-      });
-    }
+    const shot = this._acquireSfxShot(src);
+    if (!shot) return;
+    this._playSfxShot(src, shot);
 
     if (sfxNameOrSrc === "itemUnlock") {
       this._duckCurrentMusic();
@@ -298,14 +285,30 @@ export class AudioManager {
       if (!this.currentAudio || !this.currentAudio.paused) return;
       this._playBgmWithAutoplayFallback(this.currentAudio);
     };
+    const unlockAndFlushAudio = () => {
+      unlock();
+      this._flushPendingSfxReplay();
+    };
 
-    target.addEventListener("pointerdown", unlock, { passive: true });
-    target.addEventListener("keydown", unlock);
-    target.addEventListener("load", unlock, { once: true });
+    target.addEventListener("pointerdown", unlockAndFlushAudio, { passive: true });
+    target.addEventListener("keydown", unlockAndFlushAudio);
+    target.addEventListener("load", unlockAndFlushAudio, { once: true });
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") unlock();
+      if (document.visibilityState === "visible") unlockAndFlushAudio();
     });
-    setTimeout(unlock, 0);
+    setTimeout(unlockAndFlushAudio, 0);
+  }
+
+  preloadAudio() {
+    for (const src of this.areaTracks.values()) {
+      this._primeMediaElement(this._getOrCreateAudio(src));
+    }
+    for (const src of this.areaAmbienceTracks.values()) {
+      this._primeMediaElement(this._getOrCreateAmbientAudio(src));
+    }
+    for (const src of this.sfxTracks.values()) {
+      this._primeSfxPool(src);
+    }
   }
 
   _getOrCreateAudio(src) {
@@ -363,15 +366,99 @@ export class AudioManager {
   _getOrCreateSfxPrototype(src) {
     if (this.sfxPrototypeBySrc.has(src)) return this.sfxPrototypeBySrc.get(src);
 
+    const audio = this._createSfxElement(src);
+    this.sfxPrototypeBySrc.set(src, audio);
+    return audio;
+  }
+
+  _createSfxElement(src) {
     const audio = new Audio(src);
     audio.loop = false;
     audio.preload = "auto";
     audio.volume = this.sfxVolume;
+    audio.playsInline = true;
     audio.addEventListener('error', (e) => {
       console.warn('AudioManager: SFX load error for', src, e);
     });
-    this.sfxPrototypeBySrc.set(src, audio);
     return audio;
+  }
+
+  _getOrCreateSfxPool(src) {
+    if (this.sfxPoolBySrc.has(src)) return this.sfxPoolBySrc.get(src);
+    const pool = [];
+    this.sfxPoolBySrc.set(src, pool);
+    return pool;
+  }
+
+  _primeSfxPool(src, size = 3) {
+    const prototype = this._getOrCreateSfxPrototype(src);
+    this._primeMediaElement(prototype);
+    const pool = this._getOrCreateSfxPool(src);
+    while (pool.length < size) {
+      const shot = this._createSfxElement(src);
+      this._primeMediaElement(shot);
+      pool.push(shot);
+    }
+  }
+
+  _primeMediaElement(audio) {
+    if (!audio) return;
+    try {
+      audio.preload = "auto";
+      audio.load();
+    } catch (e) {}
+  }
+
+  _acquireSfxShot(src) {
+    this._primeSfxPool(src);
+    const pool = this._getOrCreateSfxPool(src);
+    let shot = pool.find((audio) => audio.paused || audio.ended);
+    if (!shot) {
+      shot = this._createSfxElement(src);
+      this._primeMediaElement(shot);
+      pool.push(shot);
+    }
+    try {
+      shot.volume = this.sfxVolume;
+      shot.currentTime = 0;
+    } catch (e) {}
+    this.activeSfxShots.add(shot);
+    return shot;
+  }
+
+  _playSfxShot(src, shot) {
+    if (!shot) return;
+    const clearShot = () => {
+      this.activeSfxShots.delete(shot);
+      this._pausedSfxShots.delete(shot);
+    };
+    shot.onended = clearShot;
+    const playPromise = shot.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch((err) => {
+        clearShot();
+        if (err?.name === "NotAllowedError") {
+          this._queuePendingSfxReplay(src);
+          return;
+        }
+        console.warn("AudioManager: failed to play SFX", src, err);
+      });
+    }
+  }
+
+  _queuePendingSfxReplay(src) {
+    if (typeof src !== "string" || src.length === 0) return;
+    if (this._pendingSfxReplay.includes(src)) return;
+    this._pendingSfxReplay.push(src);
+  }
+
+  _flushPendingSfxReplay() {
+    if (this._pendingSfxReplay.length === 0 || this._pauseMenuAudioSuspended) return;
+    const pending = this._pendingSfxReplay.splice(0);
+    for (const src of pending) {
+      const shot = this._acquireSfxShot(src);
+      this._playSfxShot(src, shot);
+    }
   }
 
   _getOrCreateAmbientAudio(src) {
