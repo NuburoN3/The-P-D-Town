@@ -27,6 +27,17 @@ function resolveBuildingTileType(building, tileX, tileY) {
     return isGate ? TILE_TYPES.PATH : TILE_TYPES.WALL;
   }
 
+  if (building.type === BUILDING_TYPES.BAR) {
+    const localX = tileX - building.x;
+    const localY = tileY - building.y;
+    const isRightColumn = localX === building.width - 1;
+
+    if (localY === 0) return TILE_TYPES.PATH;
+    if (localY === building.height - 1) return TILE_TYPES.PATH;
+    if (isRightColumn && localY >= 1 && localY <= building.height - 2) return TILE_TYPES.PATH;
+    return TILE_TYPES.WALL;
+  }
+
   return TILE_TYPES.WALL;
 }
 

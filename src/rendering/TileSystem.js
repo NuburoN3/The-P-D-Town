@@ -572,6 +572,11 @@ function drawDoorTile(ctx, deps) {
     return;
   }
 
+  if (deps.currentAreaId === "overworld" && deps.tileX === 45 && deps.tileY === 29) {
+    drawGrassTile(ctx, deps);
+    return;
+  }
+
   const isActiveDoor =
     deps.gameState === GAME_STATES.ENTERING_DOOR &&
     deps.tileX === deps.doorSequence.tx &&
@@ -798,7 +803,9 @@ export function drawTile(
     const building = getBuilding(currentTownId, currentAreaId, tileX, tileY);
     if (
       building &&
-      (building.type === BUILDING_TYPES.FOUNTAIN || building.type === BUILDING_TYPES.PEN)
+      (building.type === BUILDING_TYPES.FOUNTAIN ||
+        building.type === BUILDING_TYPES.PEN ||
+        building.type === BUILDING_TYPES.BAR)
     ) {
       const rendered = renderBuildingTile(building, x, y, tileX, tileY);
       if (rendered) return;

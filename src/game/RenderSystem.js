@@ -21,6 +21,7 @@ import {
   drawTextbox,
   drawTrainingPopup
 } from "./rendering/overlayCore.js";
+import { drawIrishDragonBarForeground } from "../world/buildings/barRenderer.js";
 import { getFountainRenderSprite } from "../world/buildings/fountainSprite.js";
 import { beginBuildingRenderFrame } from "../world/buildingRenderers.js";
 
@@ -3779,6 +3780,7 @@ function drawRoundedRectPath(ctx, x, y, w, h, radius) {
 function drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoom, drawTile) {
   if (typeof state.getBuildingAtWorldTile !== "function") return;
   const drawnFountainForeground = new Set();
+  const drawnBarForeground = new Set();
 
   const visibleW = canvas.width / cameraZoom;
   const visibleH = canvas.height / cameraZoom;
@@ -3847,6 +3849,15 @@ function drawForegroundBuildingOccluders(ctx, state, canvas, tileSize, cameraZoo
               }
             }
           }
+        }
+        continue;
+      }
+
+      if (building && building.type === "BAR") {
+        const key = building.id || `${building.x},${building.y},${building.width},${building.height}`;
+        if (!drawnBarForeground.has(key)) {
+          drawnBarForeground.add(key);
+          drawIrishDragonBarForeground(ctx, state.cam, tileSize, building);
         }
         continue;
       }

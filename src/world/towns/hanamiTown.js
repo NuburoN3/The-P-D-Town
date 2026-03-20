@@ -46,7 +46,7 @@ function generateOverworldBase(width, height) {
     // Main roads and connectors.
     paintPath(map, [{ x: 28, y: 1 }, { x: 28, y: 42 }], 3); // central boulevard
     paintPath(map, [{ x: 28, y: 22 }, { x: 16, y: 22 }, { x: 16, y: 16 }], 2); // church lane
-    paintPath(map, [{ x: 28, y: 24 }, { x: 38, y: 24 }, { x: 45, y: 24 }, { x: 45, y: 31 }], 2); // bar lane
+    paintPath(map, [{ x: 28, y: 24 }, { x: 38, y: 24 }, { x: 45, y: 24 }, { x: 45, y: 32 }], 2); // bar lane
     paintPath(map, [{ x: 28, y: 30 }, { x: 20, y: 30 }, { x: 20, y: 32 }, { x: 15, y: 32 }], 2); // farm lane
     paintPath(map, [{ x: 28, y: 34 }, { x: 28, y: 36 }, { x: 51, y: 36 }, { x: 51, y: 40 }], 2); // bed and breakfast lane
     paintPath(map, [{ x: 28, y: 14 }, { x: 34, y: 14 }, { x: 37, y: 12 }, { x: 41, y: 12 }, { x: 41, y: 10 }], 2); // hill path
@@ -86,7 +86,7 @@ function generateOverworldBase(width, height) {
         map,
         [
             [39, 12], [40, 12], [41, 12], [42, 12], [43, 12],
-            [38, 11], [12, 17], [10, 32], [43, 31], [28, 29], [47, 21], [48, 40]
+            [38, 11], [12, 17], [10, 32], [28, 29], [47, 21], [48, 40]
         ],
         TILE_TYPES.PATH
     );
@@ -349,9 +349,9 @@ export const hanamiTown = {
                     id: "hanamiBarFront",
                     type: BUILDING_TYPES.BAR,
                     x: 43,
-                    y: 27,
+                    y: 26,
                     width: 5,
-                    height: 4
+                    height: 5
                 },
                 {
                     id: "taikoHouseFront",
@@ -462,7 +462,7 @@ export const hanamiTown = {
         dojoUpstairsEntry: { areaId: "hanamiDojoUpstairs", x: 6, y: 8, dir: "up" },
         churchExteriorDoor: { areaId: "overworld", x: 13, y: 15, dir: "down" },
         churchInteriorDoor: { areaId: "hanamiChurch", x: 6, y: 8, dir: "up" },
-        barExteriorDoor: { areaId: "overworld", x: 45, y: 31, dir: "down" },
+        barExteriorDoor: { areaId: "overworld", x: 45, y: 30, dir: "down" },
         barInteriorDoor: { areaId: "hanamiBar", x: 6, y: 8, dir: "up" },
         taikoHouseExteriorDoor: { areaId: "overworld", x: 48, y: 21, dir: "down" },
         taikoHouseInteriorDoor: { areaId: "taikoHouse", x: 6, y: 8, dir: "up" },
@@ -529,7 +529,7 @@ export const hanamiTown = {
             to: { townId: "hanamiTown", spawnId: "dojoUpstairsDoor" }
         },
         {
-            from: { areaId: "overworld", x: 45, y: 30 },
+            from: { areaId: "overworld", x: 45, y: 29 },
             to: { townId: "hanamiTown", spawnId: "barInteriorDoor" }
         },
         {
